@@ -1,4 +1,4 @@
-package pl.jakubtworek.backend_systems_lab_stage_1.race_condition;
+package pl.jakubtworek.backend_systems_lab_stage_1.block_a.race_condition;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;

@@ -1,8 +1,9 @@
-package pl.jakubtworek.backend_systems_lab_stage_1.race_condition;
+package pl.jakubtworek.backend_systems_lab_stage_1.block_a.race_condition;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import pl.jakubtworek.backend_systems_lab_stage_1.block_a.race_condition.*;
 
 import java.util.List;
 import java.util.concurrent.*;
