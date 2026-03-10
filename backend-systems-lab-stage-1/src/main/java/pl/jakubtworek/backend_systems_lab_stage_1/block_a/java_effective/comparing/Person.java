@@ -7,6 +7,7 @@ package pl.jakubtworek.backend_systems_lab_stage_1.block_a.java_effective.compar
  */
 public class Person implements Comparable<Person> {
 
+    // immutable fields describing the person
     private final String name;
     private final int age;
 
@@ -15,23 +16,34 @@ public class Person implements Comparable<Person> {
         this.age = age;
     }
 
-    public String getName() { return name; }
+    public String getName() {
+        return name;
+    }
 
-    public int getAge() { return age; }
+    public int getAge() {
+        return age;
+    }
 
     /**
      * Natural ordering implementation.
      *
-     * Here we define ordering by age.
+     * Objects are compared only by age.
      */
     @Override
     public int compareTo(Person other) {
 
+        // uses Integer.compare to avoid overflow
+        // returns:
+        // negative value  -> this person is younger
+        // zero            -> same age
+        // positive value  -> this person is older
         return Integer.compare(this.age, other.age);
     }
 
     @Override
     public String toString() {
+
+        // simple readable representation useful for logging or debugging
         return name + " (" + age + ")";
     }
 }

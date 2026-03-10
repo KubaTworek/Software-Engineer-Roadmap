@@ -4,42 +4,36 @@ import java.util.concurrent.*;
 
 public class UserAggregationService {
 
+    // Fixed thread pool used to execute async service calls
     private final ExecutorService executor =
             Executors.newFixedThreadPool(3);
 
     /**
-     * ================================
-     * FAN-OUT / FAN-IN using allOf
-     * ================================
+     * Runs three independent service calls in parallel and aggregates results.
      *
-     * FAN-OUT:
-     *  - Start 3 independent async operations in parallel.
-     *
-     * FAN-IN:
-     *  - Wait until all complete.
-     *  - Aggregate their results.
-     *
-     * allOf() returns CompletableFuture<Void>.
-     * It completes when all provided futures complete.
-     *
-     * Important:
-     * - If any future fails, allOf completes exceptionally.
-     * - We call join() only after allOf completes.
+     * Key points in this example:
+     * - each supplyAsync() schedules work on the executor
+     * - allOf() waits until all futures complete
+     * - join() retrieves results after completion
      */
     public AggregatedResponse fetchAll(int userId) {
 
+        // async call fetching user data
         CompletableFuture<User> userF =
                 CompletableFuture.supplyAsync(
                         () -> ServiceFetcher.fetchUser(userId), executor);
 
+        // async call fetching orders
         CompletableFuture<Orders> ordersF =
                 CompletableFuture.supplyAsync(
                         () -> ServiceFetcher.fetchOrders(userId), executor);
 
+        // async call fetching payments
         CompletableFuture<Payments> paymentsF =
                 CompletableFuture.supplyAsync(
                         () -> ServiceFetcher.fetchPayments(userId), executor);
 
+        // wait for all futures to complete and then aggregate their results
         return CompletableFuture.allOf(userF, ordersF, paymentsF)
                 .thenApply(v ->
                         new AggregatedResponse(
@@ -53,16 +47,11 @@ public class UserAggregationService {
 
 
     /**
-     * =================================
-     * Alternative: thenCombine chaining
-     * =================================
+     * Combines results step-by-step using thenCombine.
      *
-     * thenCombine is suitable when combining 2 futures at a time.
-     *
-     * It avoids the Void-returning nature of allOf.
-     *
-     * Trade-off:
-     * - Harder to scale dynamically for N futures.
+     * In this example:
+     * - first combines user and orders
+     * - then combines that intermediate result with payments
      */
     public AggregatedResponse fetchWithThenCombine(int userId) {
 
@@ -79,8 +68,11 @@ public class UserAggregationService {
                         () -> ServiceFetcher.fetchPayments(userId), executor);
 
         return userF
+                // combine user + orders
                 .thenCombine(ordersF,
                         (user, orders) -> new Object[]{user, orders})
+
+                // combine previous result with payments
                 .thenCombine(paymentsF,
                         (partial, payments) ->
                                 new AggregatedResponse(
@@ -91,53 +83,46 @@ public class UserAggregationService {
     }
 
     /**
-     * =================================
-     * Timeout + fallback example
-     * =================================
+     * Demonstrates timeout handling with fallback value.
      *
-     * completeOnTimeout:
-     * - If task exceeds timeout
-     * - Completes normally with fallback value
-     *
-     * Different from orTimeout():
-     * - orTimeout completes exceptionally with TimeoutException
-     *
-     * exceptionally():
-     * - Handles any exception in pipeline
-     * - Returns fallback value
-     *
-     * This demonstrates graceful degradation.
+     * In this example:
+     * - fetchSlowService() may take longer than expected
+     * - completeOnTimeout provides default value if timeout occurs
+     * - exceptionally handles unexpected failures
      */
     public String fetchWithTimeoutFallback() {
 
         return CompletableFuture
                 .supplyAsync(ServiceFetcher::fetchSlowService, executor)
+
+                // if execution takes longer than 1 second, return fallback
                 .completeOnTimeout("fallback", 1, TimeUnit.SECONDS)
+
+                // handle any other exception
                 .exceptionally(ex -> "fallback-error")
+
                 .join();
     }
 
     /**
-     * =================================
-     * Exception handling demonstration
-     * =================================
+     * Demonstrates simple exception recovery.
      *
-     * If supplyAsync throws:
-     * - CompletableFuture completes exceptionally
-     *
-     * exceptionally() transforms error into normal value.
-     *
-     * Without exceptionally():
-     * - join() would throw CompletionException.
+     * In this example:
+     * - fetchFailingService() throws an exception
+     * - exceptionally converts failure into a normal result
      */
     public String fetchWithErrorHandling() {
 
         return CompletableFuture
                 .supplyAsync(ServiceFetcher::fetchFailingService, executor)
+
+                // convert exception into fallback value
                 .exceptionally(ex -> "recovered")
+
                 .join();
     }
 
+    // shutdown executor after finishing async operations
     public void shutdown() {
         executor.shutdown();
     }

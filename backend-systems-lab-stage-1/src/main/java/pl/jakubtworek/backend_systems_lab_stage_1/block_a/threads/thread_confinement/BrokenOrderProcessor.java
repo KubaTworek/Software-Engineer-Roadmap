@@ -1,41 +1,47 @@
 package pl.jakubtworek.backend_systems_lab_stage_1.block_a.threads.thread_confinement;
 
 /**
- * Broken implementation.
+ * Incorrect implementation of an order counter.
  *
- * Problem:
- * `processed++` is NOT atomic.
- *
- * It expands to three operations:
- *
- *   1. read processed
- *   2. increment
- *   3. write processed
- *
- * If two threads execute this concurrently:
- *
- *   Thread A reads 5
- *   Thread B reads 5
- *   Thread A writes 6
- *   Thread B writes 6
- *
- * One increment is lost (lost update).
- *
- * There is:
- *   - no mutual exclusion
- *   - no happens-before relationship
- *   - no visibility guarantee
- *
- * This class is NOT thread-safe.
+ * The field `processed` is shared between multiple threads,
+ * but access to it is not synchronized.
  */
 public class BrokenOrderProcessor {
 
+    /**
+     * Shared mutable state.
+     *
+     * Multiple threads modify this variable concurrently,
+     * which leads to race conditions.
+     */
     private int processed = 0;
 
+    /**
+     * Simulates submitting an order.
+     *
+     * Problem:
+     * The operation `processed++` is not atomic.
+     *
+     * It consists of three steps:
+     * 1. read the current value
+     * 2. increment the value
+     * 3. write the new value
+     *
+     * If two threads execute this method at the same time,
+     * one update may overwrite the other.
+     */
     public void submitOrder(Order order) {
-        processed++; // race condition
+        processed++; // non-atomic update
     }
 
+    /**
+     * Returns the number of processed orders.
+     *
+     * Problem:
+     * Without synchronization there is no guarantee that
+     * the reading thread sees the latest value written
+     * by other threads.
+     */
     public int getProcessed() {
         return processed;
     }

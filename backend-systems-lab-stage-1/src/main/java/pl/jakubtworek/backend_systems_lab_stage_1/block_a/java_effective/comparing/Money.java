@@ -25,6 +25,8 @@ import java.util.Objects;
  */
 public final class Money {
 
+    // fields are final -> object state cannot change after creation
+    // this is important because equals/hashCode depend on these fields
     private final int amount;
     private final String currency;
 
@@ -44,10 +46,14 @@ public final class Money {
     @Override
     public boolean equals(Object o) {
 
+        // fast path: same object reference
         if (this == o) return true;
 
+        // type check with pattern matching and safe cast
         if (!(o instanceof Money money)) return false;
 
+        // equality defined by both fields
+        // two Money objects are equal only if amount and currency match
         return amount == money.amount &&
                 currency.equals(money.currency);
     }
@@ -55,6 +61,8 @@ public final class Money {
     @Override
     public int hashCode() {
 
+        // uses the same fields as equals()
+        // ensures that equal objects produce the same hashCode
         return Objects.hash(amount, currency);
     }
 }

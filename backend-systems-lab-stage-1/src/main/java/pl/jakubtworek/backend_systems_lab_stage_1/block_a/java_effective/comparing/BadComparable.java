@@ -1,5 +1,3 @@
-package pl.jakubtworek.backend_systems_lab_stage_1.block_a.java_effective.comparing;
-
 /**
  * Bad Comparable implementation.
  *
@@ -16,6 +14,19 @@ public class BadComparable implements Comparable<BadComparable> {
     @Override
     public int compareTo(BadComparable o) {
 
-        return 1; // always greater -> incorrect
+        // Always returns 1 regardless of the compared objects
+        // This means every instance is considered "greater" than any other
+
+        // Violates the antisymmetry rule:
+        // if a.compareTo(b) > 0 then b.compareTo(a) should be < 0
+        // here both calls return 1
+
+        // Violates equality consistency:
+        // even if two objects have the same value, the method never returns 0
+
+        // This can break sorting algorithms and ordered collections
+        // such as TreeSet or TreeMap
+
+        return 1; // always "greater" -> incorrect implementation
     }
 }

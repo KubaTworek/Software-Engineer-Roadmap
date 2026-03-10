@@ -21,16 +21,28 @@ public class BadHashMoney {
     @Override
     public boolean equals(Object o) {
 
+        // quick check: same reference
         if (this == o) return true;
 
+        // pattern matching for type check and cast
         if (!(o instanceof BadHashMoney m)) return false;
 
+        // equality based on both fields
         return amount == m.amount &&
                 currency.equals(m.currency);
     }
 
     @Override
     public int hashCode() {
-        return 1; // terrible
+
+        // Always returns the same hash value
+        // All objects end up in the same bucket in hash-based collections
+
+        // Causes heavy hash collisions
+        // HashMap must compare objects using equals() for every insertion/search
+
+        // Performance degrades from expected O(1) to O(n)
+
+        return 1; // terrible implementation
     }
 }

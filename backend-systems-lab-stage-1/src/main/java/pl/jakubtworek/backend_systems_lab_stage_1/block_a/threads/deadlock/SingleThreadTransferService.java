@@ -2,110 +2,48 @@ package pl.jakubtworek.backend_systems_lab_stage_1.block_a.threads.deadlock;
 
 import java.util.concurrent.*;
 
-/**
- * Deadlock-free implementation using thread confinement.
- *
- * ------------------------------------------------------------
- * Strategy: Eliminate shared concurrency
- * ------------------------------------------------------------
- *
- * Instead of protecting shared state with locks,
- * we change the concurrency model entirely.
- *
- * All transfer operations are executed by a single thread.
- *
- * This guarantees:
- *
- *   - No concurrent access to account state
- *   - No need for locks
- *   - No possibility of deadlock
- *
- * ------------------------------------------------------------
- * Why deadlock is impossible here
- * ------------------------------------------------------------
- *
- * Deadlock requires:
- *   - Multiple threads
- *   - Each holding resources
- *   - Circular waiting
- *
- * Here:
- *
- *   - Only one worker thread performs mutations
- *   - No nested lock acquisition
- *   - No circular wait graph can form
- *
- * Therefore:
- *
- *   Coffman conditions are not satisfied.
- *
- * Specifically:
- *
- *   Mutual exclusion across multiple threads ❌
- *
- * There is no concurrent lock acquisition.
- *
- * ------------------------------------------------------------
- * Why future.get()?
- * ------------------------------------------------------------
- *
- * executor.submit() is asynchronous.
- *
- * Calling future.get():
- *   - Blocks caller until task completes
- *   - Establishes happens-before relationship
- *   - Guarantees visibility of state changes
- *
- * Without future.get(), caller might observe stale data.
- *
- * ------------------------------------------------------------
- * Trade-offs
- * ------------------------------------------------------------
- *
- * Pros:
- *   - No locks
- *   - No CAS
- *   - No deadlock risk
- *   - Simplified reasoning
- *
- * Cons:
- *   - Throughput limited to single thread
- *   - Potential bottleneck
- *   - Blocking call (get)
- *
- * This is essentially:
- *   - Actor model
- *   - Event loop model
- *
- * Scalable alternative:
- *   - Partition accounts across multiple single-thread executors
- *   - Shard by account id
- */
 public class SingleThreadTransferService {
 
+    // Executor with exactly one worker thread.
+    // All submitted tasks are executed sequentially in the same thread.
     private final ExecutorService executor =
             Executors.newSingleThreadExecutor();
 
     public void transfer(AccountData from, AccountData to, int amount) {
+
+        // Submit transfer logic as a task to the single-thread executor.
+        // The task will be executed in FIFO order relative to other transfers.
         Future<?> future = executor.submit(() -> {
+
+            // Balance updates are performed inside the executor thread,
+            // so no synchronization is required here.
             from.balance -= amount;
             to.balance += amount;
         });
 
         try {
+            // Wait for the submitted task to finish before returning.
+            // Ensures that the transfer has completed when this method exits.
             future.get();
+
         } catch (Exception e) {
+
+            // Wrap checked exceptions from Future into unchecked exception
+            // so the caller does not have to handle ExecutionException / InterruptedException.
             throw new RuntimeException(e);
         }
     }
 
     public static class AccountData {
+
+        // Mutable state representing account balance
         int balance;
 
         public AccountData(int balance) {
             this.balance = balance;
         }
 
+        // Simple read access to current balance
         public int getBalance() {
             return balance;
         }

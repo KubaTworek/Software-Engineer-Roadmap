@@ -4,16 +4,11 @@ import java.util.Iterator;
 import java.util.NoSuchElementException;
 
 /**
- * Custom collection implementing Iterable.
- *
- * Iterable allows usage in enhanced for loop:
- *
- * for (int n : collection) { }
- *
- * Compiler internally uses Iterator.
+ * Example of a custom collection that can be used in enhanced for-loop.
  */
 public class NumberCollection implements Iterable<Integer> {
 
+    // internal storage for elements
     private final int[] data;
 
     public NumberCollection(int[] data) {
@@ -22,27 +17,32 @@ public class NumberCollection implements Iterable<Integer> {
 
     @Override
     public Iterator<Integer> iterator() {
+        // returns iterator instance used by enhanced for-loop
         return new NumberIterator();
     }
 
     /**
-     * Internal iterator implementation.
+     * Iterator responsible for traversing the collection.
      */
     private class NumberIterator implements Iterator<Integer> {
 
+        // current position in the array
         private int index = 0;
 
         @Override
         public boolean hasNext() {
+            // checks if there are more elements
             return index < data.length;
         }
 
         @Override
         public Integer next() {
 
+            // required check before accessing next element
             if (!hasNext())
                 throw new NoSuchElementException();
 
+            // return current element and move iterator forward
             return data[index++];
         }
     }

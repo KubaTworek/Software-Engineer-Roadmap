@@ -4,18 +4,24 @@ import java.util.Spliterator;
 import java.util.stream.StreamSupport;
 
 /**
- * Converts Spliterator to Stream.
+ * Example showing how a Spliterator can be converted into a Stream.
  */
 public class SpliteratorExample {
 
     public static int sum(int[] numbers) {
 
+        // create custom Spliterator for the whole array range
         Spliterator<Integer> spliterator =
-                new NumberSpliterator(numbers,0,numbers.length);
+                new NumberSpliterator(numbers, 0, numbers.length);
 
         return StreamSupport
-                .stream(spliterator,false)
+                // create sequential stream from Spliterator
+                .stream(spliterator, false)
+
+                // convert Integer objects to primitive int
                 .mapToInt(Integer::intValue)
+
+                // aggregate all elements by summing them
                 .sum();
     }
 }

@@ -1,23 +1,31 @@
 package pl.jakubtworek.backend_systems_lab_stage_1.block_a.threads.cancel;
 
 /**
- * Anti-pattern:
- * InterruptedException is swallowed.
+ * Problem in this example:
+ * - the task does not respond to thread interruption
+ * - InterruptedException is caught but ignored
+ * - Thread.sleep() clears the interrupt flag when throwing the exception
  *
- * This task ignores cancellation signal.
+ * Result:
+ * - the loop continues running indefinitely
+ * - the task cannot be properly cancelled using Thread.interrupt()
  */
 public class BadCancellableTask implements Runnable {
 
     @Override
     public void run() {
 
+        // infinite loop with no interrupt state check
         while (true) {
 
             try {
                 Thread.sleep(100);
+
             } catch (InterruptedException ignored) {
-                // ❌ BAD: ignoring interrupt
-                // flag cleared, loop continues forever
+
+                // ❌ BAD: interrupt signal is ignored
+                // the interrupt flag has been cleared by sleep()
+                // the thread keeps running instead of stopping
             }
         }
     }

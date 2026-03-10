@@ -4,18 +4,20 @@ import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.RecursiveAction;
 
 /**
- * Correct approach when you must block inside ForkJoinPool:
+ * Task that recursively creates subtasks and simulates blocking work
+ * at the leaf level of the recursion tree.
  *
- * ForkJoinPool.managedBlock informs the pool that a worker is blocked,
- * allowing the pool to compensate (e.g., by creating/activating spare workers),
- * reducing starvation risk.
- *
- * Still: Prefer not to block in FJP at all. Use ExecutorService for blocking work.
+ * RecursiveAction is used because this task does not return a result.
  */
 public class BlockingTaskManagedBlock extends RecursiveAction {
 
+    // Current recursion level
     private final int depth;
+
+    // Maximum depth of the task tree
     private final int maxDepth;
+
+    // Duration of the simulated blocking operation
     private final long blockMillis;
 
     public BlockingTaskManagedBlock(int depth, int maxDepth, long blockMillis) {
@@ -26,27 +28,40 @@ public class BlockingTaskManagedBlock extends RecursiveAction {
 
     @Override
     protected void compute() {
+
+        // When the maximum depth is reached,
+        // the task performs a blocking operation
         if (depth >= maxDepth) {
             managedSleep(blockMillis);
             return;
         }
 
-        BlockingTaskManagedBlock left = new BlockingTaskManagedBlock(depth + 1, maxDepth, blockMillis);
-        BlockingTaskManagedBlock right = new BlockingTaskManagedBlock(depth + 1, maxDepth, blockMillis);
+        // Create two child tasks representing the next level of recursion
+        BlockingTaskManagedBlock left =
+                new BlockingTaskManagedBlock(depth + 1, maxDepth, blockMillis);
 
+        BlockingTaskManagedBlock right =
+                new BlockingTaskManagedBlock(depth + 1, maxDepth, blockMillis);
+
+        // Schedule both subtasks in the ForkJoinPool and wait for completion
         invokeAll(left, right);
     }
 
     private void managedSleep(long ms) {
         try {
+
+            // managedBlock informs ForkJoinPool that this worker thread
+            // may block, allowing the pool to compensate if needed
             ForkJoinPool.managedBlock(new ForkJoinPool.ManagedBlocker() {
 
+                // Indicates whether the blocking operation finished
                 private boolean done = false;
 
                 @Override
                 public boolean block() {
                     if (!done) {
                         try {
+                            // Simulated blocking operation
                             Thread.sleep(ms);
                         } catch (InterruptedException ignored) {}
                         done = true;
@@ -56,9 +71,11 @@ public class BlockingTaskManagedBlock extends RecursiveAction {
 
                 @Override
                 public boolean isReleasable() {
+                    // Allows the pool to check if blocking already finished
                     return done;
                 }
             });
+
         } catch (InterruptedException ignored) {
         }
     }

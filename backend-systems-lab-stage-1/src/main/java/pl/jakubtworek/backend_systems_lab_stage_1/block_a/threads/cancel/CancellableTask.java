@@ -3,31 +3,31 @@ package pl.jakubtworek.backend_systems_lab_stage_1.block_a.threads.cancel;
 public class CancellableTask implements Runnable {
 
     /**
-     * Cooperative cancellation.
-     *
-     * Task periodically checks interruption flag.
-     * If interrupted during sleep, it restores interrupt flag
-     * and exits gracefully.
+     * This task supports cooperative cancellation.
+     * It periodically checks whether the thread has been interrupted.
      */
     @Override
     public void run() {
 
         try {
+            // loop runs until an interrupt signal is detected
             while (!Thread.currentThread().isInterrupted()) {
 
-                // simulate long work
+                // simulate blocking work
                 Thread.sleep(100);
 
-                // could also do computation here
+                // additional computation could happen here
             }
 
         } catch (InterruptedException e) {
 
-            // Sleep throws InterruptedException and CLEARS the flag.
-            // We restore it to preserve interruption semantics.
+            // sleep() throws InterruptedException when the thread is interrupted
+            // and clears the interrupt flag
+            // restoring the flag preserves the interruption information
             Thread.currentThread().interrupt();
         }
 
+        // task exits cleanly after interruption
         System.out.println("Task stopped cooperatively.");
     }
 }

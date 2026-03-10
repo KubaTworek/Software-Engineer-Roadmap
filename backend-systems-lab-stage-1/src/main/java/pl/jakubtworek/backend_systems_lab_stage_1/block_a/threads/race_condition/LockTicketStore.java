@@ -3,155 +3,69 @@ package pl.jakubtworek.backend_systems_lab_stage_1.block_a.threads.race_conditio
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * Thread-safe implementation using explicit locking via ReentrantLock.
- *
- * Why ReentrantLock?
- *
- * Similar to synchronized, we need to protect a critical section that:
- *   - checks available
- *   - modifies available
- *   - increments sold
- *
- * The invariant:
- *
- *   available + sold == initial
- *
- * must always hold.
- *
- * Instead of using intrinsic locking (synchronized),
- * we use explicit locking from java.util.concurrent.locks.
- *
- * ------------------------------------------------------------
- * What is ReentrantLock?
- * ------------------------------------------------------------
- *
- * ReentrantLock is an explicit mutual exclusion lock
- * with the same basic memory semantics as synchronized,
- * but with more advanced features.
- *
- * "Reentrant" means:
- *
- *   The same thread can acquire the same lock multiple times
- *   without deadlocking itself.
- *
- * Internally:
- *   - The lock keeps track of the owning thread.
- *   - It maintains a hold count.
- *
- * ------------------------------------------------------------
- * What guarantees does lock()/unlock() provide?
- * ------------------------------------------------------------
- *
- * 1. Mutual exclusion
- *    Only one thread can execute the critical section at a time.
- *
- * 2. Visibility guarantees (Java Memory Model)
- *    A successful unlock() happens-before
- *    a subsequent lock() on the same lock.
- *
- *    This ensures:
- *      - No stale reads
- *      - Writes inside the critical section
- *        become visible to other threads
- *
- * 3. Memory ordering
- *    Similar to synchronized:
- *      - No instruction reordering across lock boundaries.
- *
- * ------------------------------------------------------------
- * Why try/finally?
- * ------------------------------------------------------------
- *
- * Always release the lock in finally block.
- *
- * If unlock() is not called:
- *   - Other threads will block forever.
- *   - You introduce a deadlock.
- *
- * This is one of the risks of manual locking.
- *
- * ------------------------------------------------------------
- * Why not synchronized?
- * ------------------------------------------------------------
- *
- * synchronized:
- *   - Simpler
- *   - Implicit monitor management
- *   - Less error-prone
- *
- * ReentrantLock:
- *   - More control
- *   - Can use tryLock()
- *   - Can use interruptible locking
- *   - Can configure fairness policy
- *
- * Example advanced features:
- *   lock.tryLock()
- *   lock.lockInterruptibly()
- *   new ReentrantLock(true) // fair lock
- *
- * ------------------------------------------------------------
- * Trade-offs
- * ------------------------------------------------------------
- *
- * Pros:
- *   - More flexible than synchronized
- *   - Explicit control over locking strategy
- *   - Useful in complex coordination scenarios
- *
- * Cons:
- *   - More verbose
- *   - Easier to misuse (forget unlock)
- *   - No automatic scope-based release
- *
- * Performance:
- *   Under low contention, similar to synchronized.
- *   Under high contention, performance depends on lock configuration.
- *
- * Appropriate when:
- *   - You need advanced lock features
- *   - You need non-blocking attempt (tryLock)
- *   - You need interruptible lock acquisition
- *
- * For simple mutual exclusion, synchronized is often sufficient.
+ * TicketStore implementation using explicit locking with ReentrantLock.
+ * The lock protects modifications of shared state: available and sold.
  */
 public class LockTicketStore implements TicketStore {
 
+    // Number of tickets currently available
     private int available = 1;
+
+    // Number of sold tickets
     private int sold = 0;
+
+    // Initial number of tickets used for verification/reporting
     private final int initial = 1;
+
+    // Explicit mutual exclusion lock protecting the critical section
     private final ReentrantLock lock = new ReentrantLock();
 
     @Override
     public void buy() {
+
+        // Acquire the lock before accessing shared mutable state
         lock.lock();
+
         try {
+
+            // Only one thread at a time can execute this block
             if (available > 0) {
+
+                // Decrease number of available tickets
                 available--;
+
+                // Record the successful sale
                 sold++;
             }
+
         } finally {
+
+            // Always release the lock to avoid blocking other threads
             lock.unlock();
         }
     }
 
     @Override
     public int getAvailable() {
+        // Returns current number of available tickets
         return available;
     }
 
     @Override
     public int getSold() {
+        // Returns number of tickets recorded as sold
         return sold;
     }
 
     @Override
     public int getInitial() {
+        // Returns the initial number of tickets
         return initial;
     }
 
     @Override
     public String name() {
+        // Name used to identify this implementation in tests
         return "ReentrantLock";
     }
 }

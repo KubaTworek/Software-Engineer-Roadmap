@@ -3,166 +3,72 @@ package pl.jakubtworek.backend_systems_lab_stage_1.block_a.threads.race_conditio
 import java.util.concurrent.*;
 
 /**
- * Thread-safe implementation using thread confinement.
- *
- * Instead of protecting shared state with locks or atomic operations,
- * this implementation avoids shared mutable state across threads entirely.
- *
- * ------------------------------------------------------------
- * What is thread confinement?
- * ------------------------------------------------------------
- *
- * Thread confinement means:
- *
- *   A piece of mutable state is accessed and modified
- *   by only one thread.
- *
- * If only one thread can modify the state,
- * synchronization is not required.
- *
- * In this implementation:
- *
- *   - All mutations of 'available' and 'sold'
- *     happen inside a single-thread Executor.
- *
- *   - The executor guarantees sequential execution
- *     of submitted tasks.
- *
- * ------------------------------------------------------------
- * Why this works
- * ------------------------------------------------------------
- *
- * Executors.newSingleThreadExecutor() ensures:
- *
- *   - Only one worker thread exists.
- *   - Tasks are executed one-by-one in submission order.
- *
- * Therefore:
- *
- *   buy() operations never execute concurrently.
- *
- * The critical section:
- *
- *   if (available > 0) {
- *       available--;
- *       sold++;
- *   }
- *
- * is effectively serialized.
- *
- * No race condition is possible because:
- *
- *   There is no parallel modification of shared state.
- *
- * ------------------------------------------------------------
- * Why future.get()?
- * ------------------------------------------------------------
- *
- * executor.submit(...) is asynchronous.
- *
- * If we did not call future.get(),
- * buy() would return immediately
- * and state updates might not yet be visible.
- *
- * future.get():
- *   - Blocks until task completes
- *   - Establishes happens-before relationship
- *   - Guarantees visibility of changes
- *
- * ------------------------------------------------------------
- * Memory Model Guarantees
- * ------------------------------------------------------------
- *
- * ExecutorService + Future.get() ensure:
- *
- *   - Proper task publication
- *   - Happens-before from task completion to get() return
- *   - Visibility of writes made inside the task
- *
- * Therefore no additional synchronization is required.
- *
- * ------------------------------------------------------------
- * Architectural perspective
- * ------------------------------------------------------------
- *
- * This pattern is similar to:
- *
- *   - Actor model
- *   - Event loop
- *   - Command queue processing
- *
- * Instead of solving race conditions with locks,
- * we eliminate shared concurrency at the architectural level.
- *
- * ------------------------------------------------------------
- * Trade-offs
- * ------------------------------------------------------------
- *
- * Pros:
- *   - No locks
- *   - No CAS
- *   - No contention
- *   - Simple reasoning about state
- *
- * Cons:
- *   - Throughput limited to single thread
- *   - Blocking caller via future.get()
- *   - Requires lifecycle management (shutdown)
- *
- * This approach is appropriate when:
- *
- *   - State must remain strictly consistent
- *   - Throughput requirements are moderate
- *   - Simplicity is preferred over parallelism
- *
- * In high-load systems,
- * this model can be scaled via sharding:
- *
- *   Multiple single-thread executors,
- *   each owning a partition of state.
+ * TicketStore implementation where all state modifications
+ * are executed inside a single-thread executor.
  */
 public class SingleThreadTicketStore implements TicketStore {
 
+    // Number of tickets currently available
     private int available = 1;
+
+    // Number of sold tickets
     private int sold = 0;
+
+    // Initial number of tickets used for validation/reporting
     private final int initial = 1;
 
+    // Executor that processes tasks sequentially on a single worker thread
     private final ExecutorService executor =
             Executors.newSingleThreadExecutor();
 
     @Override
     public void buy() {
+
+        // Submit the purchase operation to the single-thread executor
         Future<?> future = executor.submit(() -> {
+
+            // This code runs on the executor's worker thread
             if (available > 0) {
+
+                // Decrease number of available tickets
                 available--;
+
+                // Record the successful sale
                 sold++;
             }
         });
 
         try {
+            // Wait for the task to complete before returning
             future.get();
         } catch (Exception e) {
+
+            // Wrap checked exceptions into RuntimeException
             throw new RuntimeException(e);
         }
     }
 
     @Override
     public int getAvailable() {
+        // Returns the current number of available tickets
         return available;
     }
 
     @Override
     public int getSold() {
+        // Returns number of tickets recorded as sold
         return sold;
     }
 
     @Override
     public int getInitial() {
+        // Returns the initial number of tickets
         return initial;
     }
 
     @Override
     public String name() {
+        // Identifier used to distinguish this implementation in tests
         return "Single-thread Executor";
     }
 }
