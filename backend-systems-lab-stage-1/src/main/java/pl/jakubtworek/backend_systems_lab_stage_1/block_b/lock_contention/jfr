@@ -1,0 +1,5 @@
+javac *.java
+
+java \
+  -XX:StartFlightRecording=filename=lock-contention.jfr,duration=70s,settings=profile \
+  LockContentionCaseStudy

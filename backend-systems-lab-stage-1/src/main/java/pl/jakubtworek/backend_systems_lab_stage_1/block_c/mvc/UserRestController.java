@@ -1,6 +1,5 @@
 package pl.jakubtworek.backend_systems_lab_stage_1.block_c.mvc;
 
-import demo.mvc.auth.AuthUser;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import org.springframework.http.ResponseEntity;

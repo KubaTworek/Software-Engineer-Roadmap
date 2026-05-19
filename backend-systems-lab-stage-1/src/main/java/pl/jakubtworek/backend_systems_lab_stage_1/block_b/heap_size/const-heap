@@ -1,0 +1,7 @@
+java \
+  -Xms2g \
+  -Xmx2g \
+  -XX:+UseG1GC \
+  -Xlog:gc*,gc+heap=debug:file=fixed-heap.log:time,uptime,level,tags \
+  -XX:StartFlightRecording=filename=fixed-heap.jfr,settings=profile \
+  HeapResizeExperiment

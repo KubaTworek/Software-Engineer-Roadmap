@@ -1,6 +1,6 @@
 package pl.jakubtworek.backend_systems_lab_stage_1.block_a.kotlin.functional.java;
 
-import pl.jakubtworek.backend_systems_lab_stage_1.block_a.kotlin.readability.java.User;
+import pl.jakubtworek.backend_systems_lab_stage_1.block_a.kotlin.basics.readability.java.User;
 
 import java.util.List;
 import java.util.Map;

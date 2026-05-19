@@ -1,0 +1,9 @@
+javac *.java
+
+java \
+  -Xms1g \
+  -Xmx1g \
+  -XX:+UseG1GC \
+  -Xlog:gc*,gc+heap=debug:file=object-pooling-gc.log:time,uptime,level,tags \
+  -XX:StartFlightRecording=filename=object-pooling.jfr,duration=90s,settings=profile \
+  ObjectPoolingCaseStudy

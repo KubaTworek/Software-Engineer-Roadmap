@@ -1,0 +1,3 @@
+java \
+  -XX:StartFlightRecording=filename=profiling-case.jfr,duration=60s,settings=profile \
+  ProfilingCaseStudyApp

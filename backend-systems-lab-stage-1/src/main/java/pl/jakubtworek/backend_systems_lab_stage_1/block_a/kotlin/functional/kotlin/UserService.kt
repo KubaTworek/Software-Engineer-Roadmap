@@ -1,6 +1,6 @@
 package pl.jakubtworek.backend_systems_lab_stage_1.block_a.kotlin.functional.kotlin
 
-import pl.jakubtworek.backend_systems_lab_stage_1.block_a.kotlin.readability.kotlin.User
+import pl.jakubtworek.backend_systems_lab_stage_1.block_a.kotlin.basics.readability.kotlin.User
 
 // The UserService class shows functional-style programming in Kotlin.
 // Kotlin collections have functional operations directly available,
