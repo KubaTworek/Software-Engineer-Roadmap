@@ -1,0 +1,7 @@
+java \
+  -Xms256m \
+  -Xmx2g \
+  -XX:+UseG1GC \
+  -Xlog:gc*,gc+heap=debug:file=dynamic-heap.log:time,uptime,level,tags \
+  -XX:StartFlightRecording=filename=dynamic-heap.jfr,settings=profile \
+  HeapResizeExperiment

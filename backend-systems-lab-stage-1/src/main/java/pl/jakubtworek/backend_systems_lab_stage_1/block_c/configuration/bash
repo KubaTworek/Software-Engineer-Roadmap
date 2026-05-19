@@ -1,0 +1,12 @@
+# Example environment variable configuration
+
+export SPRING_PROFILES_ACTIVE=prod
+export SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/app
+
+# Example JVM arguments
+
+java -jar app.jar \
+  --spring.profiles.active=prod
+
+java -Dspring.profiles.active=prod \
+  -jar app.jar
