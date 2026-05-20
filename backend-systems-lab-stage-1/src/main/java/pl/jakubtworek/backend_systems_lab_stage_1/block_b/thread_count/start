@@ -1,9 +1,0 @@
-javac *.java
-
-java ThreadCountTuningExperiment --mode=cpu --threads=1
-java ThreadCountTuningExperiment --mode=cpu --threads=4
-java ThreadCountTuningExperiment --mode=cpu --threads=16
-
-java ThreadCountTuningExperiment --mode=wait --threads=1
-java ThreadCountTuningExperiment --mode=wait --threads=32
-java ThreadCountTuningExperiment --mode=wait --threads=128

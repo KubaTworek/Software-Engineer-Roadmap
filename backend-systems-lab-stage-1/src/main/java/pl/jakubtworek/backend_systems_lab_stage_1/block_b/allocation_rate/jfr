@@ -1,2 +1,0 @@
-javac *.java
-java -XX:StartFlightRecording=filename=allocation-profile.jfr,duration=60s,settings=profile AllocationProfileRunner

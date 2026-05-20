@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="CompilerConfiguration">
+    <option name="USE_RELEASE_OPTION" value="false" />
     <annotationProcessing>
       <profile name="Annotation profile for backend-systems-lab-stage-1" enabled="true">
         <sourceOutputDir name="target/generated-sources/annotations" />
@@ -14,11 +15,21 @@
         </processorPath>
         <module name="backend-systems-lab-stage-1" />
       </profile>
+      <profile name="Annotation profile for backend-engineering" enabled="true">
+        <sourceOutputDir name="target/generated-sources/annotations" />
+        <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
+        <outputRelativeToContentRoot value="true" />
+        <processorPath useClasspath="false">
+          <entry name="$MAVEN_REPOSITORY$/org/projectlombok/lombok/1.18.42/lombok-1.18.42.jar" />
+          <entry name="$MAVEN_REPOSITORY$/org/springframework/boot/spring-boot-configuration-processor/4.0.3/spring-boot-configuration-processor-4.0.3.jar" />
+        </processorPath>
+        <module name="backend-engineering" />
+      </profile>
     </annotationProcessing>
   </component>
   <component name="JavacSettings">
     <option name="ADDITIONAL_OPTIONS_OVERRIDE">
-      <module name="backend-systems-lab-stage-1" options="-parameters --add-exports java.base/jdk.internal.vm.annotation=ALL-UNNAMED" />
+      <module name="backend-engineering" options="-parameters --add-exports java.base/jdk.internal.vm.annotation=ALL-UNNAMED" />
     </option>
   </component>
 </project>

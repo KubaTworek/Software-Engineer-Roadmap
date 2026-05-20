@@ -1,5 +1,0 @@
-java -Xms2g -Xmx2g \
-     -XX:+UseG1GC \
-     -Xlog:gc*,safepoint:file=g1-gc.log:time,uptime,level,tags \
-     -XX:StartFlightRecording=filename=g1.jfr,settings=profile,duration=120s \
-     GcCaseStudyApp

@@ -1,5 +1,0 @@
-javac BenchmarkTarget.java NaiveBenchmark.java DeadCodeEliminationNaiveBenchmark.java ConstantFoldingNaiveBenchmark.java
-
-java NaiveBenchmark
-java DeadCodeEliminationNaiveBenchmark
-java ConstantFoldingNaiveBenchmark

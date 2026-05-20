@@ -1,3 +1,0 @@
-java \
-  --add-exports java.base/jdk.internal.vm.annotation=ALL-UNNAMED \
-  -jar target/benchmarks.jar

@@ -1,6 +1,0 @@
-javac *.java
-
-java -XX:+UnlockDiagnosticVMOptions ^
-     -XX:+PrintInlining ^
-     -XX:+PrintCompilation ^
-     MonomorphicCallSiteDemo
