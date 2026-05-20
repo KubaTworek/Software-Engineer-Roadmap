@@ -1,0 +1,11 @@
+Client
+  -> PlaceOrderCommand
+    -> PlaceOrderApplicationService
+      -> Order.create(...)
+      -> order.addLine(...)
+      -> order.place(expectedTotal)
+        -> OrderPlacedEvent recorded inside aggregate
+      -> orderRepository.save(order)
+      -> eventPublisher.publish(event)
+        -> OutboxMessage saved in the same transaction
+          -> OutboxRelay publishes message to broker later
