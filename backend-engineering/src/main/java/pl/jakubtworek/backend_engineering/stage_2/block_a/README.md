@@ -1,4 +1,4 @@
-# README — Architektura nowoczesnego systemu e-commerce oparta o DDD, Clean Architecture i modularność
+# Architektura nowoczesnego systemu e-commerce oparta o DDD, Clean Architecture i modularność
 
 ## Wprowadzenie
 

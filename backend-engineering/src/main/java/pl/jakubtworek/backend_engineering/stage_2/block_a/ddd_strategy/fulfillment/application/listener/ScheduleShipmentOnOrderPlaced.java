@@ -1,4 +1,4 @@
-package pl.jakubtworek.backend_engineering.stage_2.block_a.ddd_strategy;
+package pl.jakubtworek.backend_engineering.stage_2.block_a.ddd_strategy.fulfillment.application.listener;
 
 import pl.jakubtworek.backend_engineering.stage_2.block_a.ddd_strategy.fulfillment.application.service.ShipmentApplicationService;
 import pl.jakubtworek.backend_engineering.stage_2.block_a.ddd_strategy.sales.api.events.OrderPlacedEvent;
