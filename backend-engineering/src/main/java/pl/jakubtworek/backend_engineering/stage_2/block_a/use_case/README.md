@@ -138,5 +138,5 @@ Czwartym błędem jest przekazywanie obiektów infrastrukturalnych przez wszystk
 ## Podsumowanie
 
 Przepływ przypadku użycia w dobrze zaprojektowanym systemie powinien być prosty, ale rygorystycznie podzielony na odpowiedzialności. Komenda opisuje intencję. Serwis aplikacyjny orkiestruje scenariusz. Agregat wykonuje logikę biznesową i chroni invariants. Repozytorium zapisuje agregat. Publisher rejestruje zdarzenia, najlepiej przez transactional outbox. Osobny proces publikuje komunikaty do brokera. Read model CQRS jest aktualizowany asynchronicznie na podstawie zdarzeń.
-
+ 
 Takie podejście pozwala budować system, który jest odporny na zmiany technologiczne, łatwy do testowania i zgodny z zasadami DDD oraz Clean Architecture. Najważniejsza zasada brzmi: decyzje biznesowe należą do domeny, a infrastruktura jedynie umożliwia ich trwałe wykonanie i komunikację z resztą systemu.
