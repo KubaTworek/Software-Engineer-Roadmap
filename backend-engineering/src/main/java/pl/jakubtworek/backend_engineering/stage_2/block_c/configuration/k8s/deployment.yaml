@@ -1,0 +1,165 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-api
+  labels:
+    app: demo-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: demo-api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Keep all existing replicas available during rollout.
+      maxUnavailable: 0
+
+      # Allow one extra Pod during rollout.
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: demo-api
+    spec:
+      # Disable the API token when the application does not need Kubernetes API access.
+      automountServiceAccountToken: false
+
+      terminationGracePeriodSeconds: 30
+
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+
+      volumes:
+        - name: app-config
+          configMap:
+            name: demo-api-config
+            items:
+              - key: app.yaml
+                path: app.yaml
+
+        - name: scratch
+          emptyDir: {}
+
+        - name: data
+          persistentVolumeClaim:
+            claimName: demo-api-data
+
+      containers:
+        - name: app
+          image: demo-api-reliability:dev
+          imagePullPolicy: IfNotPresent
+
+          ports:
+            - name: http
+              containerPort: 8080
+
+          env:
+            - name: PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: demo-api-config
+                  key: PORT
+
+            - name: APP_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: demo-api-config
+                  key: APP_NAME
+
+            - name: STARTUP_DELAY
+              valueFrom:
+                configMapKeyRef:
+                  name: demo-api-config
+                  key: STARTUP_DELAY
+
+            - name: SHUTDOWN_TIMEOUT
+              valueFrom:
+                configMapKeyRef:
+                  name: demo-api-config
+                  key: SHUTDOWN_TIMEOUT
+
+            - name: MOUNTED_CONFIG_PATH
+              valueFrom:
+                configMapKeyRef:
+                  name: demo-api-config
+                  key: MOUNTED_CONFIG_PATH
+
+            - name: SCRATCH_DIRECTORY
+              valueFrom:
+                configMapKeyRef:
+                  name: demo-api-config
+                  key: SCRATCH_DIRECTORY
+
+            - name: PERSISTENT_DIRECTORY
+              valueFrom:
+                configMapKeyRef:
+                  name: demo-api-config
+                  key: PERSISTENT_DIRECTORY
+
+            - name: DB_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: demo-api-secret
+                  key: DB_DSN
+
+            - name: JAVA_OPTS
+              value: "-XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError"
+
+          volumeMounts:
+            - name: app-config
+              mountPath: /etc/app
+              readOnly: true
+
+            - name: scratch
+              mountPath: /tmp
+
+            - name: data
+              mountPath: /data
+
+          resources:
+            # CPU request is required for meaningful CPU-based HPA utilization.
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+
+          startupProbe:
+            httpGet:
+              path: /startupz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 12
+            timeoutSeconds: 2
+
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 2
+            timeoutSeconds: 2
+
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 2
+
+          securityContext:
+            allowPrivilegeEscalation: false
+
+            # The root filesystem is read-only.
+            # Writable paths must be explicitly mounted.
+            readOnlyRootFilesystem: true
+
+            capabilities:
+              drop:
+                - ALL

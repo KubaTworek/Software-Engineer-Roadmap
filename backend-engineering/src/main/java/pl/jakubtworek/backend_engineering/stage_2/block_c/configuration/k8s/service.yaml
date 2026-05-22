@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-api
+  labels:
+    app: demo-api
+spec:
+  type: ClusterIP
+
+  # The Service selects Pods created by the Deployment.
+  selector:
+    app: demo-api
+
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
