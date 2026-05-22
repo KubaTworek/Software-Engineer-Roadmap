@@ -1,0 +1,119 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-api
+  labels:
+    app: demo-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: demo-api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: demo-api
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: app-config
+          configMap:
+            name: demo-api-config
+            items:
+              - key: app.yaml
+                path: app.yaml
+        - name: tmp
+          emptyDir: {}
+      containers:
+        - name: app
+          image: demo-api:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: demo-api-config
+                  key: PORT
+            - name: APP_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: demo-api-config
+                  key: APP_NAME
+            - name: STARTUP_DELAY
+              valueFrom:
+                configMapKeyRef:
+                  name: demo-api-config
+                  key: STARTUP_DELAY
+            - name: SHUTDOWN_TIMEOUT
+              valueFrom:
+                configMapKeyRef:
+                  name: demo-api-config
+                  key: SHUTDOWN_TIMEOUT
+            - name: TMP_DIRECTORY
+              valueFrom:
+                configMapKeyRef:
+                  name: demo-api-config
+                  key: TMP_DIRECTORY
+            - name: APP_CONFIG_FILE
+              valueFrom:
+                configMapKeyRef:
+                  name: demo-api-config
+                  key: APP_CONFIG_FILE
+            - name: DB_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: demo-api-secret
+                  key: DB_DSN
+          volumeMounts:
+            - name: app-config
+              mountPath: /etc/app
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          startupProbe:
+            httpGet:
+              path: /startupz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 12
+            timeoutSeconds: 2
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 2
+            timeoutSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 2
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL

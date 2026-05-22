@@ -1,0 +1,11 @@
+target
+.git
+.gitignore
+.idea
+*.iml
+*.log
+.env
+k8s
+Dockerfile*
+README.md
+tmp*
