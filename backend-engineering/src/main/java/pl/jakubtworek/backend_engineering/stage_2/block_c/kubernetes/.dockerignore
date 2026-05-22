@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: demo-api-config
+data:
+  PORT: "8080"
+  APP_NAME: "demo-api"
+  STARTUP_DELAY: "5s"
+  SHUTDOWN_TIMEOUT: "25s"
+  TMP_DIRECTORY: "/tmp/demo-api"
+  APP_CONFIG_FILE: "/etc/app/app.yaml"
+  app.yaml: |
+    featureFlags:
+      exampleFeature: true
+    logging:
+      level: info

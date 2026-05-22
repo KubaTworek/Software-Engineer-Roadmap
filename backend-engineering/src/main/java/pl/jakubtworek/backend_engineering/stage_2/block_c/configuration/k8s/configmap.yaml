@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: demo-api-config
+data:
+  # Environment-style configuration is read only at process start.
+  PORT: "8080"
+  APP_NAME: "demo-api"
+  STARTUP_DELAY: "5s"
+  SHUTDOWN_TIMEOUT: "25s"
+  MOUNTED_CONFIG_PATH: "/etc/app/app.yaml"
+  SCRATCH_DIRECTORY: "/tmp/demo-api"
+  PERSISTENT_DIRECTORY: "/data/demo-api"
+
+  # File-style configuration can be mounted as a volume.
+  # The application must read the file again to observe eventual updates.
+  app.yaml: |
+    featureFlags:
+      experimental: true
+    server:
+      logLevel: info

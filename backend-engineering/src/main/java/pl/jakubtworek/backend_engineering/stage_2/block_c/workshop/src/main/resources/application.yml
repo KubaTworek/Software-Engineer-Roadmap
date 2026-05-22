@@ -1,0 +1,28 @@
+server:
+  port: ${PORT:8080}
+  address: ${BIND_ADDRESS:0.0.0.0}
+  shutdown: graceful
+
+spring:
+  application:
+    name: demo-api-workshop
+  lifecycle:
+    timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:25s}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+app:
+  name: ${APP_NAME:demo-api}
+  startup-delay: ${STARTUP_DELAY:5s}
+  port: ${PORT:8080}
+  bind-address: ${BIND_ADDRESS:0.0.0.0}
+  image-tag: ${IMAGE_TAG:dev}
+  commit-sha: ${COMMIT_SHA:local}

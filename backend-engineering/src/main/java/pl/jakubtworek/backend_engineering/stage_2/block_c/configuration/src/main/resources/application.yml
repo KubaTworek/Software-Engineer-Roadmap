@@ -1,0 +1,31 @@
+server:
+  port: ${PORT:8080}
+  shutdown: graceful
+
+spring:
+  application:
+    name: demo-api-reliability
+  lifecycle:
+    timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:25s}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+app:
+  name: ${APP_NAME:demo-api}
+  port: ${PORT:8080}
+  startup-delay: ${STARTUP_DELAY:5s}
+  shutdown-timeout: ${SHUTDOWN_TIMEOUT:25s}
+  mounted-config-path: ${MOUNTED_CONFIG_PATH:/etc/app/app.yaml}
+  scratch-directory: ${SCRATCH_DIRECTORY:/tmp/demo-api}
+  persistent-directory: ${PERSISTENT_DIRECTORY:/data/demo-api}
+
+secret:
+  db-dsn: ${DB_DSN:}

@@ -1,0 +1,24 @@
+server:
+  port: ${PORT:8080}
+  shutdown: graceful
+
+spring:
+  application:
+    name: k8s-app-concept-java
+  lifecycle:
+    timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:25s}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+app:
+  port: ${PORT:8080}
+  startup-delay: ${STARTUP_DELAY:5s}
+  shutdown-timeout: ${SHUTDOWN_TIMEOUT:25s}
