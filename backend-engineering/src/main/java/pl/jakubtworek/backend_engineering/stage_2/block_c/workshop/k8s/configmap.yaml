@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: demo-api-config
+data:
+  # The application must listen on 0.0.0.0 inside the container.
+  # Listening only on 127.0.0.1 commonly breaks probes and Service traffic.
+  BIND_ADDRESS: "0.0.0.0"
+
+  PORT: "8080"
+  APP_NAME: "demo-api"
+  STARTUP_DELAY: "5s"
+
+  # These values are normally injected by CI/CD.
+  IMAGE_TAG: "dev"
+  COMMIT_SHA: "local"

@@ -1,0 +1,32 @@
+# Demo API Workshop
+
+This project demonstrates a Kubernetes-friendly Java API for local development, CI/CD and debugging workflows.
+
+## Local kind workflow
+
+```bash
+kind create cluster --wait 60s
+docker build -t demo-api-workshop:dev .
+kind load docker-image demo-api-workshop:dev
+kubectl apply -f k8s/
+kubectl rollout status deployment/demo-api
+kubectl port-forward svc/demo-api 8080:80
+
+# Local minikube workflow
+minikube start
+kubectl apply -f k8s/
+minikube service demo-api --url
+
+# Debug flow
+
+Start with Kubernetes object state before entering the container.
+
+kubectl get pods -A -o wide
+kubectl describe pod <pod>
+kubectl events --for pod/<pod>
+kubectl logs <pod> -c app
+kubectl logs <pod> -c app -p
+kubectl get svc,endpointslices
+kubectl describe svc demo-api
+kubectl exec <pod> -c app -- printenv | sort
+kubectl debug <pod> -it --image=busybox
