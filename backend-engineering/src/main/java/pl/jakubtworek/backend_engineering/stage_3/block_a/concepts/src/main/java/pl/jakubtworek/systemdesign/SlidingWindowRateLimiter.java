@@ -1,4 +1,4 @@
-package pl.jakubtworek.backend_engineering.stage_3.block_a.system_design.src.main.java.pl.jakubtworek.concepts;
+package pl.jakubtworek.backend_engineering.stage_3.block_a.concepts.src.main.java.pl.jakubtworek.systemdesign;
 
 import java.time.Duration;
 import java.time.Instant;
