@@ -21,7 +21,7 @@ public class EventSchemaPolicy {
             if (change.changeType() == SchemaChangeType.FIELD_REMOVED) {
                 return SchemaCompatibilityResult.failure(
                         CompatibilityMode.BACKWARD,
-                        "Field removal in event " + eventType + " is not allowed without migration."
+                        "Field removal in event " + eventType + " is not isAllowed without migration."
                 );
             }
 

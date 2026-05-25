@@ -1,36 +1,52 @@
 package pl.jakubtworek.backend_engineering.stage_3.block_a.metrics.src.main.java.com.example.systemdesign.metrics;
 
-import java.time.Duration;
-
 /**
- * Represents a starting alert rule.
+ * One executable alert rule.
  *
- * Thresholds in system design are usually not universal constants.
- * They are initial heuristics that must be calibrated against the system's SLO,
- * baseline, traffic profile, and error budget.
+ * The rule evaluates a MetricSnapshot and returns an AlertResult.
  */
-public record AlertRule(
-        MetricDefinition metric,
-        String condition,
-        Duration sustainedFor,
-        AlertSeverity severity,
-        String interpretation
-) {
-    public AlertRule {
-        if (metric == null) {
-            throw new IllegalArgumentException("Metric is required");
+public class AlertRule {
+
+    private final String name;
+    private final AlertSeverity severity;
+    private final AlertCondition condition;
+    private final String explanationWhenFiring;
+    private final String explanationWhenHealthy;
+
+    public AlertRule(
+            String name,
+            AlertSeverity severity,
+            AlertCondition condition,
+            String explanationWhenFiring,
+            String explanationWhenHealthy
+    ) {
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("name is required");
         }
-        if (condition == null || condition.isBlank()) {
-            throw new IllegalArgumentException("Condition is required");
-        }
-        if (sustainedFor == null || sustainedFor.isNegative() || sustainedFor.isZero()) {
-            throw new IllegalArgumentException("Sustained duration must be positive");
-        }
+
         if (severity == null) {
-            throw new IllegalArgumentException("Severity is required");
+            throw new IllegalArgumentException("severity is required");
         }
-        if (interpretation == null || interpretation.isBlank()) {
-            throw new IllegalArgumentException("Interpretation is required");
+
+        if (condition == null) {
+            throw new IllegalArgumentException("condition is required");
         }
+
+        this.name = name;
+        this.severity = severity;
+        this.condition = condition;
+        this.explanationWhenFiring = explanationWhenFiring;
+        this.explanationWhenHealthy = explanationWhenHealthy;
+    }
+
+    public AlertResult evaluate(MetricSnapshot snapshot) {
+        boolean firing = condition.matches(snapshot);
+
+        return new AlertResult(
+                name,
+                severity,
+                firing,
+                firing ? explanationWhenFiring : explanationWhenHealthy
+        );
     }
 }
