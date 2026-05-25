@@ -3,7 +3,7 @@ package pl.jakubtworek.backend_engineering.stage_2.block_b.versioning.schema;
 /**
  * Defines compatibility policies used by a schema registry.
  *
- * These values describe how new versions of an event schema are allowed
+ * These values describe how new versions of an event schema are isAllowed
  * to evolve compared to previous versions.
  */
 public enum CompatibilityMode {

@@ -16,7 +16,7 @@ public class OrderService {
     }
 
     /**
-     * Access allowed when user has exact authority ORDER_READ
+     * Access isAllowed when user has exact authority ORDER_READ
      * or role ADMIN.
      *
      * hasRole("ADMIN") checks for authority ROLE_ADMIN.

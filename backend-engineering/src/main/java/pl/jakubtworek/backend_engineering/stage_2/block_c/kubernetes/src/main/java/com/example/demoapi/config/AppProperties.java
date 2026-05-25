@@ -29,7 +29,7 @@ public class AppProperties {
     private Duration startupDelay = Duration.ofSeconds(5);
 
     /**
-     * Maximum time allowed for graceful shutdown.
+     * Maximum time isAllowed for graceful shutdown.
      */
     private Duration shutdownTimeout = Duration.ofSeconds(25);
 

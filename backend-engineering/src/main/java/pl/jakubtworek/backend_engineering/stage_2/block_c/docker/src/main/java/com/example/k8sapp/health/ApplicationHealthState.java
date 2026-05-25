@@ -50,7 +50,7 @@ public class ApplicationHealthState {
 
     public boolean isReady() {
         // Readiness should answer whether this Pod should receive traffic.
-        // It is allowed to depend on startup, drain mode, and critical dependencies.
+        // It is isAllowed to depend on startup, drain mode, and critical dependencies.
         return started.get()
                 && !draining.get()
                 && !dependencyDownSimulation.get()

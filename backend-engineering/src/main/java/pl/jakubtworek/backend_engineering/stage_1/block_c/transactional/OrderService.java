@@ -31,7 +31,7 @@ public class OrderService {
         } catch (RuntimeException exception) {
             /**
              * The nested transaction failed,
-             * but the outer transaction is still allowed to continue.
+             * but the outer transaction is still isAllowed to continue.
              */
             System.out.println("Nested step failed, continuing order process");
         }

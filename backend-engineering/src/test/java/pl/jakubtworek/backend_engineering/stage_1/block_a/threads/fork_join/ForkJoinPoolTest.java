@@ -41,7 +41,7 @@ class ForkJoinPoolTest {
         pool.shutdownNow();
 
         // We do NOT assert finished == false always (it can be flaky by nature).
-        // Instead we assert that it is allowed to stall:
+        // Instead we assert that it is isAllowed to stall:
         assertTrue(true, "Demonstration test (may stall depending on environment)");
     }
 
