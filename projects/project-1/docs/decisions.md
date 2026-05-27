@@ -17,3 +17,24 @@ Reason: limited capacity and overselling are transactional problems. The base pr
 The base reservation flow decrements capacity with a guarded update.
 
 Reason: it is a simple and robust baseline against overselling. Later stages should still implement naive and lock-based variants for educational comparison.
+
+## Etap 2 — concurrency strategy
+
+Dla produkcyjnego flow rezerwacji preferujemy atomowy update SQL:
+
+```sql
+UPDATE capacity_pools
+SET available_capacity = available_capacity - 1
+WHERE event_id = ?
+  AND available_capacity > 0;
+```
+
+Powód: problem dostępności jest prostym licznikiem, więc warunek biznesowy i modyfikacja mogą być jedną operacją bazodanową. To ogranicza ryzyko race condition bez rozbudowanej logiki blokowania w aplikacji.
+
+Pozostałe strategie są zostawione w kodzie jako materiał edukacyjny:
+
+- `NaiveReservationService` pokazuje overselling i lost update,
+- `SynchronizedReservationService` pokazuje lokalną ochronę w jednej JVM,
+- `OptimisticLockingReservationService` pokazuje użycie `@Version` i retry,
+- `PessimisticLockingReservationService` pokazuje odpowiednik `SELECT ... FOR UPDATE`,
+- `AtomicSqlReservationService` pokazuje preferowaną strategię dla tego projektu.

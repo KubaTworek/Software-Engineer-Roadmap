@@ -35,6 +35,20 @@ public class CapacityPool {
         this.availableCapacity = totalCapacity;
     }
 
+    public void reserveOne() {
+        if (availableCapacity <= 0) {
+            throw new IllegalStateException("No available capacity");
+        }
+        this.availableCapacity--;
+    }
+
+    public void releaseOne() {
+        if (availableCapacity >= totalCapacity) {
+            throw new IllegalStateException("Capacity cannot exceed total capacity");
+        }
+        this.availableCapacity++;
+    }
+
     public UUID getId() { return id; }
     public Event getEvent() { return event; }
     public int getTotalCapacity() { return totalCapacity; }
