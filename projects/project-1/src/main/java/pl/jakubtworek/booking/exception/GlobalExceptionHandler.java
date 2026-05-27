@@ -1,5 +1,6 @@
 package pl.jakubtworek.booking.exception;
 
+import org.hibernate.LazyInitializationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -47,6 +48,12 @@ public class GlobalExceptionHandler {
         }
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(ErrorResponse.of(500, "ASYNC_ERROR", "Async operation failed"));
+    }
+
+    @ExceptionHandler(LazyInitializationException.class)
+    ResponseEntity<ErrorResponse> handleLazyInitialization(LazyInitializationException exception) {
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(ErrorResponse.of(500, "LAZY_INITIALIZATION", "Lazy relation was accessed outside an active persistence context"));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

@@ -42,3 +42,31 @@ POST http://localhost:8080/api/reservations/{{reservationId}}/confirm-async?paym
 
 ### Async confirm with declined payment, expected 400 and reservation remains PENDING
 POST http://localhost:8080/api/reservations/{{reservationId}}/confirm-async?paymentScenario=DECLINED
+
+### Stage 4: transactional self-invocation pitfall
+GET http://localhost:8080/api/spring-pitfalls/transactional/self-invocation
+
+### Stage 4: lazy loading broken endpoint
+# Replace reservationId with an existing reservation id.
+GET http://localhost:8080/api/spring-pitfalls/reservations/{{reservationId}}/lazy-broken
+
+### Stage 4: lazy loading fixed by transaction boundary
+GET http://localhost:8080/api/spring-pitfalls/reservations/{{reservationId}}/lazy-fixed-transaction
+
+### Stage 4: lazy loading fixed by DTO projection
+GET http://localhost:8080/api/spring-pitfalls/reservations/{{reservationId}}/lazy-fixed-projection
+
+### Stage 4: lazy loading fixed by fetch join
+GET http://localhost:8080/api/spring-pitfalls/reservations/{{reservationId}}/lazy-fixed-fetch-join
+
+### Stage 4: lazy loading fixed by entity graph
+GET http://localhost:8080/api/spring-pitfalls/reservations/{{reservationId}}/lazy-fixed-entity-graph
+
+### Stage 4: AOP through this, aspect bypassed
+POST http://localhost:8080/api/spring-pitfalls/aop/through-this?input=spring
+
+### Stage 4: AOP through proxy, aspect executed
+POST http://localhost:8080/api/spring-pitfalls/aop/through-proxy?input=spring
+
+### Stage 4: bean lifecycle
+GET http://localhost:8080/api/spring-pitfalls/bean-lifecycle

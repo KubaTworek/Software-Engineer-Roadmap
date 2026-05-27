@@ -21,7 +21,7 @@ public class PaymentProviderClient {
         Future<?> runningTask = executor.submit(() -> {
             try {
                 PaymentValidationResult result = switch (scenario) {
-                    case APPROVED -> PaymentValidationResult.approved("APPROVED");
+                    case APPROVED -> PaymentValidationResult.approved();
                     case DECLINED -> PaymentValidationResult.declined("PAYMENT_DECLINED");
                     case FAILING -> throw new IllegalStateException("Payment provider technical failure");
                     case SLOW -> slowPaymentValidation();
@@ -48,7 +48,7 @@ public class PaymentProviderClient {
     private PaymentValidationResult slowPaymentValidation() throws InterruptedException {
         lastSlowCallInterrupted.set(false);
         Thread.sleep(5_000);
-        return PaymentValidationResult.approved("APPROVED");
+        return PaymentValidationResult.approved();
     }
 
     public boolean wasLastSlowCallInterrupted() {

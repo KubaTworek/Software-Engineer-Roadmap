@@ -70,3 +70,11 @@ The system should not confirm a reservation when payment validation is unknown. 
 Trade-off:
 
 In a larger production model, payment state should probably be separated from reservation state. Here it is intentionally kept simpler because the project is still a basic monolith.
+
+## Stage 4 — Spring proxy pitfalls
+
+Decision: examples of broken Spring behavior are implemented in `service.pitfall` and exposed under `/api/spring-pitfalls`.
+
+Reason: these examples are intentionally educational. They should not pollute the main reservation flow. The main business flow should stay boring and predictable, while Stage 4 demonstrates proxy boundaries, transaction boundaries, lazy loading failures and AOP behavior in isolation.
+
+Important trade-off: self-injection through `ObjectProvider` is used only to demonstrate that proxy invocation changes behavior. It is not a default design recommendation.
