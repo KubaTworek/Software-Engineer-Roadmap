@@ -1,0 +1,32 @@
+### Create event
+POST http://localhost:8080/api/events
+Content-Type: application/json
+
+{
+  "name": "Backend Engineering Workshop",
+  "city": "Warsaw",
+  "category": "education",
+  "startsAt": "2026-09-01T10:00:00+02:00",
+  "totalCapacity": 10
+}
+
+### Get event
+GET http://localhost:8080/api/events/{{eventId}}
+
+### Create reservation
+POST http://localhost:8080/api/events/{{eventId}}/reservations
+Content-Type: application/json
+
+{
+  "customerFullName": "Jan Kowalski",
+  "customerEmail": "jan.kowalski@example.com"
+}
+
+### Confirm reservation
+POST http://localhost:8080/api/reservations/{{reservationId}}/confirm
+
+### Cancel reservation
+POST http://localhost:8080/api/reservations/{{reservationId}}/cancel
+
+### Get reservation
+GET http://localhost:8080/api/reservations/{{reservationId}}

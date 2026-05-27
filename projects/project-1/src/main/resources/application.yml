@@ -1,0 +1,25 @@
+spring:
+  application:
+    name: booking-capacity-platform
+  datasource:
+    url: jdbc:postgresql://localhost:5432/booking_capacity
+    username: booking
+    password: booking
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+
+server:
+  port: 8080
+
+logging:
+  level:
+    org.hibernate.SQL: INFO
