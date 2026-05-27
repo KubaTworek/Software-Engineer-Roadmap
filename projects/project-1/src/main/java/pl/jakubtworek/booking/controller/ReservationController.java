@@ -6,6 +6,8 @@ import org.springframework.web.bind.annotation.*;
 import pl.jakubtworek.booking.dto.ReservationCreateRequest;
 import pl.jakubtworek.booking.dto.ReservationResponse;
 import pl.jakubtworek.booking.service.ReservationService;
+import pl.jakubtworek.booking.service.async.AsyncReservationService;
+import pl.jakubtworek.booking.service.async.PaymentScenario;
 
 import java.util.UUID;
 
@@ -13,9 +15,11 @@ import java.util.UUID;
 @RequestMapping("/api")
 public class ReservationController {
     private final ReservationService reservationService;
+    private final AsyncReservationService asyncReservationService;
 
-    public ReservationController(ReservationService reservationService) {
+    public ReservationController(ReservationService reservationService, AsyncReservationService asyncReservationService) {
         this.reservationService = reservationService;
+        this.asyncReservationService = asyncReservationService;
     }
 
     @PostMapping("/events/{eventId}/reservations")
@@ -27,6 +31,14 @@ public class ReservationController {
     @PostMapping("/reservations/{reservationId}/confirm")
     public ReservationResponse confirm(@PathVariable UUID reservationId) {
         return reservationService.confirm(reservationId);
+    }
+
+    @PostMapping("/reservations/{reservationId}/confirm-async")
+    public ReservationResponse confirmAsync(
+            @PathVariable UUID reservationId,
+            @RequestParam(defaultValue = "APPROVED") PaymentScenario paymentScenario
+    ) {
+        return asyncReservationService.confirm(reservationId, paymentScenario).join();
     }
 
     @PostMapping("/reservations/{reservationId}/cancel")

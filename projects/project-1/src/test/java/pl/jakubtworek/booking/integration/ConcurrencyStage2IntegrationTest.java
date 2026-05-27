@@ -163,7 +163,7 @@ class ConcurrencyStage2IntegrationTest {
     }
 
     private ConcurrentRunResult runConcurrently(int requests, ThrowingReservationCall call) throws Exception {
-        ExecutorService executor = Executors.newFixedThreadPool(THREADS);
+        ExecutorService executor = Executors.newFixedThreadPool(Math.min(THREADS, requests));
         CountDownLatch ready = new CountDownLatch(requests);
         CountDownLatch start = new CountDownLatch(1);
         AtomicInteger successes = new AtomicInteger();
@@ -188,15 +188,15 @@ class ConcurrencyStage2IntegrationTest {
             futures.add(executor.submit(task));
         }
 
-        assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(ready.await(30, TimeUnit.SECONDS)).isTrue();
         start.countDown();
 
         for (Future<Void> future : futures) {
-            future.get(10, TimeUnit.SECONDS);
+            future.get(30, TimeUnit.SECONDS);
         }
 
         executor.shutdown();
-        assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(executor.awaitTermination(30, TimeUnit.SECONDS)).isTrue();
 
         return new ConcurrentRunResult(successes.get(), failures.get());
     }

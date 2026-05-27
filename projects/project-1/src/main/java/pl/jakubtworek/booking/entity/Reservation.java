@@ -50,6 +50,13 @@ public class Reservation {
         this.confirmedAt = Instant.now();
     }
 
+    public void markPaymentTimeout() {
+        if (status != ReservationStatus.PENDING) {
+            throw new IllegalStateException("Only pending reservation can be marked as payment timeout");
+        }
+        this.status = ReservationStatus.PAYMENT_TIMEOUT;
+    }
+
     public boolean cancel() {
         if (status == ReservationStatus.CANCELLED) {
             return false;

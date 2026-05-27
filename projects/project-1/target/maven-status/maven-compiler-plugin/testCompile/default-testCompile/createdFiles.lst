@@ -1,0 +1,13 @@
+pl\jakubtworek\booking\integration\EventServiceIntegrationTest.class
+pl\jakubtworek\booking\integration\ApiIntegrationTest.class
+pl\jakubtworek\booking\ReservationServiceIntegrationTest.class
+pl\jakubtworek\booking\integration\ConcurrencyStage2IntegrationTest.class
+pl\jakubtworek\booking\integration\ReservationServiceIntegrationTest.class
+pl\jakubtworek\booking\integration\AsyncStage3IntegrationTest.class
+pl\jakubtworek\booking\integration\ConcurrencyStage2IntegrationTest$ThrowingReservationCall.class
+pl\jakubtworek\booking\unit\ReservationEntityTest.class
+pl\jakubtworek\booking\integration\ApiMvpIntegrationTest.class
+pl\jakubtworek\booking\integration\ApiAsyncStage3IntegrationTest.class
+pl\jakubtworek\booking\integration\ConcurrencyStage2IntegrationTest$ConcurrentRunResult.class
+pl\jakubtworek\booking\integration\ReservationServiceMvpIntegrationTest.class
+pl\jakubtworek\booking\BookingCapacityPlatformApplicationTests.class

@@ -30,3 +30,15 @@ POST http://localhost:8080/api/reservations/{{reservationId}}/cancel
 
 ### Get reservation
 GET http://localhost:8080/api/reservations/{{reservationId}}
+
+### Async confirm with approved payment
+POST http://localhost:8080/api/reservations/{{reservationId}}/confirm-async?paymentScenario=APPROVED
+
+### Async confirm with slow payment provider, expected PAYMENT_TIMEOUT after ~2s
+POST http://localhost:8080/api/reservations/{{reservationId}}/confirm-async?paymentScenario=SLOW
+
+### Async confirm with failing payment provider, expected PAYMENT_TIMEOUT fallback
+POST http://localhost:8080/api/reservations/{{reservationId}}/confirm-async?paymentScenario=FAILING
+
+### Async confirm with declined payment, expected 400 and reservation remains PENDING
+POST http://localhost:8080/api/reservations/{{reservationId}}/confirm-async?paymentScenario=DECLINED

@@ -10,6 +10,7 @@ import pl.jakubtworek.booking.dto.FieldErrorResponse;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.CompletionException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -30,6 +31,22 @@ public class GlobalExceptionHandler {
     ResponseEntity<ErrorResponse> handleBusinessRule(RuntimeException exception) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ErrorResponse.of(400, "BUSINESS_RULE_VIOLATION", exception.getMessage()));
+    }
+
+    @ExceptionHandler(CompletionException.class)
+    ResponseEntity<ErrorResponse> handleCompletionException(CompletionException exception) {
+        Throwable cause = exception.getCause();
+        if (cause instanceof NotFoundException notFound) {
+            return handleNotFound(notFound);
+        }
+        if (cause instanceof CapacityUnavailableException capacityUnavailable) {
+            return handleCapacityUnavailable(capacityUnavailable);
+        }
+        if (cause instanceof BusinessRuleException businessRule) {
+            return handleBusinessRule(businessRule);
+        }
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(ErrorResponse.of(500, "ASYNC_ERROR", "Async operation failed"));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
