@@ -1,0 +1,21 @@
+# Key-value stores
+
+Key-value store to najprostszy i jednocześnie bardzo wydajny typ bazy NoSQL. Dane są przechowywane jako para: klucz i wartość. Aplikacja zna klucz, przekazuje go do bazy, a baza zwraca przypisaną wartość. Przykładami takich rozwiązań są Redis, Memcached, Riak, a w niektórych scenariuszach również DynamoDB używane jako prosty lookup po kluczu.
+
+Największą zaletą key-value store jest prostota dostępu. Jeśli access pattern brzmi „mam identyfikator sesji i chcę pobrać sesję”, model key-value pasuje idealnie. Klucz może wyglądać tak: `session:abc123`, a wartością może być JSON z `userId`, rolami i czasem wygaśnięcia. Baza nie musi planować złożonego query ani łączyć danych z wielu miejsc. Ma znaleźć wartość pod konkretnym kluczem. Dzięki temu odczyty i zapisy mogą być bardzo szybkie.
+
+Typowym zastosowaniem jest cache. Aplikacja może trzymać wynik kosztownego zapytania pod kluczem `user-profile-cache:{userId}`. Przy kolejnym żądaniu najpierw sprawdza cache, a dopiero jeśli nie znajdzie danych, sięga do głównej bazy. To zmniejsza obciążenie systemu źródłowego i obniża latency. Trzeba jednak pamiętać, że cache wprowadza problemy: dane mogą być stare, trzeba je unieważniać, może pojawić się cache stampede, a źle zaprojektowany cache może tylko ukrywać problem z głównym modelem danych.
+
+Drugim bardzo częstym zastosowaniem są sesje użytkowników. Redis dobrze się do tego nadaje, bo wspiera TTL, czyli automatyczne wygasanie kluczy. Sesja może być zapisana pod kluczem `session:{sessionId}`, a po określonym czasie zniknąć bez ręcznego sprzątania. To samo podejście pasuje do tokenów resetowania hasła, kodów jednorazowych, tymczasowych blokad i krótkotrwałych danych aplikacyjnych.
+
+Rate limiting to kolejny dobry przykład. Klucz może mieć postać `rate-limit:{userId}:{window}`, a wartością jest licznik requestów w danym oknie czasowym. Przy każdym żądaniu aplikacja zwiększa licznik i sprawdza, czy limit został przekroczony. TTL usuwa licznik po zakończeniu okna. Taki model jest prosty, szybki i bardzo dobrze pasuje do key-value store.
+
+Najważniejszym elementem projektowania jest klucz. Dobry klucz powinien być jednoznaczny, przewidywalny i zgodny z access patternem. Jeżeli aplikacja będzie pobierać sesję po `sessionId`, klucz powinien zawierać `sessionId`. Jeżeli będzie pobierać profil użytkownika po `userId`, klucz powinien zawierać `userId`. Problemy zaczynają się wtedy, gdy chcemy zadawać pytania, których klucz nie wspiera.
+
+Key-value store nie jest dobrym wyborem do złożonych zapytań. Pytanie „daj mi wszystkie sesje użytkowników z rolą ADMIN” jest trudne, jeśli jedynym kluczem jest `session:{sessionId}`. Baza nie ma naturalnego sposobu filtrowania po roli, chyba że utrzymujemy dodatkowe struktury pomocnicze. Podobnie problematyczne są joiny, raporty, wyszukiwanie tekstowe, filtrowanie po wielu polach i ad hoc query. Jeśli takich operacji jest dużo, key-value store prawdopodobnie nie powinien być główną bazą dla tych danych.
+
+Warto też uważać z distributed lockami. Redis bywa używany do locków rozproszonych, ale to obszar, w którym łatwo o błędne poczucie bezpieczeństwa. Lock może wygasnąć, gdy proces nadal wykonuje operację. Może dojść do opóźnień sieciowych, retry albo konfliktów czasowych. W krytycznych operacjach finansowych lub magazynowych często bezpieczniej jest używać mechanizmów transakcyjnych głównej bazy danych albo specjalnie zaprojektowanych protokołów.
+
+Key-value store często jest elementem pomocniczym, a nie jedynym źródłem prawdy. Redis jako cache, warstwa sesji lub licznik jest bardzo użyteczny. Redis jako główna baza dla danych wymagających trwałych relacji, raportowania i silnych gwarancji spójności może być złym wyborem. Oczywiście wiele zależy od konfiguracji trwałości, replikacji i wymagań systemu, ale domyślnie trzeba rozdzielać rolę cache od roli primary database.
+
+Najważniejsze pytanie brzmi: czy znam klucz, po którym chcę pobrać dane? Jeśli tak, key-value store może być świetnym wyborem. Jeśli muszę często wyszukiwać, filtrować, sortować i łączyć dane według różnych kryteriów, ten model szybko stanie się ograniczeniem. Siła key-value store wynika z prostoty, ale ta sama prostota jest też jego największym ograniczeniem.
