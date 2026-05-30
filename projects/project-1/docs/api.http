@@ -97,3 +97,27 @@ GET http://localhost:8080/api/events/00000000-0000-0000-0000-000000000000/reserv
 
 ### Stage 5 — EXPLAIN ANALYZE for event search, PostgreSQL only
 GET http://localhost:8080/api/performance/explain/event-search?city=Warsaw&category=music&from=2026-06-01T00:00:00Z
+
+### Stage 6: short reservation burst
+POST http://localhost:8080/api/profiling/events/{{eventId}}/short-reservations?requests=1000
+
+### Stage 6: parallel reservation burst
+POST http://localhost:8080/api/profiling/events/{{eventId}}/parallel-reservations?requests=1000&threads=64
+
+### Stage 6: organization report profiling
+GET http://localhost:8080/api/profiling/organizations/{{organizationId}}/report
+
+### Stage 6: allocation pressure
+GET http://localhost:8080/api/profiling/allocations?objects=500000
+
+### Stage 6: lock contention
+GET http://localhost:8080/api/profiling/lock-contention?threads=64&incrementsPerThread=100000
+
+### Stage 6: CPU thread pool experiment
+GET http://localhost:8080/api/profiling/thread-pool?threads=8&tasks=500&workloadType=CPU
+
+### Stage 6: IO thread pool experiment
+GET http://localhost:8080/api/profiling/thread-pool?threads=64&tasks=500&workloadType=IO
+
+### Stage 6: BigDecimal allocation scenario
+GET http://localhost:8080/api/profiling/big-decimal-allocation?iterations=500000

@@ -137,3 +137,14 @@ SELECT id FROM customers LIMIT 1;
 ## Czego oczekiwać
 
 Dla event search po dodaniu indeksu powinieneś zobaczyć mniej skanowanych wierszy i plan oparty o indeks. Dla dużego offsetu nadal możesz zobaczyć koszt rosnący wraz z numerem strony — indeks pomaga, ale nie usuwa fundamentalnego kosztu `OFFSET`. Keyset powinien być stabilniejszy przy dalszych stronach.
+
+
+## Hibernate batch fetching note
+
+Dla redukcji części problemów N+1 projekt używa globalnej właściwości:
+
+```yaml
+spring.jpa.properties.hibernate.default_batch_fetch_size: 50
+```
+
+Nie używamy `@BatchSize` bezpośrednio na polach `@ManyToOne`, ponieważ w Hibernate 6 / Spring Boot 3 może to powodować błąd startu kontekstu przy przetwarzaniu adnotacji. Dla głównych zapytań Stage 5 nadal preferowane są jawne strategie: DTO projection, `fetch join` albo `@EntityGraph`.

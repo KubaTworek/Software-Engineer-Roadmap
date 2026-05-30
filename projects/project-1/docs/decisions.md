@@ -96,3 +96,17 @@ Offset pagination jest prosta dla UI i pozwala skakać do strony N, ale źle ska
 ### Decyzja: N+1 pokazujemy celowo
 
 Endpoint `n-plus-one` zostaje jako edukacyjna pułapka. Produkcyjny wariant powinien używać DTO projection, `fetch join` albo `@EntityGraph`, zależnie od konkretnego przypadku.
+
+## Stage 6 — JVM i profilowanie
+
+### Decyzja: endpointy profilujące są syntetyczne i edukacyjne
+
+Endpointy `/api/profiling/**` nie są częścią produkcyjnego API. Ich celem jest wygenerowanie kontrolowanego obciążenia, które można obserwować przez JFR, VisualVM, IntelliJ Profiler, GC logs i PostgreSQL `EXPLAIN ANALYZE`.
+
+### Decyzja: JMH jest osobnym projektem Mavenowym
+
+Benchmarki JMH są w katalogu `benchmarks`, żeby zwykłe `mvn test` nie uruchamiało mikrobenchmarków. Testy aplikacyjne sprawdzają tylko, czy scenariusze profilujące działają. Rzeczywiste pomiary wykonuje się przez JMH albo profiler.
+
+### Decyzja: nie mieszamy testów funkcjonalnych z pomiarami performance
+
+Test `JvmProfilingStage6IntegrationTest` nie udowadnia wydajności. Potwierdza jedynie, że scenariusze można uruchomić. Wnioski performance muszą pochodzić z JFR, GC logów, JMH albo `EXPLAIN ANALYZE`.

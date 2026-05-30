@@ -8,8 +8,11 @@ pl\jakubtworek\booking\service\pitfall\MeasuredPitfallService.class
 pl\jakubtworek\booking\repository\CapacityPoolRepository.class
 pl\jakubtworek\booking\performance\PerformanceDatasetGenerator$Binder.class
 pl\jakubtworek\booking\repository\OutboundMessageRepository.class
+pl\jakubtworek\booking\dto\profiling\ProfilingReservationResponse.class
 pl\jakubtworek\booking\performance\PerformanceDatasetGenerator.class
+pl\jakubtworek\booking\dto\profiling\ThreadPoolExperimentResponse.class
 pl\jakubtworek\booking\entity\ReservationStatus.class
+pl\jakubtworek\booking\service\profiling\JvmProfilingService.class
 pl\jakubtworek\booking\controller\performance\SqlPerformanceController.class
 pl\jakubtworek\booking\dto\ExplainAnalyzeResponse.class
 pl\jakubtworek\booking\aop\Measured.class
@@ -30,6 +33,7 @@ pl\jakubtworek\booking\service\async\ReservationStatusService.class
 pl\jakubtworek\booking\exception\NotFoundException.class
 pl\jakubtworek\booking\service\concurrency\OptimisticLockingReservationService.class
 pl\jakubtworek\booking\entity\Organization.class
+pl\jakubtworek\booking\dto\profiling\OrganizationReportProfilingResponse.class
 pl\jakubtworek\booking\repository\AuditLogRepository.class
 pl\jakubtworek\booking\entity\AuditLog.class
 pl\jakubtworek\booking\service\async\PaymentProviderClient.class
@@ -46,6 +50,7 @@ pl\jakubtworek\booking\dto\KeysetReservationPageResponse.class
 pl\jakubtworek\booking\dto\EventCreateRequest.class
 pl\jakubtworek\booking\controller\EventController.class
 pl\jakubtworek\booking\dto\EventResponse.class
+pl\jakubtworek\booking\dto\profiling\ProfilingRunResponse.class
 pl\jakubtworek\booking\service\async\AsyncConfirmationResult.class
 pl\jakubtworek\booking\dto\EventSearchResponse.class
 pl\jakubtworek\booking\entity\Customer.class
@@ -60,14 +65,17 @@ pl\jakubtworek\booking\service\async\DeliverySummary.class
 pl\jakubtworek\booking\service\pitfall\BeanLifecycleView.class
 pl\jakubtworek\booking\service\pitfall\SelfInvocationPitfallService.class
 pl\jakubtworek\booking\service\async\PaymentScenario.class
+pl\jakubtworek\booking\dto\profiling\LockContentionResponse.class
 pl\jakubtworek\booking\controller\pitfall\SpringPitfallController.class
 pl\jakubtworek\booking\service\async\SideEffectResult.class
+pl\jakubtworek\booking\controller\profiling\JvmProfilingController.class
 pl\jakubtworek\booking\service\pitfall\BeanLifecycleProbe.class
 pl\jakubtworek\booking\service\async\AsyncReservationService$SideEffects.class
 pl\jakubtworek\booking\entity\EventStatus.class
 pl\jakubtworek\booking\service\concurrency\NaiveReservationService.class
 pl\jakubtworek\booking\controller\ReservationController.class
 pl\jakubtworek\booking\aop\MeasuredCall.class
+pl\jakubtworek\booking\dto\profiling\AllocationPressureResponse.class
 pl\jakubtworek\booking\repository\ReservationRepository.class
 pl\jakubtworek\booking\entity\OutboundMessage.class
 pl\jakubtworek\booking\service\async\AuditLogService.class

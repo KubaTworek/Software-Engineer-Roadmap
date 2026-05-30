@@ -19,6 +19,7 @@
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
         <module name="project-1" />
+        <module name="booking-capacity-platform-benchmarks" />
         <module name="booking-capacity-platform" />
       </profile>
     </annotationProcessing>

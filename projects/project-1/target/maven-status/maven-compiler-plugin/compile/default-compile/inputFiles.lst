@@ -7,6 +7,7 @@ C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\mai
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\controller\EventController.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\controller\performance\SqlPerformanceController.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\controller\pitfall\SpringPitfallController.java
+C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\controller\profiling\JvmProfilingController.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\controller\ReservationController.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\dto\ErrorResponse.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\dto\EventCreateRequest.java
@@ -16,6 +17,12 @@ C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\mai
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\dto\ExplainAnalyzeResponse.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\dto\FieldErrorResponse.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\dto\KeysetReservationPageResponse.java
+C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\dto\profiling\AllocationPressureResponse.java
+C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\dto\profiling\LockContentionResponse.java
+C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\dto\profiling\OrganizationReportProfilingResponse.java
+C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\dto\profiling\ProfilingReservationResponse.java
+C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\dto\profiling\ProfilingRunResponse.java
+C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\dto\profiling\ThreadPoolExperimentResponse.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\dto\ReservationCreateRequest.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\dto\ReservationListItemResponse.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\dto\ReservationResponse.java
@@ -69,5 +76,6 @@ C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\mai
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\service\pitfall\LazyLoadingPitfallService.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\service\pitfall\MeasuredPitfallService.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\service\pitfall\SelfInvocationPitfallService.java
+C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\service\profiling\JvmProfilingService.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\service\ReservationService.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\service\SqlPerformanceService.java
