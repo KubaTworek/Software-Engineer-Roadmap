@@ -70,3 +70,30 @@ POST http://localhost:8080/api/spring-pitfalls/aop/through-proxy?input=spring
 
 ### Stage 4: bean lifecycle
 GET http://localhost:8080/api/spring-pitfalls/bean-lifecycle
+
+### Stage 5 — event search optimized by composite index
+GET http://localhost:8080/api/events?city=Warsaw&from=2026-06-01T00:00:00Z&category=music
+
+### Stage 5 — organization reservations, offset pagination
+GET http://localhost:8080/api/organizations/00000000-0000-0000-0000-000000000000/reservations?status=CONFIRMED&page=0&size=50
+
+### Stage 5 — customer reservations, offset pagination
+GET http://localhost:8080/api/customers/00000000-0000-0000-0000-000000000000/reservations?page=0&size=50
+
+### Stage 5 — customer reservations, keyset pagination
+GET http://localhost:8080/api/customers/00000000-0000-0000-0000-000000000000/reservations/keyset?size=50
+
+### Stage 5 — event stats
+GET http://localhost:8080/api/events/00000000-0000-0000-0000-000000000000/stats
+
+### Stage 5 — N+1 intentionally naive
+GET http://localhost:8080/api/events/00000000-0000-0000-0000-000000000000/reservations/n-plus-one
+
+### Stage 5 — N+1 fixed by fetch join
+GET http://localhost:8080/api/events/00000000-0000-0000-0000-000000000000/reservations/fetch-join
+
+### Stage 5 — N+1 fixed by EntityGraph
+GET http://localhost:8080/api/events/00000000-0000-0000-0000-000000000000/reservations/entity-graph
+
+### Stage 5 — EXPLAIN ANALYZE for event search, PostgreSQL only
+GET http://localhost:8080/api/performance/explain/event-search?city=Warsaw&category=music&from=2026-06-01T00:00:00Z

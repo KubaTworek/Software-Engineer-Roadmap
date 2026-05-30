@@ -1,0 +1,11 @@
+performance:
+  seed:
+    organizations: 100
+    customers: 10000
+    events: 100000
+    reservations: 1000000
+
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate

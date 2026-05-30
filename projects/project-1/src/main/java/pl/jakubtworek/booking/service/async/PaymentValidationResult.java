@@ -1,7 +1,7 @@
 package pl.jakubtworek.booking.service.async;
 
 public record PaymentValidationResult(boolean approved, String reason) {
-    public static PaymentValidationResult approved() {
+    public static PaymentValidationResult getApproved() {
         return new PaymentValidationResult(true, "APPROVED");
     }
 

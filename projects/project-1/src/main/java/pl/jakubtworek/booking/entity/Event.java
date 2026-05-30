@@ -11,6 +11,10 @@ public class Event {
     @Id
     private UUID id;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "organization_id")
+    private Organization organization;
+
     @Column(nullable = false)
     private String name;
 
@@ -34,7 +38,12 @@ public class Event {
     }
 
     public Event(String name, String city, String category, OffsetDateTime startsAt) {
+        this(null, name, city, category, startsAt);
+    }
+
+    public Event(Organization organization, String name, String city, String category, OffsetDateTime startsAt) {
         this.id = UUID.randomUUID();
+        this.organization = organization;
         this.name = name;
         this.city = city;
         this.category = category;
@@ -44,6 +53,7 @@ public class Event {
     }
 
     public UUID getId() { return id; }
+    public Organization getOrganization() { return organization; }
     public String getName() { return name; }
     public String getCity() { return city; }
     public String getCategory() { return category; }

@@ -25,12 +25,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Sql(statements = {
+        "DELETE FROM outbound_messages",
+        "DELETE FROM audit_logs",
         "DELETE FROM reservations",
         "DELETE FROM capacity_pools",
         "DELETE FROM app_users",
-        "DELETE FROM organizations",
+        "DELETE FROM events",
         "DELETE FROM customers",
-        "DELETE FROM events"
+        "DELETE FROM organizations"
 }, executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
 class ApiIntegrationTest {
     @Autowired

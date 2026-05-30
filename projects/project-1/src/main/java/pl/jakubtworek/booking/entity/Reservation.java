@@ -1,6 +1,7 @@
 package pl.jakubtworek.booking.entity;
 
 import jakarta.persistence.*;
+
 import java.time.Instant;
 import java.util.UUID;
 
@@ -13,6 +14,10 @@ public class Reservation {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "event_id", nullable = false)
     private Event event;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "organization_id")
+    private Organization organization;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "customer_id", nullable = false)
@@ -37,6 +42,7 @@ public class Reservation {
     public Reservation(Event event, Customer customer) {
         this.id = UUID.randomUUID();
         this.event = event;
+        this.organization = event.getOrganization();
         this.customer = customer;
         this.status = ReservationStatus.PENDING;
         this.createdAt = Instant.now();
@@ -71,6 +77,7 @@ public class Reservation {
 
     public UUID getId() { return id; }
     public Event getEvent() { return event; }
+    public Organization getOrganization() { return organization; }
     public Customer getCustomer() { return customer; }
     public ReservationStatus getStatus() { return status; }
     public Instant getCreatedAt() { return createdAt; }

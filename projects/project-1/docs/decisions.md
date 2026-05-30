@@ -78,3 +78,21 @@ Decision: examples of broken Spring behavior are implemented in `service.pitfall
 Reason: these examples are intentionally educational. They should not pollute the main reservation flow. The main business flow should stay boring and predictable, while Stage 4 demonstrates proxy boundaries, transaction boundaries, lazy loading failures and AOP behavior in isolation.
 
 Important trade-off: self-injection through `ObjectProvider` is used only to demonstrate that proxy invocation changes behavior. It is not a default design recommendation.
+
+## Stage 5 — SQL i performance
+
+### Decyzja: pełny dataset nie jest częścią zwykłych testów
+
+Pełny zbiór 100 000 eventów i 1 000 000 rezerwacji jest generowany tylko przez profil `performance-seed`. Zwykłe testy mają sprawdzać poprawność zapytań i endpointów, a nie benchmarkować bazę danych. Benchmarki i `EXPLAIN ANALYZE` są osobnym, świadomym krokiem wykonywanym na PostgreSQL.
+
+### Decyzja: indeksy są dobierane pod access pattern
+
+Dla event search używamy indeksu `(city, category, starts_at)`, bo zapytanie filtruje po `city` i `category`, a potem robi zakres/sortowanie po `starts_at`. Dla widoku rezerwacji organizacji używamy `(organization_id, status, created_at DESC)`. Dla historii klienta używamy `(customer_id, created_at DESC, id DESC)`.
+
+### Decyzja: offset pagination zostaje obok keyset pagination
+
+Offset pagination jest prosta dla UI i pozwala skakać do strony N, ale źle skaluje się dla głębokich stron. Keyset pagination jest mniej wygodna, lecz zwykle stabilniejsza wydajnościowo dla feedów i historii.
+
+### Decyzja: N+1 pokazujemy celowo
+
+Endpoint `n-plus-one` zostaje jako edukacyjna pułapka. Produkcyjny wariant powinien używać DTO projection, `fetch join` albo `@EntityGraph`, zależnie od konkretnego przypadku.
