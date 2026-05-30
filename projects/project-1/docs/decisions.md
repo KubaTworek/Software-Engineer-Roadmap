@@ -124,3 +124,13 @@ Uzasadnienie: wyciek bazy nie powinien dawać gotowych refresh tokenów. To nada
 Decyzja: `CUSTOMER`, `EVENT_MANAGER`, `ORG_ADMIN`, `HR` i `SUPPORT` mają różne reguły oparte o dane.
 
 Uzasadnienie: sama rola nie wystarcza. Manager z jednej organizacji nie powinien widzieć danych innej organizacji. Customer powinien widzieć tylko własne rezerwacje. Support powinien widzieć status operacyjny, ale nie pełne dane płatności.
+
+## Stage 8 — NoSQL i cache
+
+Redis i MongoDB są dodatkami do monolitu, a nie nowymi źródłami prawdy. PostgreSQL nadal odpowiada za spójność rezerwacji i dostępności.
+
+Redis został użyty tam, gdzie naturalne są klucz, wartość i TTL: cache detali eventu, snapshot dostępności, rate limiting oraz tymczasowe holdy rezerwacji. Snapshot dostępności może być chwilowo nieaktualny, więc nie wolno na jego podstawie sprzedawać miejsc.
+
+MongoDB został użyty jako denormalizowany read model `EventSearchDocument`. Dokument jest szybki do odczytu i dopasowany do access patternu wyszukiwarki eventów, ale może być nieaktualny do czasu rebuilda. To celowo pokazuje eventual consistency i problem read-your-writes.
+
+Distributed lock w Redisie nie jest domyślną strategią ochrony przed oversellingiem. W tym projekcie poprawną strategią pozostaje atomowy update w PostgreSQL.

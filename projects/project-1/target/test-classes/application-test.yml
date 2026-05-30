@@ -9,3 +9,9 @@ spring:
     open-in-view: false
   flyway:
     enabled: false
+
+security:
+  jwt:
+    secret: test-only-stage-7-secret-key-change-me-minimum-32-characters
+    access-token-seconds: 900
+    refresh-token-seconds: 604800

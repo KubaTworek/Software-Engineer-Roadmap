@@ -2,6 +2,8 @@ package pl.jakubtworek.booking.service;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import pl.jakubtworek.booking.cache.AvailabilitySnapshotCache;
+import pl.jakubtworek.booking.cache.EventDetailsCache;
 import pl.jakubtworek.booking.dto.ReservationCreateRequest;
 import pl.jakubtworek.booking.dto.ReservationResponse;
 import pl.jakubtworek.booking.entity.Customer;
@@ -22,17 +24,23 @@ public class ReservationService {
     private final CustomerRepository customerRepository;
     private final ReservationRepository reservationRepository;
     private final CapacityPoolRepository capacityPoolRepository;
+    private final EventDetailsCache eventDetailsCache;
+    private final AvailabilitySnapshotCache availabilitySnapshotCache;
 
     public ReservationService(
             EventRepository eventRepository,
             CustomerRepository customerRepository,
             ReservationRepository reservationRepository,
-            CapacityPoolRepository capacityPoolRepository
+            CapacityPoolRepository capacityPoolRepository,
+            EventDetailsCache eventDetailsCache,
+            AvailabilitySnapshotCache availabilitySnapshotCache
     ) {
         this.eventRepository = eventRepository;
         this.customerRepository = customerRepository;
         this.reservationRepository = reservationRepository;
         this.capacityPoolRepository = capacityPoolRepository;
+        this.eventDetailsCache = eventDetailsCache;
+        this.availabilitySnapshotCache = availabilitySnapshotCache;
     }
 
     @Transactional
@@ -49,6 +57,7 @@ public class ReservationService {
                 .orElseGet(() -> customerRepository.save(new Customer(request.customerFullName(), request.customerEmail())));
 
         Reservation reservation = reservationRepository.save(new Reservation(event, customer));
+        evictEventCaches(eventId);
         return get(reservation.getId());
     }
 
@@ -66,7 +75,9 @@ public class ReservationService {
                 .orElseThrow(() -> new NotFoundException("Reservation not found: " + reservationId));
         boolean cancelledNow = reservation.cancel();
         if (cancelledNow) {
-            capacityPoolRepository.releaseOneSeat(reservation.getEvent().getId());
+            UUID eventId = reservation.getEvent().getId();
+            capacityPoolRepository.releaseOneSeat(eventId);
+            evictEventCaches(eventId);
         }
         return get(reservationId);
     }
@@ -76,6 +87,11 @@ public class ReservationService {
         Reservation reservation = reservationRepository.findDetailedById(reservationId)
                 .orElseThrow(() -> new NotFoundException("Reservation not found: " + reservationId));
         return toResponse(reservation);
+    }
+
+    private void evictEventCaches(UUID eventId) {
+        eventDetailsCache.evict(eventId);
+        availabilitySnapshotCache.evict(eventId);
     }
 
     private ReservationResponse toResponse(Reservation reservation) {

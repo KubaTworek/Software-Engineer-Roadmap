@@ -9,11 +9,11 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import pl.jakubtworek.booking.security.PasswordHasher;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import pl.jakubtworek.booking.entity.*;
 import pl.jakubtworek.booking.repository.*;
-import pl.jakubtworek.booking.security.PasswordHasher;
 
 import java.time.OffsetDateTime;
 
@@ -42,7 +42,7 @@ class SecurityStage7IntegrationTest {
     @Autowired MockMvc mockMvc;
     @Autowired ObjectMapper objectMapper;
     @Autowired JdbcTemplate jdbcTemplate;
-    @Autowired PasswordHasher passwordEncoder;
+    @Autowired PasswordHasher passwordHasher;
     @Autowired OrganizationRepository organizationRepository;
     @Autowired AppUserRepository appUserRepository;
     @Autowired EventRepository eventRepository;
@@ -185,7 +185,7 @@ class SecurityStage7IntegrationTest {
     }
 
     private AppUser saveUser(Organization organization, String email, String password, UserRole role) {
-        return appUserRepository.save(new AppUser(organization, email, passwordEncoder.encode(password), role));
+        return appUserRepository.save(new AppUser(organization, email, passwordHasher.encode(password), role));
     }
 
     private JsonNode login(String email, String password) throws Exception {

@@ -1,0 +1,7 @@
+spring:
+  data:
+    redis:
+      host: localhost
+      port: 6379
+    mongodb:
+      uri: mongodb://localhost:27017/booking_capacity_read_model

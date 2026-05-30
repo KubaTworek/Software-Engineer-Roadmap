@@ -11,12 +11,19 @@ spring:
       ddl-auto: validate
     properties:
       hibernate:
-        default_batch_fetch_size: 50
         format_sql: true
+        default_batch_fetch_size: 50
         jdbc:
           time_zone: UTC
   flyway:
     enabled: true
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+    mongodb:
+      uri: mongodb://localhost:27017/booking_capacity_read_model
 
 server:
   port: 8080
@@ -24,3 +31,9 @@ server:
 logging:
   level:
     org.hibernate.SQL: INFO
+
+security:
+  jwt:
+    secret: dev-only-stage-7-secret-key-change-me-minimum-32-characters
+    access-token-seconds: 900
+    refresh-token-seconds: 604800
