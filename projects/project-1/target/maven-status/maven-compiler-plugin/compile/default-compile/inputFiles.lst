@@ -9,6 +9,8 @@ C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\mai
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\controller\pitfall\SpringPitfallController.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\controller\profiling\JvmProfilingController.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\controller\ReservationController.java
+C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\controller\security\AuthController.java
+C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\controller\security\SecuredAccessController.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\dto\ErrorResponse.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\dto\EventCreateRequest.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\dto\EventResponse.java
@@ -26,6 +28,12 @@ C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\mai
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\dto\ReservationCreateRequest.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\dto\ReservationListItemResponse.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\dto\ReservationResponse.java
+C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\dto\security\AuthResponse.java
+C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\dto\security\LoginRequest.java
+C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\dto\security\PaymentSummaryResponse.java
+C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\dto\security\RefreshRequest.java
+C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\dto\security\SecuredMessageResponse.java
+C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\dto\security\UserSummaryResponse.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\dto\SpringPitfallReservationView.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\entity\AppUser.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\entity\AuditLog.java
@@ -35,6 +43,7 @@ C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\mai
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\entity\EventStatus.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\entity\Organization.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\entity\OutboundMessage.java
+C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\entity\RefreshToken.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\entity\Reservation.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\entity\ReservationStatus.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\entity\UserRole.java
@@ -50,7 +59,14 @@ C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\mai
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\repository\EventRepository.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\repository\OrganizationRepository.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\repository\OutboundMessageRepository.java
+C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\repository\RefreshTokenRepository.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\repository\ReservationRepository.java
+C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\security\JwtAuthenticationFilter.java
+C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\security\JwtProperties.java
+C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\security\JwtTokenService.java
+C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\security\PasswordHasher.java
+C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\security\SecurityConfig.java
+C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\security\SecurityPrincipal.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\service\async\AsyncConfirmationResult.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\service\async\AsyncReservationService.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\service\async\AuditLogService.java
@@ -78,4 +94,10 @@ C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\mai
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\service\pitfall\SelfInvocationPitfallService.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\service\profiling\JvmProfilingService.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\service\ReservationService.java
+C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\service\security\AuthenticationAccess.java
+C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\service\security\AuthService.java
+C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\service\security\EventSecurity.java
+C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\service\security\OrganizationUserSecurity.java
+C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\service\security\ReservationSecurity.java
+C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\service\security\TenantSecurity.java
 C:\Users\kubat\IdeaProjects\Software-Engineer-Roadmap\projects\project-1\src\main\java\pl\jakubtworek\booking\service\SqlPerformanceService.java

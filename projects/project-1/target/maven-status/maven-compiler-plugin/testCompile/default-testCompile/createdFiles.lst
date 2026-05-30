@@ -17,3 +17,4 @@ pl\jakubtworek\booking\integration\SpringPitfallStage4IntegrationTest.class
 pl\jakubtworek\booking\integration\ApiJvmProfilingStage6IntegrationTest.class
 pl\jakubtworek\booking\BookingCapacityPlatformApplicationTests.class
 pl\jakubtworek\booking\integration\JvmProfilingStage6IntegrationTest.class
+pl\jakubtworek\booking\integration\SecurityStage7IntegrationTest.class

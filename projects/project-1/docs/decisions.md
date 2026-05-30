@@ -110,3 +110,17 @@ Benchmarki JMH są w katalogu `benchmarks`, żeby zwykłe `mvn test` nie urucham
 ### Decyzja: nie mieszamy testów funkcjonalnych z pomiarami performance
 
 Test `JvmProfilingStage6IntegrationTest` nie udowadnia wydajności. Potwierdza jedynie, że scenariusze można uruchomić. Wnioski performance muszą pochodzić z JFR, GC logów, JMH albo `EXPLAIN ANALYZE`.
+
+## Stage 7 — Security jako autoryzacja po danych, nie tylko role
+
+Decyzja: istniejące endpointy edukacyjne z wcześniejszych etapów pozostają publiczne, a Stage 7 dodaje osobny obszar `/api/secure/**`.
+
+Uzasadnienie: projekt jest etapowy. Gdyby wszystkie wcześniejsze endpointy zostały nagle zabezpieczone, starsze testy MVP, concurrency, async, Spring pitfalls i performance przestałyby sprawdzać to, co miały sprawdzać. Stage 7 pokazuje security na osobnych endpointach, bez psucia wcześniejszych etapów.
+
+Decyzja: refresh tokeny są przechowywane w bazie wyłącznie jako hash SHA-256.
+
+Uzasadnienie: wyciek bazy nie powinien dawać gotowych refresh tokenów. To nadal uproszczenie edukacyjne, ale lepsze niż zapis tokenów jawnie.
+
+Decyzja: `CUSTOMER`, `EVENT_MANAGER`, `ORG_ADMIN`, `HR` i `SUPPORT` mają różne reguły oparte o dane.
+
+Uzasadnienie: sama rola nie wystarcza. Manager z jednej organizacji nie powinien widzieć danych innej organizacji. Customer powinien widzieć tylko własne rezerwacje. Support powinien widzieć status operacyjny, ale nie pełne dane płatności.

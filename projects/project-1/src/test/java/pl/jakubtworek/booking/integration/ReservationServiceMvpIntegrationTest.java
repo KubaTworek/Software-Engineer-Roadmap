@@ -28,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
         "DELETE FROM audit_logs",
         "DELETE FROM reservations",
         "DELETE FROM capacity_pools",
+        "DELETE FROM refresh_tokens",
         "DELETE FROM app_users",
         "DELETE FROM events",
         "DELETE FROM customers",
