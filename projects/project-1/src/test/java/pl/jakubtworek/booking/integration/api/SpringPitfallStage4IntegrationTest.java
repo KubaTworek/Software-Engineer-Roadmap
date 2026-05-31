@@ -1,4 +1,4 @@
-package pl.jakubtworek.booking.integration;
+package pl.jakubtworek.booking.integration.api;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,7 +34,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "DELETE FROM customers",
         "DELETE FROM organizations"
 }, executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
-class ApiSpringPitfallStage4IntegrationTest {
+class SpringPitfallStage4IntegrationTest {
     @Autowired
     MockMvc mockMvc;
 
@@ -46,6 +46,7 @@ class ApiSpringPitfallStage4IntegrationTest {
 
     @BeforeEach
     void setUp() throws Exception {
+        // given
         String eventJson = mockMvc.perform(post("/api/events")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new EventCreateRequest(
@@ -62,6 +63,7 @@ class ApiSpringPitfallStage4IntegrationTest {
 
         eventId = objectMapper.readTree(eventJson).get("id").asText();
 
+        // when & then
         String reservationJson = mockMvc.perform(post("/api/events/{eventId}/reservations", eventId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new ReservationCreateRequest(
@@ -78,6 +80,7 @@ class ApiSpringPitfallStage4IntegrationTest {
 
     @Test
     void transactionalEndpointShowsSelfInvocationProblem() throws Exception {
+        // when & then
         mockMvc.perform(get("/api/spring-pitfalls/transactional/self-invocation"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.transactionActiveWhenCalledThroughThis").value(false))
@@ -86,6 +89,7 @@ class ApiSpringPitfallStage4IntegrationTest {
 
     @Test
     void lazyBrokenEndpointFailsOutsidePersistenceContext() throws Exception {
+        // when & then
         mockMvc.perform(get("/api/spring-pitfalls/reservations/{reservationId}/lazy-broken", reservationId))
                 .andExpect(status().isInternalServerError())
                 .andExpect(jsonPath("$.code").value("LAZY_INITIALIZATION"));
@@ -93,6 +97,7 @@ class ApiSpringPitfallStage4IntegrationTest {
 
     @Test
     void lazyLoadingCanBeFixedByMappingInsideTransaction() throws Exception {
+        // when & then
         mockMvc.perform(get("/api/spring-pitfalls/reservations/{reservationId}/lazy-fixed-transaction", reservationId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.reservationId").value(reservationId))
@@ -103,6 +108,7 @@ class ApiSpringPitfallStage4IntegrationTest {
 
     @Test
     void lazyLoadingCanBeAvoidedWithDtoProjection() throws Exception {
+        // when & then
         mockMvc.perform(get("/api/spring-pitfalls/reservations/{reservationId}/lazy-fixed-projection", reservationId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.reservationId").value(reservationId))
@@ -111,6 +117,7 @@ class ApiSpringPitfallStage4IntegrationTest {
 
     @Test
     void lazyLoadingCanBeFixedWithFetchJoin() throws Exception {
+        // when & then
         mockMvc.perform(get("/api/spring-pitfalls/reservations/{reservationId}/lazy-fixed-fetch-join", reservationId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.reservationId").value(reservationId))
@@ -119,6 +126,7 @@ class ApiSpringPitfallStage4IntegrationTest {
 
     @Test
     void lazyLoadingCanBeFixedWithEntityGraph() throws Exception {
+        // when & then
         mockMvc.perform(get("/api/spring-pitfalls/reservations/{reservationId}/lazy-fixed-entity-graph", reservationId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.reservationId").value(reservationId))
@@ -127,6 +135,7 @@ class ApiSpringPitfallStage4IntegrationTest {
 
     @Test
     void aopEndpointShowsProxyBoundary() throws Exception {
+        // when & then
         mockMvc.perform(post("/api/spring-pitfalls/aop/through-this")
                         .param("input", "spring"))
                 .andExpect(status().isOk())
@@ -143,6 +152,7 @@ class ApiSpringPitfallStage4IntegrationTest {
 
     @Test
     void beanLifecycleEndpointShowsSingletonAndInitializationCallbacks() throws Exception {
+        // when & then
         mockMvc.perform(get("/api/spring-pitfalls/bean-lifecycle"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.sameSingletonInstance").value(true))

@@ -1,4 +1,4 @@
-package pl.jakubtworek.booking.integration;
+package pl.jakubtworek.booking.integration.api;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -16,6 +16,7 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 
+import static java.sql.Timestamp.from;
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -23,7 +24,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-class ApiSqlPerformanceStage5IntegrationTest {
+class SqlPerformanceStage5IntegrationTest {
     @Autowired MockMvc mockMvc;
     @Autowired EventRepository eventRepository;
     @Autowired CapacityPoolRepository capacityPoolRepository;
@@ -63,6 +64,7 @@ class ApiSqlPerformanceStage5IntegrationTest {
 
     @Test
     void exposesEventSearchEndpoint() throws Exception {
+        // when & then
         mockMvc.perform(get("/api/events")
                         .param("city", "Warsaw")
                         .param("from", "2026-06-01T00:00:00Z")
@@ -76,6 +78,7 @@ class ApiSqlPerformanceStage5IntegrationTest {
 
     @Test
     void exposesOrganizationReservationEndpoint() throws Exception {
+        // when & then
         mockMvc.perform(get("/api/organizations/{organizationId}/reservations", organization.getId())
                         .param("status", "CONFIRMED")
                         .param("page", "0")
@@ -89,6 +92,7 @@ class ApiSqlPerformanceStage5IntegrationTest {
 
     @Test
     void exposesCustomerOffsetAndKeysetEndpoints() throws Exception {
+        // when & then
         mockMvc.perform(get("/api/customers/{customerId}/reservations", customer.getId())
                         .param("page", "0")
                         .param("size", "1")
@@ -108,6 +112,7 @@ class ApiSqlPerformanceStage5IntegrationTest {
 
     @Test
     void exposesStatsAndNPlusOneComparisonEndpoints() throws Exception {
+        // when & then
         mockMvc.perform(get("/api/events/{eventId}/stats", event.getId())
                         .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
@@ -142,7 +147,7 @@ class ApiSqlPerformanceStage5IntegrationTest {
     private void setCreatedAt(Reservation reservation, String instant) {
         jdbcTemplate.update(
                 "update reservations set created_at = ? where id = ?",
-                java.sql.Timestamp.from(Instant.parse(instant)),
+                from(Instant.parse(instant)),
                 reservation.getId()
         );
     }

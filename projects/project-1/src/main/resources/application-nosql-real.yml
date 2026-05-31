@@ -1,7 +1,31 @@
 spring:
   data:
     redis:
+      # Adres hosta Redis.
+      #
+      # Redis jest używany w etapie NoSQL/cache do:
+      # - cache detali eventu,
+      # - snapshotu dostępności,
+      # - tymczasowych holdów rezerwacyjnych z TTL,
+      # - prostego rate limitingu.
+      #
+      # localhost oznacza, że aplikacja oczekuje Redisa uruchomionego lokalnie,
+      # np. z Dockera albo lokalnej instalacji.
       host: localhost
+
+      # Port Redis.
+      #
+      # 6379 to domyślny port Redisa.
       port: 6379
+
     mongodb:
+      # URI połączenia do MongoDB.
+      #
+      # MongoDB jest używane jako dokumentowy read model dla eventów.
+      #
+      # Ważne:
+      # PostgreSQL nadal pozostaje źródłem prawdy.
+      # MongoDB przechowuje tylko denormalizowany widok do szybkiego odczytu.
+      #
+      # booking_capacity_read_model to nazwa bazy dla read modelu.
       uri: mongodb://localhost:27017/booking_capacity_read_model

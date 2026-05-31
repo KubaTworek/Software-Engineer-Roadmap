@@ -1,4 +1,4 @@
-package pl.jakubtworek.booking.integration;
+package pl.jakubtworek.booking.integration.service;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -65,12 +65,14 @@ class SqlPerformanceStage5IntegrationTest {
 
     @Test
     void searchesEventsByCityCategoryAndStartDate() {
+        // given & when
         var results = sqlPerformanceService.searchEvents(
                 "Warsaw",
                 OffsetDateTime.of(2026, 6, 1, 0, 0, 0, 0, ZoneOffset.UTC),
                 "music"
         );
 
+        // then
         assertThat(results)
                 .extracting(pl.jakubtworek.booking.dto.EventSearchResponse::id)
                 .containsExactly(warsawMusicEvent.getId());
@@ -78,11 +80,13 @@ class SqlPerformanceStage5IntegrationTest {
 
     @Test
     void returnsOrganizationReservationsByStatusUsingOffsetPagination() {
+        // given
         Reservation confirmed = reservationRepository.save(new Reservation(warsawMusicEvent, customer));
         confirmed.confirm();
         reservationRepository.save(confirmed);
         reservationRepository.save(new Reservation(warsawMusicEvent, customer));
 
+        // when
         var page = sqlPerformanceService.organizationReservations(
                 organization.getId(),
                 ReservationStatus.CONFIRMED,
@@ -90,6 +94,7 @@ class SqlPerformanceStage5IntegrationTest {
                 10
         );
 
+        // then
         assertThat(page.getContent())
                 .extracting(ReservationListItemResponse::id)
                 .containsExactly(confirmed.getId());
@@ -97,6 +102,7 @@ class SqlPerformanceStage5IntegrationTest {
 
     @Test
     void comparesOffsetAndKeysetPaginationForCustomerReservations() {
+        // given
         Reservation oldReservation = reservationRepository.save(new Reservation(warsawMusicEvent, customer));
         Reservation middleReservation = reservationRepository.save(new Reservation(warsawMusicEvent, customer));
         Reservation newestReservation = reservationRepository.save(new Reservation(krakowTechEvent, customer));
@@ -106,6 +112,7 @@ class SqlPerformanceStage5IntegrationTest {
         setCreatedAt(middleReservation, "2026-06-02T10:00:00Z");
         setCreatedAt(newestReservation, "2026-06-03T10:00:00Z");
 
+        // when & then
         var offsetPage = sqlPerformanceService.customerReservationsOffset(customer.getId(), 0, 2);
         assertThat(offsetPage.getContent())
                 .extracting(ReservationListItemResponse::id)
@@ -130,6 +137,7 @@ class SqlPerformanceStage5IntegrationTest {
 
     @Test
     void calculatesEventStatsGroupedByStatus() {
+        // given
         Reservation pending = reservationRepository.save(new Reservation(warsawMusicEvent, customer));
         Reservation confirmed = new Reservation(warsawMusicEvent, customer);
         confirmed.confirm();
@@ -141,8 +149,10 @@ class SqlPerformanceStage5IntegrationTest {
         timeout.markPaymentTimeout();
         reservationRepository.save(timeout);
 
+        // when
         EventStatsResponse stats = sqlPerformanceService.eventStats(warsawMusicEvent.getId());
 
+        // then
         assertThat(stats.totalReservations()).isEqualTo(4);
         assertThat(stats.pendingReservations()).isEqualTo(1);
         assertThat(stats.confirmedReservations()).isEqualTo(1);
@@ -153,13 +163,16 @@ class SqlPerformanceStage5IntegrationTest {
 
     @Test
     void returnsSameDataForNaiveNPlusOneFetchJoinAndEntityGraphVariants() {
+        // given
         Reservation first = reservationRepository.save(new Reservation(warsawMusicEvent, customer));
         Reservation second = reservationRepository.save(new Reservation(warsawMusicEvent, customer));
 
+        // when
         List<ReservationListItemResponse> naive = sqlPerformanceService.eventReservationsNaiveNPlusOne(warsawMusicEvent.getId());
         List<ReservationListItemResponse> fetchJoin = sqlPerformanceService.eventReservationsFetchJoin(warsawMusicEvent.getId());
         List<ReservationListItemResponse> entityGraph = sqlPerformanceService.eventReservationsEntityGraph(warsawMusicEvent.getId());
 
+        // then
         assertThat(naive).hasSize(2);
         assertThat(fetchJoin).hasSize(2);
         assertThat(entityGraph).hasSize(2);

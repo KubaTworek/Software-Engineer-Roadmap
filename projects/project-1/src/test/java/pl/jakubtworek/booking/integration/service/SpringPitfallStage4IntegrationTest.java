@@ -1,4 +1,4 @@
-package pl.jakubtworek.booking.integration;
+package pl.jakubtworek.booking.integration.service;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,9 +29,11 @@ class SpringPitfallStage4IntegrationTest {
 
     @Test
     void selfInvocationBypassesTransactionalProxy() {
+        // given & when
         boolean activeWhenCalledThroughThis = selfInvocationPitfallService.callTransactionalMethodThroughThis();
         boolean activeWhenCalledThroughProxy = selfInvocationPitfallService.callTransactionalMethodThroughProxy();
 
+        // then
         assertThat(activeWhenCalledThroughThis)
                 .as("@Transactional is not applied when the method is called with this.transactionalMethod()")
                 .isFalse();
@@ -42,10 +44,13 @@ class SpringPitfallStage4IntegrationTest {
 
     @Test
     void selfInvocationBypassesMeasuredAspect() {
+        // given
         measurementRegistry.clear();
 
+        // when
         String result = measuredPitfallService.callMeasuredMethodThroughThis("spring");
 
+        // then
         assertThat(result).isEqualTo("SPRING");
         assertThat(measurementRegistry.findAll())
                 .as("@Measured is not intercepted when the annotated method is called through this")
@@ -54,10 +59,13 @@ class SpringPitfallStage4IntegrationTest {
 
     @Test
     void proxyInvocationTriggersMeasuredAspect() {
+        // given
         measurementRegistry.clear();
 
+        // when
         String result = measuredPitfallService.callMeasuredMethodThroughProxy("spring");
 
+        // then
         assertThat(result).isEqualTo("SPRING");
         assertThat(measurementRegistry.findAll())
                 .hasSize(1)
@@ -71,8 +79,10 @@ class SpringPitfallStage4IntegrationTest {
 
     @Test
     void singletonBeanLifecycleIsVisibleAfterContextStarts() {
+        // given & when
         BeanLifecycleView view = beanLifecyclePitfallService.inspectSingletonBean();
 
+        // then
         assertThat(view.sameSingletonInstance()).isTrue();
         assertThat(view.firstLookupInstanceId()).isEqualTo(view.secondLookupInstanceId());
         assertThat(view.postConstructCalled()).isTrue();

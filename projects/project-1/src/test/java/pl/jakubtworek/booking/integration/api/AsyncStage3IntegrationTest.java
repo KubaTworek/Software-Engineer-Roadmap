@@ -1,4 +1,4 @@
-package pl.jakubtworek.booking.integration;
+package pl.jakubtworek.booking.integration.api;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -32,7 +32,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "DELETE FROM customers",
         "DELETE FROM organizations"
 }, executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
-class ApiAsyncStage3IntegrationTest {
+class AsyncStage3IntegrationTest {
     @Autowired
     MockMvc mockMvc;
 
@@ -41,8 +41,10 @@ class ApiAsyncStage3IntegrationTest {
 
     @Test
     void confirmAsyncEndpointConfirmsReservationWhenPaymentIsApproved() throws Exception {
+        // given
         String reservationId = createReservation("api-async-approved@example.com");
 
+        // when & then
         mockMvc.perform(post("/api/reservations/{reservationId}/confirm-async", reservationId)
                         .queryParam("paymentScenario", "APPROVED"))
                 .andExpect(status().isOk())
@@ -51,8 +53,10 @@ class ApiAsyncStage3IntegrationTest {
 
     @Test
     void confirmAsyncEndpointReturnsBusinessErrorWhenPaymentIsDeclined() throws Exception {
+        // given
         String reservationId = createReservation("api-async-declined@example.com");
 
+        // when & then
         mockMvc.perform(post("/api/reservations/{reservationId}/confirm-async", reservationId)
                         .queryParam("paymentScenario", "DECLINED"))
                 .andExpect(status().isBadRequest())

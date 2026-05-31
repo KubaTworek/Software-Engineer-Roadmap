@@ -1,4 +1,4 @@
-package pl.jakubtworek.booking.integration;
+package pl.jakubtworek.booking.integration.service;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -50,9 +50,11 @@ class NoSqlCacheStage8IntegrationTest {
 
     @Test
     void eventDetailsAreLoadedFromSqlThenReturnedFromCache() {
+        // given & when
         EventCacheResponse first = noSqlCacheService.getEventDetails(event.getId());
         EventCacheResponse second = noSqlCacheService.getEventDetails(event.getId());
 
+        // then
         assertThat(first.source()).isEqualTo("SQL");
         assertThat(second.source()).isEqualTo("CACHE");
         assertThat(second.eventId()).isEqualTo(event.getId());
@@ -61,12 +63,15 @@ class NoSqlCacheStage8IntegrationTest {
 
     @Test
     void availabilitySnapshotIsEventuallyConsistentUntilCacheIsEvictedByReservationFlow() {
+        // given
         AvailabilitySnapshotResponse beforeReservation = noSqlCacheService.getAvailabilitySnapshot(event.getId());
         assertThat(beforeReservation.source()).isEqualTo("SQL");
         assertThat(beforeReservation.availableCapacity()).isEqualTo(10);
 
+        // when
         reservationService.create(event.getId(), new ReservationCreateRequest("Cache Customer", "cache@example.com"));
 
+        // then
         AvailabilitySnapshotResponse afterReservation = noSqlCacheService.getAvailabilitySnapshot(event.getId());
         assertThat(afterReservation.source()).isEqualTo("SQL");
         assertThat(afterReservation.availableCapacity()).isEqualTo(9);
@@ -74,9 +79,11 @@ class NoSqlCacheStage8IntegrationTest {
 
     @Test
     void reservationHoldUsesTtlStyleKeyValueStorage() {
+        // given & when
         ReservationHoldResponse hold = noSqlCacheService.createTemporaryHold(event.getId(), "hold@example.com");
         ReservationHoldResponse loaded = noSqlCacheService.getTemporaryHold(hold.holdId());
 
+        // then
         assertThat(loaded.holdId()).isEqualTo(hold.holdId());
         assertThat(loaded.eventId()).isEqualTo(event.getId());
         assertThat(loaded.customerEmail()).isEqualTo("hold@example.com");
@@ -86,8 +93,10 @@ class NoSqlCacheStage8IntegrationTest {
 
     @Test
     void rateLimiterConsumesTokensAndRejectsAfterLimit() {
+        // given
         String clientKey = "stage8-client";
 
+        // when
         RateLimitResponse first = noSqlCacheService.consumeRateLimitToken(clientKey);
         RateLimitResponse fifth = null;
         for (int i = 0; i < 4; i++) {
@@ -95,6 +104,7 @@ class NoSqlCacheStage8IntegrationTest {
         }
         RateLimitResponse sixth = noSqlCacheService.consumeRateLimitToken(clientKey);
 
+        // then
         assertThat(first.allowed()).isTrue();
         assertThat(first.remainingTokens()).isEqualTo(4);
         assertThat(fifth).isNotNull();

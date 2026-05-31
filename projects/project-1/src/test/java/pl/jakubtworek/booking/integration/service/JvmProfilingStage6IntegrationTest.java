@@ -1,4 +1,4 @@
-package pl.jakubtworek.booking.integration;
+package pl.jakubtworek.booking.integration.service;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -54,8 +54,10 @@ class JvmProfilingStage6IntegrationTest {
 
     @Test
     void runsShortReservationScenario() {
+        // given & when
         var result = profilingService.runShortReservationBurst(event.getId(), 5);
 
+        // then
         assertThat(result.requestedReservations()).isEqualTo(5);
         assertThat(result.successfulReservations()).isEqualTo(5);
         assertThat(result.failedReservations()).isZero();
@@ -65,8 +67,10 @@ class JvmProfilingStage6IntegrationTest {
 
     @Test
     void runsParallelReservationScenario() {
+        // given & when
         var result = profilingService.runParallelReservationBurst(event.getId(), 12, 12);
 
+        // then
         assertThat(result.requestedReservations()).isEqualTo(12);
         assertThat(result.successfulReservations()).isEqualTo(12);
         assertThat(result.failedReservations()).isZero();
@@ -75,14 +79,17 @@ class JvmProfilingStage6IntegrationTest {
 
     @Test
     void buildsOrganizationReportScenario() {
+        // given
         Customer customer = customerRepository.save(new Customer("Report User", "report.stage6@example.com"));
         Reservation pending = reservationRepository.save(new Reservation(event, customer));
         Reservation confirmed = new Reservation(event, customer);
         confirmed.confirm();
         reservationRepository.save(confirmed);
 
+        // when
         OrganizationReportProfilingResponse response = profilingService.organizationReport(organization.getId());
 
+        // then
         assertThat(response.organizationId()).isEqualTo(organization.getId());
         assertThat(response.totalReservations()).isEqualTo(2);
         assertThat(response.reservationsByStatus()).containsEntry("PENDING", 1L);
@@ -92,8 +99,10 @@ class JvmProfilingStage6IntegrationTest {
 
     @Test
     void runsAllocationPressureScenario() {
+        // given & when
         var result = profilingService.allocationPressure(1000);
 
+        // then
         assertThat(result.objectsCreated()).isEqualTo(1000);
         assertThat(result.approximatePayloadBytes()).isPositive();
         assertThat(result.bottleneckToObserve()).contains("allocation");
@@ -101,8 +110,10 @@ class JvmProfilingStage6IntegrationTest {
 
     @Test
     void runsLockContentionScenario() {
+        // given & when
         var result = profilingService.lockContention(4, 1000);
 
+        // then
         assertThat(result.threads()).isEqualTo(4);
         assertThat(result.incrementsPerThread()).isEqualTo(1000);
         assertThat(result.finalValue()).isEqualTo(4000);
@@ -111,10 +122,12 @@ class JvmProfilingStage6IntegrationTest {
 
     @Test
     void runsThreadPoolAndNumericAllocationScenarios() {
+        // given & when
         var cpu = profilingService.threadPoolExperiment(2, 4, "CPU");
         var io = profilingService.threadPoolExperiment(2, 4, "IO");
         var bigDecimal = profilingService.numericAllocationScenario(1000);
 
+        // then
         assertThat(cpu.tasks()).isEqualTo(4);
         assertThat(io.workloadType()).isEqualTo("IO");
         assertThat(bigDecimal.operations()).isEqualTo(1000);

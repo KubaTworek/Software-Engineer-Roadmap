@@ -1,4 +1,4 @@
-package pl.jakubtworek.booking.integration;
+package pl.jakubtworek.booking.integration.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -79,8 +79,10 @@ class SecurityStage7IntegrationTest {
 
     @Test
     void loginIssuesJwtAccessTokenAndRefreshToken() throws Exception {
+        // given & when
         JsonNode response = login("manager@orga.com", "secret");
 
+        // then
         assertThat(response.get("tokenType").asText()).isEqualTo("Bearer");
         assertThat(response.get("accessToken").asText()).contains(".");
         assertThat(response.get("refreshToken").asText()).isNotBlank();
@@ -88,12 +90,15 @@ class SecurityStage7IntegrationTest {
 
     @Test
     void refreshRotatesRefreshTokenAndRevokesPreviousToken() throws Exception {
+        // given
         JsonNode login = login("manager@orga.com", "secret");
         String oldRefreshToken = login.get("refreshToken").asText();
 
+        // when
         JsonNode refreshed = refresh(oldRefreshToken);
         String newRefreshToken = refreshed.get("refreshToken").asText();
 
+        // then
         assertThat(newRefreshToken).isNotEqualTo(oldRefreshToken);
         assertThat(refreshTokenRepository.findAll()).hasSize(2);
         assertThat(refreshTokenRepository.findAll().stream().filter(token -> token.getRevokedAt() != null)).hasSize(1);
@@ -108,9 +113,11 @@ class SecurityStage7IntegrationTest {
 
     @Test
     void customerCanViewOnlyOwnReservation() throws Exception {
+        // given
         String customerToken = login("customer@example.com", "secret").get("accessToken").asText();
         String otherCustomerToken = tokenForNewUser(orgA, "other-customer@example.com", UserRole.CUSTOMER);
 
+        // when & then
         mockMvc.perform(get("/api/secure/reservations/{id}", orgAReservation.getId())
                         .header("Authorization", bearer(customerToken)))
                 .andExpect(status().isOk())
@@ -123,9 +130,11 @@ class SecurityStage7IntegrationTest {
 
     @Test
     void eventManagerCanManageOnlyEventsFromOwnOrganization() throws Exception {
+        // given
         String orgAManagerToken = login("manager@orga.com", "secret").get("accessToken").asText();
         String orgBManagerToken = login("manager@orgb.com", "secret").get("accessToken").asText();
 
+        // when & then
         mockMvc.perform(get("/api/secure/events/{id}/manager-view", orgAEvent.getId())
                         .header("Authorization", bearer(orgAManagerToken)))
                 .andExpect(status().isOk())
@@ -138,9 +147,11 @@ class SecurityStage7IntegrationTest {
 
     @Test
     void orgAdminCanManageUsersOnlyInsideOwnTenant() throws Exception {
+        // given
         String orgAAdminToken = login("admin@orga.com", "secret").get("accessToken").asText();
         String orgBAdminToken = login("admin@orgb.com", "secret").get("accessToken").asText();
 
+        // when & then
         mockMvc.perform(get("/api/secure/organizations/{id}/users", orgA.getId())
                         .header("Authorization", bearer(orgAAdminToken)))
                 .andExpect(status().isOk())
@@ -153,8 +164,10 @@ class SecurityStage7IntegrationTest {
 
     @Test
     void hrCanReadEmployeesOnlyFromOwnOrganization() throws Exception {
+        // given
         String hrToken = login("hr@orga.com", "secret").get("accessToken").asText();
 
+        // when & then
         mockMvc.perform(get("/api/secure/hr/organizations/{id}/employees", orgA.getId())
                         .header("Authorization", bearer(hrToken)))
                 .andExpect(status().isOk());
@@ -166,8 +179,10 @@ class SecurityStage7IntegrationTest {
 
     @Test
     void supportCanSeeMaskedPaymentSummaryButNotFullPaymentData() throws Exception {
+        // given
         String supportToken = login("support@example.com", "secret").get("accessToken").asText();
 
+        // when & then
         mockMvc.perform(get("/api/secure/support/reservations/{id}/payment-summary", orgAReservation.getId())
                         .header("Authorization", bearer(supportToken)))
                 .andExpect(status().isOk())
@@ -180,6 +195,7 @@ class SecurityStage7IntegrationTest {
 
     @Test
     void secureEndpointsRequireAuthentication() throws Exception {
+        // when & then
         mockMvc.perform(get("/api/secure/reservations/{id}", orgAReservation.getId()))
                 .andExpect(status().isForbidden());
     }

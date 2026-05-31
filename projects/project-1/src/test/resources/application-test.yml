@@ -1,17 +1,65 @@
 spring:
   datasource:
+    # Testowa baza H2 uruchamiana w pamięci.
+    #
+    # mem:booking_capacity oznacza, że baza istnieje tylko w czasie działania testów.
+    # Po zakończeniu JVM dane znikają.
+    #
+    # MODE=PostgreSQL włącza tryb zgodności składni H2 z PostgreSQL.
+    # To pomaga uruchamiać testy bliższe produkcyjnej bazie, ale nie daje pełnej
+    # zgodności z PostgreSQL.
+    #
+    # DATABASE_TO_LOWER=TRUE powoduje, że H2 traktuje nazwy tabel/kolumn małymi literami.
+    #
+    # DEFAULT_NULL_ORDERING=HIGH ustawia sposób sortowania NULL-i.
     url: jdbc:h2:mem:booking_capacity;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH
+
+    # Domyślny użytkownik H2 w testach.
     username: sa
+
+    # Puste hasło dla testowej bazy in-memory.
     password:
+
   jpa:
     hibernate:
+      # create-drop oznacza:
+      # - Hibernate tworzy schemat przy starcie testów,
+      # - usuwa go przy zamknięciu kontekstu.
+      #
+      # To jest wygodne w testach integracyjnych, bo nie trzeba odpalać Flyway.
+      #
+      # Uwaga:
+      # w produkcji używasz validate + Flyway, a nie create-drop.
       ddl-auto: create-drop
+
+    # Wyłączone Open Session In View również w testach.
+    #
+    # To dobrze, bo testy szybciej wykrywają błędy lazy loadingu
+    # i wymuszają poprawne granice transakcji.
     open-in-view: false
+
   flyway:
+    # Flyway wyłączony w testach H2.
+    #
+    # Schemat tworzy Hibernate przez ddl-auto: create-drop.
+    #
+    # To upraszcza testy, ale oznacza, że testy H2 nie weryfikują wprost migracji SQL.
     enabled: false
 
 security:
   jwt:
+    # Sekret JWT wyłącznie do testów.
+    #
+    # Musi być wystarczająco długi dla algorytmu podpisu,
+    # ale nie powinien być używany poza testami.
     secret: test-only-stage-7-secret-key-change-me-minimum-32-characters
+
+    # Czas życia access tokenu w sekundach.
+    #
+    # 900 sekund = 15 minut.
     access-token-seconds: 900
+
+    # Czas życia refresh tokenu w sekundach.
+    #
+    # 604800 sekund = 7 dni.
     refresh-token-seconds: 604800

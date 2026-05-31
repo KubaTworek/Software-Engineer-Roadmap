@@ -1,4 +1,4 @@
-package pl.jakubtworek.booking.integration;
+package pl.jakubtworek.booking.integration.api;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,7 +30,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-class ApiJvmProfilingStage6IntegrationTest {
+class JvmProfilingStage6IntegrationTest {
     @Autowired MockMvc mockMvc;
     @Autowired OrganizationRepository organizationRepository;
     @Autowired EventRepository eventRepository;
@@ -62,6 +62,7 @@ class ApiJvmProfilingStage6IntegrationTest {
 
     @Test
     void exposesShortReservationProfilingEndpoint() throws Exception {
+        // when & then
         mockMvc.perform(post("/api/profiling/events/{eventId}/short-reservations", event.getId())
                         .queryParam("requests", "3"))
                 .andExpect(status().isOk())
@@ -72,6 +73,7 @@ class ApiJvmProfilingStage6IntegrationTest {
 
     @Test
     void exposesParallelReservationProfilingEndpoint() throws Exception {
+        // when & then
         mockMvc.perform(post("/api/profiling/events/{eventId}/parallel-reservations", event.getId())
                         .queryParam("requests", "4")
                         .queryParam("threads", "4"))
@@ -82,6 +84,7 @@ class ApiJvmProfilingStage6IntegrationTest {
 
     @Test
     void exposesOrganizationReportEndpoint() throws Exception {
+        // when & then
         mockMvc.perform(get("/api/profiling/organizations/{organizationId}/report", organization.getId()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.organizationId").value(organization.getId().toString()))
@@ -91,6 +94,7 @@ class ApiJvmProfilingStage6IntegrationTest {
 
     @Test
     void exposesSyntheticProfilingEndpoints() throws Exception {
+        // when & then
         mockMvc.perform(get("/api/profiling/allocations").queryParam("objects", "100"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.objectsCreated").value(100));

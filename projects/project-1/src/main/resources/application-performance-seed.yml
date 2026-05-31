@@ -1,11 +1,49 @@
 performance:
   seed:
+    # Liczba organizacji generowanych przez PerformanceDatasetGenerator.
+    #
+    # Organizacje są potrzebne do testowania:
+    # - tenant boundary,
+    # - zapytań po organization_id,
+    # - raportów organizacji,
+    # - indeksu idx_reservation_org_status_created_at.
     organizations: 100
+
+    # Liczba klientów generowanych do testów performance.
+    #
+    # Klienci są później przypisywani do rezerwacji.
+    # Większa liczba klientów pozwala sensowniej testować endpoint:
+    #
+    # GET /customers/{customerId}/reservations
     customers: 10000
+
+    # Liczba eventów generowanych do dużego datasetu.
+    #
+    # 100 000 eventów pozwala sprawdzać:
+    # - wyszukiwanie po city/category/from,
+    # - indeksy na tabeli events,
+    # - EXPLAIN ANALYZE,
+    # - selectivity indeksów.
     events: 100000
+
+    # Liczba rezerwacji generowanych do testów SQL/performance.
+    #
+    # 1 000 000 rekordów daje już sensowny materiał do obserwacji:
+    # - offset pagination,
+    # - keyset pagination,
+    # - agregacji po statusie,
+    # - indeksów złożonych,
+    # - planów wykonania.
     reservations: 1000000
 
 spring:
   jpa:
     hibernate:
+      # Hibernate tylko sprawdza zgodność encji ze schematem bazy.
+      #
+      # Nie tworzy tabel i nie wykonuje ALTER TABLE.
+      # To jest właściwe ustawienie, jeśli schematem zarządza Flyway.
+      #
+      # Przy profilu performance-seed generator zakłada, że migracje już stworzyły
+      # poprawny schemat, a on tylko zasypuje bazę dużą ilością danych.
       ddl-auto: validate

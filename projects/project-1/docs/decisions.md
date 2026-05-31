@@ -1,26 +1,47 @@
-# Decisions
+# Decyzje projektowe
 
-## 0001 — Start as a plain layered monolith
+## 0001 — Start jako zwykły monolit warstwowy
 
-The project starts as a regular Spring Boot monolith with controller, service and repository layers.
+Projekt zaczyna się jako klasyczny monolit Spring Boot z warstwami:
 
-Reason: the learning goal is to understand concurrency, transactions, JPA, SQL performance, JVM behavior and Spring internals without hiding basic problems behind architectural ceremony.
+* `controller`,
+* `service`,
+* `repository`.
 
-## 0002 — PostgreSQL is the source of truth
+Powód:
 
-Reservations and capacity are stored in PostgreSQL.
+Celem projektu jest zrozumienie współbieżności, transakcji, JPA, wydajności SQL, działania JVM oraz mechanizmów Springa bez ukrywania podstawowych problemów za nadmierną architekturą.
 
-Reason: limited capacity and overselling are transactional problems. The base project should first solve them with relational database mechanisms before introducing cache, NoSQL or asynchronous processing.
+Na tym etapie nie wprowadzamy mikroserwisów, brokerów wiadomości ani złożonego podziału modułowego. Projekt ma być zwykłym, czytelnym monolitem.
 
-## 0003 — Atomic SQL update for reservation capacity
+---
 
-The base reservation flow decrements capacity with a guarded update.
+## 0002 — PostgreSQL jako źródło prawdy
 
-Reason: it is a simple and robust baseline against overselling. Later stages should still implement naive and lock-based variants for educational comparison.
+Rezerwacje i dostępność miejsc są przechowywane w PostgreSQL.
 
-## Etap 2 — concurrency strategy
+Powód:
 
-Dla produkcyjnego flow rezerwacji preferujemy atomowy update SQL:
+Ograniczona liczba miejsc oraz ryzyko oversellingu to problemy transakcyjne. Bazowy projekt powinien najpierw rozwiązać je mechanizmami relacyjnej bazy danych, zanim pojawią się cache, NoSQL albo przetwarzanie asynchroniczne.
+
+PostgreSQL pozostaje źródłem prawdy dla:
+
+* eventów,
+* rezerwacji,
+* klientów,
+* puli dostępności,
+* użytkowników aplikacji,
+* refresh tokenów,
+* audytu,
+* komunikatów wychodzących.
+
+---
+
+## 0003 — Atomowy SQL update dla dostępności miejsc
+
+Bazowy flow rezerwacji zmniejsza dostępność miejsc przez warunkowy update SQL.
+
+Preferowana operacja:
 
 ```sql
 UPDATE capacity_pools
@@ -29,108 +50,580 @@ WHERE event_id = ?
   AND available_capacity > 0;
 ```
 
-Powód: problem dostępności jest prostym licznikiem, więc warunek biznesowy i modyfikacja mogą być jedną operacją bazodanową. To ogranicza ryzyko race condition bez rozbudowanej logiki blokowania w aplikacji.
+Powód:
 
-Pozostałe strategie są zostawione w kodzie jako materiał edukacyjny:
+To prosty i solidny baseline chroniący przed oversellingiem. Warunek biznesowy i modyfikacja stanu są wykonane jako jedna operacja po stronie bazy danych.
 
-- `NaiveReservationService` pokazuje overselling i lost update,
-- `SynchronizedReservationService` pokazuje lokalną ochronę w jednej JVM,
-- `OptimisticLockingReservationService` pokazuje użycie `@Version` i retry,
-- `PessimisticLockingReservationService` pokazuje odpowiednik `SELECT ... FOR UPDATE`,
-- `AtomicSqlReservationService` pokazuje preferowaną strategię dla tego projektu.
+Dzięki temu nie ma osobnego okna czasowego między:
 
-## Stage 3: async processing stays inside the monolith
+1. sprawdzeniem dostępności,
+2. zmniejszeniem liczby miejsc.
 
-For Stage 3 the project uses in-process asynchronous processing with `ThreadPoolExecutor`, `ScheduledExecutorService` and `CompletableFuture`.
+Późniejsze etapy nadal implementują wariant naiwny i strategie lockowania, ale głównie jako materiał edukacyjny do porównania.
 
-Decision:
+---
 
-- keep one Spring Boot application,
-- keep one relational database,
-- do not introduce Kafka/RabbitMQ yet,
-- model async side effects through local services and database records,
-- use explicit executor beans instead of the common pool.
+# Etap 2 — Concurrency
 
-Reason:
+## Decyzja: produkcyjny flow rezerwacji preferuje atomowy update SQL
 
-This stage is about Java concurrency and async programming fundamentals, not distributed systems. Adding a broker now would hide the core learning goals behind infrastructure.
+Dla głównego flow rezerwacji preferujemy atomowy update SQL:
 
-Trade-off:
+```sql
+UPDATE capacity_pools
+SET available_capacity = available_capacity - 1
+WHERE event_id = ?
+  AND available_capacity > 0;
+```
 
-In-process async work can be lost if the JVM crashes after the reservation is confirmed but before side effects finish. That is acceptable for this educational stage. A production-grade version would likely use the transactional outbox pattern.
+Powód:
 
-## Stage 3: payment timeout status
+Problem dostępności jest prostym licznikiem. Warunek `available_capacity > 0` i zmniejszenie wartości mogą być jedną operacją bazodanową.
 
-Slow or technically failing payment validation marks the reservation as `PAYMENT_TIMEOUT`.
+To ogranicza ryzyko:
 
-Reason:
+* race condition,
+* lost update,
+* oversellingu,
+* błędnego check-then-act.
 
-The system should not confirm a reservation when payment validation is unknown. `PAYMENT_TIMEOUT` makes the uncertain state explicit and testable.
+## Strategie zostawione edukacyjnie
 
-Trade-off:
+Pozostałe strategie zostają w kodzie jako materiał porównawczy:
 
-In a larger production model, payment state should probably be separated from reservation state. Here it is intentionally kept simpler because the project is still a basic monolith.
+* `NaiveReservationService` — pokazuje overselling i lost update,
+* `SynchronizedReservationService` — pokazuje lokalną ochronę w jednej JVM,
+* `OptimisticLockingReservationService` — pokazuje użycie `@Version` i retry,
+* `PessimisticLockingReservationService` — pokazuje odpowiednik `SELECT ... FOR UPDATE`,
+* `AtomicSqlReservationService` — pokazuje preferowaną strategię dla tego projektu.
 
-## Stage 4 — Spring proxy pitfalls
+## Trade-off
 
-Decision: examples of broken Spring behavior are implemented in `service.pitfall` and exposed under `/api/spring-pitfalls`.
+`AtomicSqlReservationService` jest najlepszym baseline’em dla tego konkretnego problemu, ale nie oznacza, że zawsze zastępuje wszystkie inne strategie.
 
-Reason: these examples are intentionally educational. They should not pollute the main reservation flow. The main business flow should stay boring and predictable, while Stage 4 demonstrates proxy boundaries, transaction boundaries, lazy loading failures and AOP behavior in isolation.
+Jeżeli logika rezerwacji stanie się bardziej złożona i będzie zależała od wielu tabel lub reguł biznesowych, może być potrzebne połączenie:
 
-Important trade-off: self-injection through `ObjectProvider` is used only to demonstrate that proxy invocation changes behavior. It is not a default design recommendation.
+* constraintów bazodanowych,
+* transakcji,
+* lockowania,
+* retry,
+* osobnego modelu płatności/rezerwacji.
 
-## Stage 5 — SQL i performance
+---
 
-### Decyzja: pełny dataset nie jest częścią zwykłych testów
+# Etap 3 — Asynchroniczność
 
-Pełny zbiór 100 000 eventów i 1 000 000 rezerwacji jest generowany tylko przez profil `performance-seed`. Zwykłe testy mają sprawdzać poprawność zapytań i endpointów, a nie benchmarkować bazę danych. Benchmarki i `EXPLAIN ANALYZE` są osobnym, świadomym krokiem wykonywanym na PostgreSQL.
+## Decyzja: async pozostaje wewnątrz monolitu
 
-### Decyzja: indeksy są dobierane pod access pattern
+Na tym etapie projekt używa przetwarzania asynchronicznego wewnątrz jednej aplikacji:
 
-Dla event search używamy indeksu `(city, category, starts_at)`, bo zapytanie filtruje po `city` i `category`, a potem robi zakres/sortowanie po `starts_at`. Dla widoku rezerwacji organizacji używamy `(organization_id, status, created_at DESC)`. Dla historii klienta używamy `(customer_id, created_at DESC, id DESC)`.
+* `ThreadPoolExecutor`,
+* `ScheduledExecutorService`,
+* `CompletableFuture`.
 
-### Decyzja: offset pagination zostaje obok keyset pagination
+Decyzje:
 
-Offset pagination jest prosta dla UI i pozwala skakać do strony N, ale źle skaluje się dla głębokich stron. Keyset pagination jest mniej wygodna, lecz zwykle stabilniejsza wydajnościowo dla feedów i historii.
+* zostaje jedna aplikacja Spring Boot,
+* zostaje jedna relacyjna baza danych,
+* nie wprowadzamy jeszcze Kafka ani RabbitMQ,
+* side-effecty asynchroniczne są modelowane przez lokalne serwisy i rekordy w bazie,
+* używamy jawnie zdefiniowanych executorów zamiast `ForkJoinPool.commonPool()`.
 
-### Decyzja: N+1 pokazujemy celowo
+Powód:
 
-Endpoint `n-plus-one` zostaje jako edukacyjna pułapka. Produkcyjny wariant powinien używać DTO projection, `fetch join` albo `@EntityGraph`, zależnie od konkretnego przypadku.
+Ten etap dotyczy podstaw programowania asynchronicznego i współbieżności w Javie, a nie systemów rozproszonych. Dodanie brokera na tym etapie ukryłoby główne cele edukacyjne za infrastrukturą.
 
-## Stage 6 — JVM i profilowanie
+## Trade-off
 
-### Decyzja: endpointy profilujące są syntetyczne i edukacyjne
+Praca asynchroniczna wykonywana w pamięci procesu może zostać utracona, jeśli JVM zakończy się po potwierdzeniu rezerwacji, ale przed zakończeniem side-effectów.
 
-Endpointy `/api/profiling/**` nie są częścią produkcyjnego API. Ich celem jest wygenerowanie kontrolowanego obciążenia, które można obserwować przez JFR, VisualVM, IntelliJ Profiler, GC logs i PostgreSQL `EXPLAIN ANALYZE`.
+To jest akceptowalne w tym etapie edukacyjnym.
 
-### Decyzja: JMH jest osobnym projektem Mavenowym
+W wersji produkcyjnej prawdopodobnie należałoby użyć transactional outbox pattern.
 
-Benchmarki JMH są w katalogu `benchmarks`, żeby zwykłe `mvn test` nie uruchamiało mikrobenchmarków. Testy aplikacyjne sprawdzają tylko, czy scenariusze profilujące działają. Rzeczywiste pomiary wykonuje się przez JMH albo profiler.
+---
 
-### Decyzja: nie mieszamy testów funkcjonalnych z pomiarami performance
+## Decyzja: timeout płatności oznacza `PAYMENT_TIMEOUT`
 
-Test `JvmProfilingStage6IntegrationTest` nie udowadnia wydajności. Potwierdza jedynie, że scenariusze można uruchomić. Wnioski performance muszą pochodzić z JFR, GC logów, JMH albo `EXPLAIN ANALYZE`.
+Jeżeli walidacja płatności jest wolna albo kończy się błędem technicznym, rezerwacja zostaje oznaczona jako:
 
-## Stage 7 — Security jako autoryzacja po danych, nie tylko role
+```java
+PAYMENT_TIMEOUT
+```
 
-Decyzja: istniejące endpointy edukacyjne z wcześniejszych etapów pozostają publiczne, a Stage 7 dodaje osobny obszar `/api/secure/**`.
+Powód:
 
-Uzasadnienie: projekt jest etapowy. Gdyby wszystkie wcześniejsze endpointy zostały nagle zabezpieczone, starsze testy MVP, concurrency, async, Spring pitfalls i performance przestałyby sprawdzać to, co miały sprawdzać. Stage 7 pokazuje security na osobnych endpointach, bez psucia wcześniejszych etapów.
+System nie powinien potwierdzać rezerwacji, jeśli nie wiadomo, czy płatność została poprawnie zwalidowana.
 
-Decyzja: refresh tokeny są przechowywane w bazie wyłącznie jako hash SHA-256.
+Status `PAYMENT_TIMEOUT` jawnie pokazuje stan niepewny i pozwala go testować.
 
-Uzasadnienie: wyciek bazy nie powinien dawać gotowych refresh tokenów. To nadal uproszczenie edukacyjne, ale lepsze niż zapis tokenów jawnie.
+## Trade-off
 
-Decyzja: `CUSTOMER`, `EVENT_MANAGER`, `ORG_ADMIN`, `HR` i `SUPPORT` mają różne reguły oparte o dane.
+W większym systemie stan płatności prawdopodobnie powinien być osobnym modelem, niezależnym od statusu rezerwacji.
 
-Uzasadnienie: sama rola nie wystarcza. Manager z jednej organizacji nie powinien widzieć danych innej organizacji. Customer powinien widzieć tylko własne rezerwacje. Support powinien widzieć status operacyjny, ale nie pełne dane płatności.
+W tym projekcie stan płatności jest celowo uproszczony i trzymany w statusie rezerwacji, bo projekt nadal jest monolitem edukacyjnym.
 
-## Stage 8 — NoSQL i cache
+---
 
-Redis i MongoDB są dodatkami do monolitu, a nie nowymi źródłami prawdy. PostgreSQL nadal odpowiada za spójność rezerwacji i dostępności.
+# Etap 4 — Spring pod maską
 
-Redis został użyty tam, gdzie naturalne są klucz, wartość i TTL: cache detali eventu, snapshot dostępności, rate limiting oraz tymczasowe holdy rezerwacji. Snapshot dostępności może być chwilowo nieaktualny, więc nie wolno na jego podstawie sprzedawać miejsc.
+## Decyzja: pułapki Springa są odizolowane w osobnym pakiecie
 
-MongoDB został użyty jako denormalizowany read model `EventSearchDocument`. Dokument jest szybki do odczytu i dopasowany do access patternu wyszukiwarki eventów, ale może być nieaktualny do czasu rebuilda. To celowo pokazuje eventual consistency i problem read-your-writes.
+Przykłady błędnego albo zaskakującego działania Springa są zaimplementowane w pakiecie:
 
-Distributed lock w Redisie nie jest domyślną strategią ochrony przed oversellingiem. W tym projekcie poprawną strategią pozostaje atomowy update w PostgreSQL.
+```text
+service.pitfall
+```
+
+i wystawione przez endpointy:
+
+```text
+/api/spring-pitfalls
+```
+
+Powód:
+
+Te przykłady są celowo edukacyjne. Nie powinny zanieczyszczać głównego flow rezerwacji.
+
+Główny flow biznesowy powinien pozostać prosty i przewidywalny, a Etap 4 osobno pokazuje:
+
+* granice proxy,
+* granice transakcji,
+* self-invocation,
+* lazy loading poza persistence contextem,
+* AOP,
+* lifecycle beanów.
+
+## Trade-off
+
+Self-injection przez `ObjectProvider` jest użyty tylko po to, żeby pokazać różnicę między wywołaniem przez `this` a wywołaniem przez proxy Springa.
+
+Nie jest to domyślna rekomendacja projektowa.
+
+---
+
+# Etap 5 — SQL i performance
+
+## Decyzja: pełny dataset nie jest częścią zwykłych testów
+
+Pełny dataset:
+
+* 100 000 eventów,
+* 1 000 000 rezerwacji,
+
+jest generowany tylko przez profil:
+
+```text
+performance-seed
+```
+
+Zwykłe testy mają sprawdzać poprawność zapytań i endpointów, a nie benchmarkować bazę danych.
+
+Benchmarki, pomiary i `EXPLAIN ANALYZE` są osobnym, świadomym krokiem wykonywanym na PostgreSQL.
+
+## Powód
+
+Testy funkcjonalne powinny być szybkie, przewidywalne i możliwe do uruchomienia często.
+
+Duży dataset służy do analizy wydajności, nie do codziennej walidacji logiki.
+
+---
+
+## Decyzja: indeksy są dobierane pod access pattern
+
+Indeksy są dobierane pod konkretne zapytania aplikacji.
+
+Dla wyszukiwania eventów używamy indeksu:
+
+```sql
+(city, category, starts_at)
+```
+
+bo zapytanie filtruje po:
+
+* `city`,
+* `category`,
+
+a potem wykonuje zakres albo sortowanie po:
+
+* `starts_at`.
+
+Dla widoku rezerwacji organizacji używamy:
+
+```sql
+(organization_id, status, created_at DESC)
+```
+
+Dla historii rezerwacji klienta używamy:
+
+```sql
+(customer_id, created_at DESC, id DESC)
+```
+
+Powód:
+
+Indeks nie powinien być dodawany “na oko”. Powinien odpowiadać rzeczywistemu zapytaniu i kolejności filtrów/sortowania.
+
+---
+
+## Decyzja: offset pagination zostaje obok keyset pagination
+
+Projekt pokazuje oba podejścia:
+
+* offset pagination,
+* keyset pagination.
+
+Offset pagination jest prosta dla UI i pozwala przejść do strony N.
+
+Problem:
+
+Dla głębokich stron skaluje się słabo, bo baza musi pominąć coraz więcej rekordów.
+
+Keyset pagination jest mniej wygodna, ale zwykle stabilniejsza wydajnościowo dla feedów i historii.
+
+## Trade-off
+
+Offset zostaje, bo jest prosty i popularny.
+
+Keyset zostaje, bo pokazuje lepszy wzorzec dla dużych tabel i sortowania po indeksie.
+
+---
+
+## Decyzja: N+1 pokazujemy celowo
+
+Endpoint:
+
+```text
+n-plus-one
+```
+
+zostaje jako edukacyjna pułapka.
+
+Powód:
+
+Problem N+1 jest jednym z najczęstszych problemów w aplikacjach JPA/Hibernate. Warto mieć endpoint, który celowo go pokazuje.
+
+Wariant produkcyjny powinien używać jednego z rozwiązań:
+
+* DTO projection,
+* `fetch join`,
+* `@EntityGraph`,
+* batch fetching — zależnie od przypadku.
+
+---
+
+# Etap 6 — JVM i profilowanie
+
+## Decyzja: endpointy profilujące są syntetyczne i edukacyjne
+
+Endpointy:
+
+```text
+/api/profiling/**
+```
+
+nie są częścią produkcyjnego API.
+
+Ich celem jest wygenerowanie kontrolowanego obciążenia, które można obserwować przez:
+
+* JFR,
+* VisualVM,
+* IntelliJ Profiler,
+* GC logs,
+* PostgreSQL `EXPLAIN ANALYZE`.
+
+## Powód
+
+Nie da się sensownie optymalizować JVM “na czuja”.
+
+Te endpointy mają stworzyć warunki do pomiaru:
+
+* CPU hotspotów,
+* allocation rate,
+* GC pauses,
+* lock contention,
+* liczby wątków,
+* latency,
+* throughputu,
+* wpływu heap size,
+* wpływu G1 vs ZGC,
+* wpływu rozmiaru puli wątków.
+
+---
+
+## Decyzja: JMH jest osobnym projektem Mavenowym
+
+Benchmarki JMH są trzymane w katalogu:
+
+```text
+benchmarks
+```
+
+Powód:
+
+Zwykłe:
+
+```bash
+mvn test
+```
+
+nie powinno uruchamiać mikrobenchmarków.
+
+Testy aplikacyjne sprawdzają tylko, czy scenariusze profilujące da się uruchomić.
+
+Rzeczywiste pomiary wykonuje się przez:
+
+* JMH,
+* profiler,
+* JFR,
+* GC logs.
+
+---
+
+## Decyzja: nie mieszamy testów funkcjonalnych z pomiarami performance
+
+Test:
+
+```text
+JvmProfilingStage6IntegrationTest
+```
+
+nie udowadnia wydajności.
+
+Potwierdza tylko, że scenariusze profilujące działają i można je uruchomić.
+
+Wnioski performance muszą pochodzić z narzędzi pomiarowych:
+
+* JFR,
+* GC logs,
+* JMH,
+* `EXPLAIN ANALYZE`.
+
+## Powód
+
+Test integracyjny nie jest benchmarkiem.
+
+Benchmark musi uwzględniać warmup, JIT, izolację środowiska, powtarzalność i właściwą metodologię.
+
+---
+
+# Etap 7 — Security i autoryzacja
+
+## Decyzja: security pokazujemy jako autoryzację po danych, nie tylko role
+
+Etap 7 nie kończy się na prostym:
+
+```java
+hasRole("ADMIN")
+```
+
+Projekt pokazuje reguły oparte o dane:
+
+* customer widzi tylko swoje rezerwacje,
+* manager widzi eventy swojej organizacji,
+* HR widzi pracowników swojej organizacji,
+* support widzi status operacyjny, ale nie pełne dane płatności,
+* admin organizacji zarządza użytkownikami tylko w swoim tenantcie.
+
+## Powód
+
+Sama rola nie wystarcza.
+
+Użytkownik z rolą `EVENT_MANAGER` nie powinien automatycznie widzieć eventów wszystkich organizacji.
+
+Użytkownik z rolą `HR` nie powinien widzieć pracowników z innych tenantów.
+
+---
+
+## Decyzja: wcześniejsze endpointy edukacyjne pozostają publiczne
+
+Istniejące endpointy z wcześniejszych etapów pozostają publiczne, a Etap 7 dodaje osobny obszar:
+
+```text
+/api/secure/**
+```
+
+Powód:
+
+Projekt jest etapowy.
+
+Gdyby wszystkie wcześniejsze endpointy zostały nagle zabezpieczone, starsze testy:
+
+* MVP,
+* concurrency,
+* async,
+* Spring pitfalls,
+* performance,
+
+przestałyby sprawdzać to, co miały sprawdzać.
+
+Etap 7 pokazuje security na osobnych endpointach, bez psucia wcześniejszych etapów.
+
+---
+
+## Decyzja: refresh tokeny są przechowywane jako hash
+
+Refresh tokeny są przechowywane w bazie wyłącznie jako hash SHA-256.
+
+Powód:
+
+Wyciek bazy danych nie powinien dawać gotowych refresh tokenów.
+
+To nadal uproszczenie edukacyjne, ale lepsze niż zapis tokenów jawnie.
+
+## Uwaga
+
+Dla haseł użytkowników nie używamy zwykłego SHA-256.
+
+Hasła powinny być hashowane algorytmem typu:
+
+* BCrypt,
+* Argon2,
+* PBKDF2.
+
+SHA-256 jest akceptowalny tutaj dlatego, że refresh token jest długi, losowy i ma wysoką entropię.
+
+---
+
+## Decyzja: różne role mają różne reguły oparte o dane
+
+Role w projekcie:
+
+* `CUSTOMER`,
+* `EVENT_MANAGER`,
+* `ORG_ADMIN`,
+* `HR`,
+* `SUPPORT`.
+
+Każda z nich ma inne zasady dostępu.
+
+Powód:
+
+Autoryzacja musi zależeć nie tylko od roli, ale też od danych:
+
+* kto jest właścicielem rezerwacji,
+* do jakiej organizacji należy użytkownik,
+* do jakiej organizacji należy event,
+* czy użytkownik działa w swoim tenantcie,
+* czy zakres danych jest odpowiedni dla danej roli.
+
+Przykład:
+
+Support może zobaczyć status operacyjny płatności, ale nie powinien widzieć pełnych danych płatniczych.
+
+---
+
+# Etap 8 — NoSQL i cache
+
+## Decyzja: Redis i MongoDB są dodatkami do monolitu
+
+Redis i MongoDB nie są nowymi źródłami prawdy.
+
+PostgreSQL nadal odpowiada za spójność:
+
+* rezerwacji,
+* dostępności,
+* płatności,
+* użytkowników,
+* tokenów.
+
+Redis i MongoDB są używane świadomie jako dodatkowe narzędzia do konkretnych problemów odczytowych i technicznych.
+
+---
+
+## Decyzja: Redis jako key-value store z TTL
+
+Redis został użyty tam, gdzie naturalny jest model:
+
+```text
+klucz -> wartość -> TTL
+```
+
+Przykłady użycia:
+
+* cache detali eventu,
+* snapshot dostępności,
+* rate limiting,
+* tymczasowe holdy rezerwacyjne.
+
+## Ważne ograniczenie
+
+Snapshot dostępności może być chwilowo nieaktualny.
+
+Nie wolno sprzedawać miejsc wyłącznie na podstawie cache.
+
+Finalna decyzja o rezerwacji miejsca musi nadal przejść przez PostgreSQL i atomowy update dostępności.
+
+---
+
+## Decyzja: MongoDB jako dokumentowy read model
+
+MongoDB został użyty jako denormalizowany read model:
+
+```text
+EventSearchDocument
+```
+
+Dokument jest szybki do odczytu i dopasowany do access patternu wyszukiwarki eventów.
+
+Może zawierać dane z kilku relacyjnych źródeł:
+
+* event,
+* organization,
+* capacity pool,
+* agregacje rezerwacji po statusach.
+
+## Trade-off
+
+Dokument może być nieaktualny do czasu rebuilda.
+
+To celowo pokazuje:
+
+* eventual consistency,
+* problem read-your-writes,
+* różnicę między źródłem prawdy a read modelem.
+
+---
+
+## Decyzja: distributed lock w Redisie nie jest domyślną strategią
+
+Distributed lock w Redisie nie jest domyślną strategią ochrony przed oversellingiem.
+
+Powód:
+
+W tym projekcie problem oversellingu najlepiej rozwiązuje PostgreSQL przez atomowy update.
+
+Redis może być użyteczny do cache, TTL i rate limitingu, ale nie powinien zastępować transakcyjnego źródła prawdy dla rezerwacji.
+
+Domyślna poprawna strategia pozostaje:
+
+```sql
+UPDATE capacity_pools
+SET available_capacity = available_capacity - 1
+WHERE event_id = ?
+  AND available_capacity > 0;
+```
+
+---
+
+# Podsumowanie
+
+Projekt świadomie zaczyna jako zwykły monolit.
+
+Nie chodzi o pokazanie najmodniejszej architektury, tylko o zrozumienie realnych problemów backendowych:
+
+* transakcji,
+* race condition,
+* lost update,
+* lockowania,
+* asynchroniczności,
+* proxy Springa,
+* lazy loadingu,
+* SQL performance,
+* profilowania JVM,
+* autoryzacji po danych,
+* cache i read modeli.
+
+Najważniejsza decyzja techniczna pozostaje stabilna przez kolejne etapy:
+
+**PostgreSQL jest źródłem prawdy, a dla dostępności miejsc bazowym zabezpieczeniem jest atomowy update SQL.**

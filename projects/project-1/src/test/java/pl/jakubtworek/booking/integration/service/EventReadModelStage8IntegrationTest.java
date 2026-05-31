@@ -1,4 +1,4 @@
-package pl.jakubtworek.booking.integration;
+package pl.jakubtworek.booking.integration.service;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -56,8 +56,10 @@ class EventReadModelStage8IntegrationTest {
 
     @Test
     void rebuildsDenormalizedEventSearchDocumentFromRelationalSourceOfTruth() {
+        // given & when
         EventSearchDocumentResponse document = readModelService.rebuildOne(event.getId());
 
+        // then
         assertThat(document.eventId()).isEqualTo(event.getId());
         assertThat(document.name()).isEqualTo("Mongo Read Model Event");
         assertThat(document.organizationName()).isEqualTo("Stage 8 Org");
@@ -68,11 +70,14 @@ class EventReadModelStage8IntegrationTest {
 
     @Test
     void searchUsesDenormalizedReadModelAndCanBeStaleUntilRebuild() {
+        // given
         EventSearchDocumentResponse firstSnapshot = readModelService.rebuildOne(event.getId());
         assertThat(firstSnapshot.availableCapacity()).isEqualTo(19);
 
+        // when
         reservationService.create(event.getId(), new ReservationCreateRequest("Second Customer", "read-model-2@example.com"));
 
+        // then
         EventSearchDocumentResponse staleDocument = readModelService.get(event.getId());
         assertThat(staleDocument.availableCapacity()).isEqualTo(19);
 
@@ -83,10 +88,13 @@ class EventReadModelStage8IntegrationTest {
 
     @Test
     void searchesReadModelByAccessPatternInsteadOfRelationalJoins() {
+        // given
         readModelService.rebuildOne(event.getId());
 
+        // when
         EventSearchDocumentListResponse result = readModelService.search("Warsaw", "music", 10);
 
+        // then
         assertThat(result.size()).isEqualTo(1);
         assertThat(result.items()).extracting(EventSearchDocumentResponse::eventId).containsExactly(event.getId());
     }

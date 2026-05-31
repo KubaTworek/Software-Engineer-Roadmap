@@ -1,4 +1,4 @@
-package pl.jakubtworek.booking.integration;
+package pl.jakubtworek.booking.integration.service;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,7 +34,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
         "DELETE FROM customers",
         "DELETE FROM organizations"
 }, executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
-class ReservationServiceMvpIntegrationTest {
+class ReservationServiceIntegrationTest {
     @Autowired
     EventService eventService;
 
@@ -43,10 +43,13 @@ class ReservationServiceMvpIntegrationTest {
 
     @Test
     void createsPendingReservationAndDecreasesAvailableCapacity() {
+        // given
         EventResponse event = createEvent(2);
 
+        // when
         ReservationResponse reservation = reservationService.create(event.id(), reservationRequest("jan.kowalski@example.com"));
 
+        // then
         assertThat(reservation.id()).isNotNull();
         assertThat(reservation.eventId()).isEqualTo(event.id());
         assertThat(reservation.customerEmail()).isEqualTo("jan.kowalski@example.com");
@@ -58,11 +61,14 @@ class ReservationServiceMvpIntegrationTest {
 
     @Test
     void confirmsPendingReservation() {
+        // given
         EventResponse event = createEvent(1);
         ReservationResponse created = reservationService.create(event.id(), reservationRequest("anna.nowak@example.com"));
 
+        // when
         ReservationResponse confirmed = reservationService.confirm(created.id());
 
+        // then
         assertThat(confirmed.status()).isEqualTo(ReservationStatus.CONFIRMED);
         assertThat(confirmed.confirmedAt()).isNotNull();
         assertThat(confirmed.cancelledAt()).isNull();
@@ -71,11 +77,14 @@ class ReservationServiceMvpIntegrationTest {
 
     @Test
     void cancelsPendingReservationAndReleasesCapacity() {
+        // given
         EventResponse event = createEvent(1);
         ReservationResponse created = reservationService.create(event.id(), reservationRequest("ewa.zielinska@example.com"));
 
+        // when
         ReservationResponse cancelled = reservationService.cancel(created.id());
 
+        // then
         assertThat(cancelled.status()).isEqualTo(ReservationStatus.CANCELLED);
         assertThat(cancelled.cancelledAt()).isNotNull();
         assertThat(eventService.get(event.id()).availableCapacity()).isEqualTo(1);
@@ -83,12 +92,15 @@ class ReservationServiceMvpIntegrationTest {
 
     @Test
     void doesNotReleaseCapacityTwiceWhenReservationIsCancelledTwice() {
+        // given
         EventResponse event = createEvent(1);
         ReservationResponse created = reservationService.create(event.id(), reservationRequest("adam.test@example.com"));
 
+        // when
         reservationService.cancel(created.id());
         reservationService.cancel(created.id());
 
+        // then
         EventResponse afterSecondCancel = eventService.get(event.id());
         assertThat(afterSecondCancel.availableCapacity()).isEqualTo(1);
         assertThat(afterSecondCancel.totalCapacity()).isEqualTo(1);
@@ -96,9 +108,11 @@ class ReservationServiceMvpIntegrationTest {
 
     @Test
     void preventsOversellingInSequentialMvpFlow() {
+        // given
         EventResponse event = createEvent(1);
         reservationService.create(event.id(), reservationRequest("first@example.com"));
 
+        // when & then
         assertThatThrownBy(() -> reservationService.create(event.id(), reservationRequest("second@example.com")))
                 .isInstanceOf(CapacityUnavailableException.class)
                 .hasMessageContaining("No available capacity");
@@ -108,8 +122,10 @@ class ReservationServiceMvpIntegrationTest {
 
     @Test
     void throwsNotFoundWhenCreatingReservationForMissingEvent() {
+        // given
         UUID missingEventId = UUID.randomUUID();
 
+        // when & then
         assertThatThrownBy(() -> reservationService.create(missingEventId, reservationRequest("missing@example.com")))
                 .isInstanceOf(NotFoundException.class)
                 .hasMessageContaining("Event not found");
@@ -117,10 +133,12 @@ class ReservationServiceMvpIntegrationTest {
 
     @Test
     void doesNotAllowCancellingConfirmedReservationInBaseMvp() {
+        // given
         EventResponse event = createEvent(1);
         ReservationResponse created = reservationService.create(event.id(), reservationRequest("confirmed@example.com"));
         reservationService.confirm(created.id());
 
+        // when & then
         assertThatThrownBy(() -> reservationService.cancel(created.id()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Confirmed reservation cannot be cancelled");
@@ -128,10 +146,12 @@ class ReservationServiceMvpIntegrationTest {
 
     @Test
     void doesNotAllowConfirmingCancelledReservation() {
+        // given
         EventResponse event = createEvent(1);
         ReservationResponse created = reservationService.create(event.id(), reservationRequest("cancelled@example.com"));
         reservationService.cancel(created.id());
 
+        // when & then
         assertThatThrownBy(() -> reservationService.confirm(created.id()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Only pending reservation can be confirmed");

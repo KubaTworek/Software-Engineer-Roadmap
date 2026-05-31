@@ -1,39 +1,130 @@
+# Główna konfiguracja aplikacji Spring Boot.
 spring:
   application:
+    # Nazwa aplikacji widoczna m.in. w logach, actuatorze i metadanych Springa.
     name: booking-capacity-platform
+
   datasource:
+    # Połączenie do PostgreSQL.
+    #
+    # PostgreSQL jest głównym źródłem prawdy dla:
+    # - eventów,
+    # - rezerwacji,
+    # - klientów,
+    # - użytkowników,
+    # - refresh tokenów,
+    # - audytu,
+    # - komunikatów wychodzących.
     url: jdbc:postgresql://localhost:5432/booking_capacity
+
+    # Dane użytkownika bazy.
+    #
+    # W środowisku developerskim mogą być jawnie w pliku.
+    # Produkcyjnie powinny pochodzić ze zmiennych środowiskowych albo secret managera.
     username: booking
     password: booking
+
   jpa:
+    # Wyłącza Open Session In View.
+    #
+    # To dobra decyzja edukacyjna i architektoniczna.
+    # Dzięki temu LazyInitializationException pojawia się tam, gdzie naprawdę
+    # wynosisz encję poza granicę transakcji.
+    #
+    # Zmusza to do świadomego użycia:
+    # - DTO projection,
+    # - fetch join,
+    # - EntityGraph,
+    # - mapowania w transakcji.
     open-in-view: false
+
     hibernate:
+      # validate oznacza:
+      # - Hibernate nie tworzy ani nie modyfikuje schematu,
+      # - tylko sprawdza, czy schemat bazy pasuje do encji.
+      #
+      # Schematem zarządza Flyway.
       ddl-auto: validate
+
     properties:
       hibernate:
+        # Formatuje SQL generowany przez Hibernate.
+        #
+        # Przydatne w logach podczas nauki i debugowania zapytań.
         format_sql: true
+
+        # Domyślny batch size dla lazy loadingu.
+        #
+        # Pomaga ograniczyć N+1 w niektórych przypadkach, bo Hibernate może
+        # dociągać relacje paczkami zamiast pojedynczo.
+        #
+        # To nie zastępuje fetch join ani DTO projection.
+        # Jest raczej dodatkową optymalizacją.
         default_batch_fetch_size: 50
+
         jdbc:
+          # Wymusza pracę JDBC/Hibernate z czasem w UTC.
+          #
+          # To pomaga ograniczyć błędy związane ze strefami czasowymi,
+          # szczególnie przy Instant, OffsetDateTime i TIMESTAMPTZ.
           time_zone: UTC
+
   flyway:
+    # Flyway zarządza migracjami schematu bazy.
+    #
+    # Przy ddl-auto: validate to Flyway jest odpowiedzialny za CREATE/ALTER TABLE,
+    # indeksy i kolejne zmiany schematu.
     enabled: true
 
   data:
     redis:
+      # Redis używany w etapie NoSQL/cache.
+      #
+      # Przykłady użycia:
+      # - cache detali eventu,
+      # - snapshot dostępności,
+      # - tymczasowe holdy z TTL,
+      # - rate limiting.
       host: localhost
       port: 6379
+
     mongodb:
+      # MongoDB używane jako dokumentowy read model.
+      #
+      # PostgreSQL nadal jest źródłem prawdy.
+      # MongoDB przechowuje denormalizowany widok pod szybki odczyt/search.
       uri: mongodb://localhost:27017/booking_capacity_read_model
 
 server:
+  # Port HTTP aplikacji.
   port: 8080
 
 logging:
   level:
+    # Logowanie SQL generowanego przez Hibernate.
+    #
+    # INFO pokaże zapytania, jeśli logger jest aktywny.
+    # Do bardzo szczegółowego debugowania parametrów trzeba osobno włączyć bind logs,
+    # ale ostrożnie, bo mogą zawierać dane wrażliwe.
     org.hibernate.SQL: INFO
 
 security:
   jwt:
+    # Sekret JWT używany do podpisywania tokenów.
+    #
+    # Ten konkretny sekret jest developerski.
+    # Produkcyjnie nie powinien być trzymany w repozytorium.
     secret: dev-only-stage-7-secret-key-change-me-minimum-32-characters
+
+    # Czas życia access tokenu w sekundach.
+    #
+    # 900 sekund = 15 minut.
+    # Krótki czas życia ogranicza skutki wycieku access tokenu.
     access-token-seconds: 900
+
+    # Czas życia refresh tokenu w sekundach.
+    #
+    # 604800 sekund = 7 dni.
+    # Refresh token żyje dłużej, dlatego jest rotowany i przechowywany w bazie
+    # wyłącznie jako hash.
     refresh-token-seconds: 604800

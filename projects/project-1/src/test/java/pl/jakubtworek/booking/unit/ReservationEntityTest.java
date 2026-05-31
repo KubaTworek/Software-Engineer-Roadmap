@@ -14,8 +14,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class ReservationEntityTest {
     @Test
     void newReservationStartsAsPending() {
+        // given & when
         Reservation reservation = reservation();
 
+        // then
         assertThat(reservation.getStatus()).isEqualTo(ReservationStatus.PENDING);
         assertThat(reservation.getCreatedAt()).isNotNull();
         assertThat(reservation.getConfirmedAt()).isNull();
@@ -24,21 +26,27 @@ class ReservationEntityTest {
 
     @Test
     void confirmsPendingReservation() {
+        // given
         Reservation reservation = reservation();
 
+        // when
         reservation.confirm();
 
+        // then
         assertThat(reservation.getStatus()).isEqualTo(ReservationStatus.CONFIRMED);
         assertThat(reservation.getConfirmedAt()).isNotNull();
     }
 
     @Test
     void cancelsPendingReservationOnlyOnce() {
+        // given
         Reservation reservation = reservation();
 
+        // when
         boolean firstCancel = reservation.cancel();
         boolean secondCancel = reservation.cancel();
 
+        // then
         assertThat(firstCancel).isTrue();
         assertThat(secondCancel).isFalse();
         assertThat(reservation.getStatus()).isEqualTo(ReservationStatus.CANCELLED);
@@ -47,9 +55,11 @@ class ReservationEntityTest {
 
     @Test
     void rejectsCancellingConfirmedReservation() {
+        // given
         Reservation reservation = reservation();
         reservation.confirm();
 
+        // when & then
         assertThatThrownBy(reservation::cancel)
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Confirmed reservation cannot be cancelled");
@@ -57,9 +67,11 @@ class ReservationEntityTest {
 
     @Test
     void rejectsConfirmingCancelledReservation() {
+        // given
         Reservation reservation = reservation();
         reservation.cancel();
 
+        // when & then
         assertThatThrownBy(reservation::confirm)
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Only pending reservation can be confirmed");

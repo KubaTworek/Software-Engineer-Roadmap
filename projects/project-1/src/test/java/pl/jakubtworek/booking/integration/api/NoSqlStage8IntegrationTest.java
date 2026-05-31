@@ -1,4 +1,4 @@
-package pl.jakubtworek.booking.integration;
+package pl.jakubtworek.booking.integration.api;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,6 +18,7 @@ import pl.jakubtworek.booking.service.EventSearchReadModelService;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -25,7 +26,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-class ApiNoSqlStage8IntegrationTest {
+class NoSqlStage8IntegrationTest {
     @Autowired MockMvc mockMvc;
     @Autowired EventRepository eventRepository;
     @Autowired CapacityPoolRepository capacityPoolRepository;
@@ -49,6 +50,7 @@ class ApiNoSqlStage8IntegrationTest {
 
     @Test
     void exposesEventDetailsCacheAndAvailabilitySnapshot() throws Exception {
+        // when & then
         mockMvc.perform(get("/api/nosql/cache/events/{eventId}", event.getId())
                         .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
@@ -70,6 +72,7 @@ class ApiNoSqlStage8IntegrationTest {
 
     @Test
     void exposesReservationHoldAndRateLimiter() throws Exception {
+        // given
         String holdLocation = mockMvc.perform(post("/api/nosql/cache/reservation-holds")
                         .param("eventId", event.getId().toString())
                         .param("customerEmail", "api-hold@example.com")
@@ -81,8 +84,9 @@ class ApiNoSqlStage8IntegrationTest {
                 .getResponse()
                 .getContentAsString();
 
-        org.assertj.core.api.Assertions.assertThat(holdLocation).contains("api-hold@example.com");
+        assertThat(holdLocation).contains("api-hold@example.com");
 
+        // when
         for (int i = 0; i < 5; i++) {
             mockMvc.perform(post("/api/nosql/cache/rate-limit/{clientKey}", "api-client")
                             .accept(MediaType.APPLICATION_JSON))
@@ -90,6 +94,7 @@ class ApiNoSqlStage8IntegrationTest {
                     .andExpect(jsonPath("$.allowed").value(true));
         }
 
+        // then
         mockMvc.perform(post("/api/nosql/cache/rate-limit/{clientKey}", "api-client")
                         .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
@@ -98,12 +103,14 @@ class ApiNoSqlStage8IntegrationTest {
 
     @Test
     void exposesEventSearchReadModelEndpoints() throws Exception {
+        // given
         mockMvc.perform(post("/api/nosql/read-model/events/{eventId}/rebuild", event.getId())
                         .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.eventId").value(event.getId().toString()))
                 .andExpect(jsonPath("$.name").value("NoSQL API Event"));
 
+        // when & then
         mockMvc.perform(get("/api/nosql/read-model/events/{eventId}", event.getId())
                         .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())

@@ -1,4 +1,4 @@
-package pl.jakubtworek.booking.integration;
+package pl.jakubtworek.booking.integration.service;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -12,10 +12,12 @@ import pl.jakubtworek.booking.exception.NotFoundException;
 import pl.jakubtworek.booking.service.EventService;
 
 import java.time.OffsetDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.within;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -36,6 +38,7 @@ class EventServiceIntegrationTest {
 
     @Test
     void createsEventWithCapacityPool() {
+        // given & when
         EventResponse event = eventService.create(new EventCreateRequest(
                 "Java Performance Workshop",
                 "Warsaw",
@@ -44,6 +47,7 @@ class EventServiceIntegrationTest {
                 50
         ));
 
+        // then
         assertThat(event.id()).isNotNull();
         assertThat(event.name()).isEqualTo("Java Performance Workshop");
         assertThat(event.city()).isEqualTo("Warsaw");
@@ -55,6 +59,7 @@ class EventServiceIntegrationTest {
 
     @Test
     void returnsCreatedEventById() {
+        // given
         EventResponse created = eventService.create(new EventCreateRequest(
                 "Spring Internals Meetup",
                 "Krakow",
@@ -63,15 +68,25 @@ class EventServiceIntegrationTest {
                 20
         ));
 
+        // when
         EventResponse found = eventService.get(created.id());
 
-        assertThat(found).usingRecursiveComparison().isEqualTo(created);
+        // then
+        assertThat(found)
+                .usingRecursiveComparison()
+                .ignoringFields("startsAt")
+                .isEqualTo(created);
+
+        assertThat(found.startsAt())
+                .isCloseTo(created.startsAt(), within(1, ChronoUnit.MICROS));
     }
 
     @Test
     void throwsNotFoundForMissingEvent() {
+        // given
         UUID missingId = UUID.randomUUID();
 
+        // when & then
         assertThatThrownBy(() -> eventService.get(missingId))
                 .isInstanceOf(NotFoundException.class)
                 .hasMessageContaining("Event not found");

@@ -1,4 +1,4 @@
-package pl.jakubtworek.booking.integration;
+package pl.jakubtworek.booking.integration.service;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -63,12 +63,15 @@ class AsyncStage3IntegrationTest {
 
     @Test
     void approvedPaymentConfirmsReservationAndRunsFanOutFanInSideEffects() throws Exception {
+        // given
         ReservationResponse pending = createReservation("async-approved@example.com");
 
+        // when
         AsyncConfirmationResult result = asyncReservationService
                 .confirmAndWaitForSideEffects(pending.id(), PaymentScenario.APPROVED)
                 .get(5, TimeUnit.SECONDS);
 
+        // then
         assertThat(result.reservation().status()).isEqualTo(ReservationStatus.CONFIRMED);
         assertThat(result.deliverySummary().email().success()).isTrue();
         assertThat(result.deliverySummary().notification().success()).isTrue();
@@ -89,12 +92,15 @@ class AsyncStage3IntegrationTest {
 
     @Test
     void emailFailureUsesFallbackAndDoesNotRollbackReservationConfirmation() throws Exception {
+        // given
         ReservationResponse pending = createReservation("email-fail@example.com");
 
+        // when
         AsyncConfirmationResult result = asyncReservationService
                 .confirmAndWaitForSideEffects(pending.id(), PaymentScenario.APPROVED)
                 .get(5, TimeUnit.SECONDS);
 
+        // then
         assertThat(result.reservation().status()).isEqualTo(ReservationStatus.CONFIRMED);
         assertThat(result.deliverySummary().email().success()).isFalse();
         assertThat(reservationService.get(pending.id()).status()).isEqualTo(ReservationStatus.CONFIRMED);
@@ -109,14 +115,17 @@ class AsyncStage3IntegrationTest {
 
     @Test
     void slowPaymentProviderTimesOutAndMarksReservationAsPaymentTimeout() throws Exception {
+        // given
         ReservationResponse pending = createReservation("payment-timeout@example.com");
 
+        // when
         long startedAt = System.nanoTime();
         ReservationResponse result = asyncReservationService
                 .confirm(pending.id(), PaymentScenario.SLOW)
                 .get(4, TimeUnit.SECONDS);
         long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
 
+        // then
         assertThat(result.status()).isEqualTo(ReservationStatus.PAYMENT_TIMEOUT);
         assertThat(elapsedMillis).isLessThan(3_500);
         assertEventually(() -> assertThat(paymentProviderClient.wasLastSlowCallInterrupted()).isTrue());
@@ -125,20 +134,25 @@ class AsyncStage3IntegrationTest {
 
     @Test
     void failingPaymentProviderUsesFallbackAndMarksReservationAsPaymentTimeout() throws Exception {
+        // given
         ReservationResponse pending = createReservation("payment-failure@example.com");
 
+        // when
         ReservationResponse result = asyncReservationService
                 .confirm(pending.id(), PaymentScenario.FAILING)
                 .get(5, TimeUnit.SECONDS);
 
+        // then
         assertThat(result.status()).isEqualTo(ReservationStatus.PAYMENT_TIMEOUT);
         assertThat(reservationService.get(pending.id()).status()).isEqualTo(ReservationStatus.PAYMENT_TIMEOUT);
     }
 
     @Test
     void declinedPaymentIsPropagatedAsBusinessErrorAndReservationStaysPending() {
+        // given
         ReservationResponse pending = createReservation("payment-declined@example.com");
 
+        // when & then
         assertThatThrownBy(() -> asyncReservationService
                 .confirm(pending.id(), PaymentScenario.DECLINED)
                 .get(5, TimeUnit.SECONDS))
@@ -150,12 +164,16 @@ class AsyncStage3IntegrationTest {
 
     @Test
     void slowPaymentValidationCanBeCancelledAndInterruptsWorkerThread() {
+        // given
         CompletableFuture<PaymentValidationResult> validation = paymentProviderClient
                 .validatePayment(UUID.randomUUID(), PaymentScenario.SLOW);
 
         sleepBrieflySoSlowTaskStarts();
+
+        // when
         validation.cancel(true);
 
+        // then
         assertThat(validation).isCancelled();
         assertThatThrownBy(validation::join).isInstanceOf(CancellationException.class);
         assertEventually(() -> assertThat(paymentProviderClient.wasLastSlowCallInterrupted()).isTrue());

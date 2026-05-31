@@ -1,4 +1,4 @@
-package pl.jakubtworek.booking.integration;
+package pl.jakubtworek.booking.integration.api;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -29,13 +29,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "DELETE FROM audit_logs",
         "DELETE FROM reservations",
         "DELETE FROM capacity_pools",
-        "DELETE FROM refresh_tokens",
         "DELETE FROM app_users",
         "DELETE FROM events",
         "DELETE FROM customers",
         "DELETE FROM organizations"
 }, executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
-class ApiMvpIntegrationTest {
+class EventsIntegrationTest {
     @Autowired
     MockMvc mockMvc;
 
@@ -98,6 +97,7 @@ class ApiMvpIntegrationTest {
 
     @Test
     void returnsValidationErrorForInvalidEventRequest() throws Exception {
+        // given
         String invalidBody = """
                 {
                   "name": "",
@@ -108,6 +108,7 @@ class ApiMvpIntegrationTest {
                 }
                 """;
 
+        // when & then
         mockMvc.perform(post("/api/events")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(invalidBody))
@@ -118,6 +119,7 @@ class ApiMvpIntegrationTest {
 
     @Test
     void returnsNotFoundForMissingReservation() throws Exception {
+        // when & then
         mockMvc.perform(get("/api/reservations/{reservationId}", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("NOT_FOUND"));
@@ -125,6 +127,7 @@ class ApiMvpIntegrationTest {
 
     @Test
     void returnsConflictWhenCapacityIsUnavailable() throws Exception {
+        // given
         String eventJson = mockMvc.perform(post("/api/events")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new EventCreateRequest(
@@ -140,6 +143,7 @@ class ApiMvpIntegrationTest {
                 .getContentAsString();
         String eventId = objectMapper.readTree(eventJson).get("id").asText();
 
+        // when & then
         mockMvc.perform(post("/api/events/{eventId}/reservations", eventId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(new ReservationCreateRequest("First User", "first.http@example.com"))))

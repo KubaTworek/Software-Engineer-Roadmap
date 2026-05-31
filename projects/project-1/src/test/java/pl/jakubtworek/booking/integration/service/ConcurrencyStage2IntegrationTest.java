@@ -1,6 +1,10 @@
-package pl.jakubtworek.booking.integration;
+package pl.jakubtworek.booking.integration.service;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
@@ -29,6 +33,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiFunction;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -45,6 +51,7 @@ import static org.assertj.core.api.Assertions.assertThat;
         "DELETE FROM customers",
         "DELETE FROM organizations"
 }, executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class ConcurrencyStage2IntegrationTest {
     private static final int CAPACITY = 10;
     private static final int REQUESTS = 100;
@@ -76,12 +83,15 @@ class ConcurrencyStage2IntegrationTest {
 
     @Test
     void naiveImplementationOversellsBecauseCheckThenActIsNotAtomic() throws Exception {
+        // given
         UUID eventId = createEvent(CAPACITY);
 
+        // when
         ConcurrentRunResult result = runConcurrently(REQUESTS, index ->
                 naiveReservationService.create(eventId, request(index))
         );
 
+        // then
         long reservationCount = reservationRepository.count();
         CapacityPool pool = getPool(eventId);
 
@@ -90,47 +100,46 @@ class ConcurrencyStage2IntegrationTest {
         assertThat(pool.getAvailableCapacity()).isBetween(0, CAPACITY - 1);
     }
 
-    @Test
-    void synchronizedImplementationPreventsOversellingInsideSingleJvm() throws Exception {
-        UUID eventId = createEvent(CAPACITY);
-
-        ConcurrentRunResult result = runConcurrently(REQUESTS, index ->
-                synchronizedReservationService.create(eventId, request(index))
+    private Stream<Arguments> safeReservationStrategies() {
+        return Stream.of(
+                Arguments.of(
+                        "synchronized inside single JVM",
+                        (BiFunction<UUID, Integer, UUID>) (eventId, index) ->
+                                synchronizedReservationService.create(eventId, request(index))
+                ),
+                Arguments.of(
+                        "optimistic locking with @Version and retries",
+                        (BiFunction<UUID, Integer, UUID>) (eventId, index) ->
+                                optimisticLockingReservationService.create(eventId, request(index))
+                ),
+                Arguments.of(
+                        "pessimistic locking with SELECT FOR UPDATE",
+                        (BiFunction<UUID, Integer, UUID>) (eventId, index) ->
+                                pessimisticLockingReservationService.create(eventId, request(index))
+                ),
+                Arguments.of(
+                        "atomic SQL conditional update",
+                        (BiFunction<UUID, Integer, UUID>) (eventId, index) ->
+                                atomicSqlReservationService.create(eventId, request(index))
+                )
         );
-
-        assertNoOverselling(eventId, result);
     }
 
-    @Test
-    void optimisticLockingPreventsOversellingByVersionCheckAndRetries() throws Exception {
+    @ParameterizedTest(name = "{0} prevents overselling")
+    @MethodSource("safeReservationStrategies")
+    void safeImplementationsPreventOverselling(
+            String name,
+            BiFunction<UUID, Integer, UUID> createReservation
+    ) throws Exception {
+        // given
         UUID eventId = createEvent(CAPACITY);
 
+        // when
         ConcurrentRunResult result = runConcurrently(REQUESTS, index ->
-                optimisticLockingReservationService.create(eventId, request(index))
+                createReservation.apply(eventId, index)
         );
 
-        assertNoOverselling(eventId, result);
-    }
-
-    @Test
-    void pessimisticLockingPreventsOversellingByLockingCapacityRow() throws Exception {
-        UUID eventId = createEvent(CAPACITY);
-
-        ConcurrentRunResult result = runConcurrently(REQUESTS, index ->
-                pessimisticLockingReservationService.create(eventId, request(index))
-        );
-
-        assertNoOverselling(eventId, result);
-    }
-
-    @Test
-    void atomicSqlUpdatePreventsOversellingWithSingleConditionalUpdate() throws Exception {
-        UUID eventId = createEvent(CAPACITY);
-
-        ConcurrentRunResult result = runConcurrently(REQUESTS, index ->
-                atomicSqlReservationService.create(eventId, request(index))
-        );
-
+        // then
         assertNoOverselling(eventId, result);
     }
 

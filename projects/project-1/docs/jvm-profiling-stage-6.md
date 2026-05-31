@@ -184,36 +184,6 @@ Obserwuj:
 - czas blokowania,
 - spadek throughput przy wzroście liczby wątków.
 
-## JMH
-
-Benchmarki są w osobnym katalogu `benchmarks`, żeby zwykłe `mvn test` nie odpalało mikrobenchmarków.
-
-Uruchomienie:
-
-```bash
-cd benchmarks
-mvn clean package
-java -jar target/benchmarks.jar
-```
-
-Wybrany benchmark:
-
-```bash
-java -jar target/benchmarks.jar StreamVsLoopBenchmark
-java -jar target/benchmarks.jar MoneyBenchmark
-java -jar target/benchmarks.jar CounterBenchmark
-```
-
-Dodane benchmarki:
-
-- `CollectionIterationBenchmark` — `ArrayList` vs `LinkedList`, lokalność pamięci.
-- `StreamVsLoopBenchmark` — stream vs pętla.
-- `MoneyBenchmark` — `BigDecimal` vs `long` w minimalnej jednostce pieniądza.
-- `CounterBenchmark` — `synchronized` vs `AtomicLong` vs `LongAdder`.
-- `ObjectPoolingBenchmark` — zwykła alokacja vs naiwny object pool.
-- `PolymorphismBenchmark` — monomorphic vs megamorphic call site.
-- `FalseSharingBenchmark` — false sharing vs padding.
-
 ## Ważne zasady interpretacji
 
 1. Pojedynczy wynik z jednego uruchomienia nie jest dowodem.
