@@ -30,7 +30,7 @@ class PlaceOrderUseCaseTest {
         ));
 
         var order = repository.findById(orderId).orElseThrow();
-        assertThat(order.status()).isEqualTo(OrderStatus.PLACED);
+        assertThat(order.status()).isEqualTo(OrderStatus.PENDING);
         assertThat(order.customerId().value()).isEqualTo(customerId);
         assertThat(order.total()).isEqualTo(Money.of("30.00", "PLN"));
         assertThat(order.domainEvents()).isEmpty();
@@ -40,5 +40,7 @@ class PlaceOrderUseCaseTest {
         OrderPlaced event = eventPublisher.eventsOfType(OrderPlaced.class).getFirst();
         assertThat(event.aggregateId()).isEqualTo(orderId.value());
         assertThat(event.correlationId()).isEqualTo(correlationId);
+        assertThat(event.lines()).hasSize(1);
+        assertThat(event.lines().getFirst().productId()).isEqualTo(productId);
     }
 }

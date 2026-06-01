@@ -25,7 +25,8 @@ public class ConfirmStockOnStockReservedHandler implements DomainEventHandler<St
         var order = repository.findById(OrderId.of(event.orderId())).orElseThrow();
         order.markStockReserved(event.correlationId(), event.eventId());
         repository.save(order);
-        order.domainEvents().forEach(eventPublisher::publish);
+        var events = java.util.List.copyOf(order.domainEvents());
         order.clearDomainEvents();
+        events.forEach(eventPublisher::publish);
     }
 }

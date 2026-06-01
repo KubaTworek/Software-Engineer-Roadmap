@@ -17,4 +17,19 @@ public record OutboxEvent(
         Instant publishedAt,
         int retryCount,
         String lastError
-) {}
+) {
+    public OutboxEvent markPublished(Instant publishedAt) {
+        return new OutboxEvent(id, aggregateId, aggregateType, eventType, eventVersion, payload,
+                correlationId, causationId, OutboxEventStatus.PUBLISHED, createdAt, publishedAt, retryCount, null);
+    }
+
+    public OutboxEvent markFailed(String reason) {
+        return new OutboxEvent(id, aggregateId, aggregateType, eventType, eventVersion, payload,
+                correlationId, causationId, OutboxEventStatus.FAILED, createdAt, publishedAt, retryCount + 1, reason);
+    }
+
+    public OutboxEvent markNewForRetry() {
+        return new OutboxEvent(id, aggregateId, aggregateType, eventType, eventVersion, payload,
+                correlationId, causationId, OutboxEventStatus.NEW, createdAt, publishedAt, retryCount, lastError);
+    }
+}

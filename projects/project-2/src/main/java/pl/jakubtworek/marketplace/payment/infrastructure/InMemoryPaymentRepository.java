@@ -6,6 +6,8 @@ import pl.jakubtworek.marketplace.payment.domain.Payment;
 import pl.jakubtworek.marketplace.payment.domain.PaymentId;
 
 import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Repository
@@ -16,5 +18,12 @@ public class InMemoryPaymentRepository implements PaymentRepository {
     public Payment save(Payment payment) {
         payments.put(payment.id(), payment);
         return payment;
+    }
+
+    @Override
+    public Optional<Payment> findByOrderId(UUID orderId) {
+        return payments.values().stream()
+                .filter(payment -> payment.orderId().equals(orderId))
+                .findFirst();
     }
 }

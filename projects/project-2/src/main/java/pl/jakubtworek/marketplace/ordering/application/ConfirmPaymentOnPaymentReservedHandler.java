@@ -25,7 +25,8 @@ public class ConfirmPaymentOnPaymentReservedHandler implements DomainEventHandle
         var order = repository.findById(OrderId.of(event.orderId())).orElseThrow();
         order.markPaymentReserved(event.correlationId(), event.eventId());
         repository.save(order);
-        order.domainEvents().forEach(eventPublisher::publish);
+        var events = java.util.List.copyOf(order.domainEvents());
         order.clearDomainEvents();
+        events.forEach(eventPublisher::publish);
     }
 }

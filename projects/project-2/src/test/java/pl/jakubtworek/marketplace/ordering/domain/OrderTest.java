@@ -18,7 +18,7 @@ class OrderTest {
     void shouldPlaceOrderAndRegisterOrderPlacedEvent() {
         Order order = Order.place(CustomerId.of(UUID.randomUUID()), List.of(line("10.00", 2)), CORRELATION_ID);
 
-        assertThat(order.status()).isEqualTo(OrderStatus.PLACED);
+        assertThat(order.status()).isEqualTo(OrderStatus.PENDING);
         assertThat(order.total()).isEqualTo(Money.of("20.00", "PLN"));
         assertThat(order.domainEvents()).hasSize(1);
         assertThat(order.domainEvents().getFirst()).isInstanceOf(OrderPlaced.class);
@@ -26,7 +26,7 @@ class OrderTest {
         OrderPlaced event = (OrderPlaced) order.domainEvents().getFirst();
         assertThat(event.aggregateId()).isEqualTo(order.id().value());
         assertThat(event.correlationId()).isEqualTo(CORRELATION_ID);
-        assertThat(event.eventVersion()).isEqualTo(1);
+        assertThat(event.eventVersion()).isEqualTo(2);
     }
 
     @Test
@@ -52,7 +52,7 @@ class OrderTest {
 
         assertThat(order.paymentReserved()).isTrue();
         assertThat(order.stockReserved()).isFalse();
-        assertThat(order.status()).isEqualTo(OrderStatus.PLACED);
+        assertThat(order.status()).isEqualTo(OrderStatus.PENDING);
         assertThat(order.domainEvents()).isEmpty();
     }
 

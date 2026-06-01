@@ -27,8 +27,9 @@ public class PlaceOrderUseCase {
                 .toList();
         Order order = Order.place(CustomerId.of(command.customerId()), lines, command.correlationId());
         repository.save(order);
-        order.domainEvents().forEach(eventPublisher::publish);
+        var events = List.copyOf(order.domainEvents());
         order.clearDomainEvents();
+        events.forEach(eventPublisher::publish);
         return order.id();
     }
 

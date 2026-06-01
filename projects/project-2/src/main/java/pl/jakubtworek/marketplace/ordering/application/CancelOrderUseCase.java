@@ -5,6 +5,7 @@ import org.springframework.transaction.annotation.Transactional;
 import pl.jakubtworek.marketplace.ordering.domain.OrderId;
 import pl.jakubtworek.marketplace.shared.events.EventPublisher;
 
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -22,7 +23,8 @@ public class CancelOrderUseCase {
         var order = repository.findById(OrderId.of(orderId)).orElseThrow();
         order.cancel(correlationId, null);
         repository.save(order);
-        order.domainEvents().forEach(eventPublisher::publish);
+        var events = List.copyOf(order.domainEvents());
         order.clearDomainEvents();
+        events.forEach(eventPublisher::publish);
     }
 }
