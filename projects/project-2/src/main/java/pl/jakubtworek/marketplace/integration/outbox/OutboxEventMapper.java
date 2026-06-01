@@ -2,6 +2,7 @@ package pl.jakubtworek.marketplace.integration.outbox;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.stereotype.Component;
 import pl.jakubtworek.marketplace.integration.contracts.OrderPlacedContractMapper;
 import pl.jakubtworek.marketplace.inventory.domain.StockReservationFailed;
 import pl.jakubtworek.marketplace.inventory.domain.StockReserved;
@@ -14,8 +15,8 @@ import pl.jakubtworek.marketplace.shared.kernel.DomainEvent;
 
 import java.time.Instant;
 import java.util.Map;
-import java.util.UUID;
 
+@Component
 public class OutboxEventMapper {
     private final ObjectMapper objectMapper;
     private final OrderPlacedContractMapper orderPlacedContractMapper;

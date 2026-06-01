@@ -51,7 +51,7 @@ services:
       kafka:
         condition: service_healthy
     environment:
-      SPRING_PROFILES_ACTIVE: docker
+      SPRING_PROFILES_ACTIVE: docker,postgres
       SERVER_PORT: 8080
       DATABASE_URL: jdbc:postgresql://postgres:5432/marketplace
       DATABASE_USERNAME: marketplace

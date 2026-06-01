@@ -1,5 +1,6 @@
 package pl.jakubtworek.marketplace.integration.outbox.infrastructure;
 
+import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -13,6 +14,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+@Profile("postgres")
 @Repository
 public class JdbcOutboxEventRepository implements OutboxEventRepository {
     private final JdbcTemplate jdbcTemplate;

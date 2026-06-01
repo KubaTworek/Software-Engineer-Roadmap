@@ -1,5 +1,7 @@
 package pl.jakubtworek.marketplace.integration.kafka;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,10 +26,14 @@ public class KafkaOutboxWorker {
     private final KafkaTopicResolver topicResolver;
     private final KafkaEnvelopeMapper envelopeMapper;
 
+    @Value("${marketplace.kafka-outbox.scheduled-enabled:true}")
+    private boolean scheduledEnabled;
+
     public KafkaOutboxWorker(OutboxEventRepository repository, KafkaMessagePublisher publisher) {
         this(repository, publisher, new KafkaTopicResolver(), new KafkaEnvelopeMapper());
     }
 
+    @Autowired
     public KafkaOutboxWorker(OutboxEventRepository repository, KafkaMessagePublisher publisher,
                              KafkaTopicResolver topicResolver, KafkaEnvelopeMapper envelopeMapper) {
         this.repository = repository;
@@ -38,6 +44,9 @@ public class KafkaOutboxWorker {
 
     @Scheduled(fixedDelayString = "${marketplace.kafka-outbox.worker-delay-ms:5000}")
     public void scheduledPublish() {
+        if (!scheduledEnabled) {
+            return;
+        }
         publishNew(DEFAULT_BATCH_SIZE);
     }
 

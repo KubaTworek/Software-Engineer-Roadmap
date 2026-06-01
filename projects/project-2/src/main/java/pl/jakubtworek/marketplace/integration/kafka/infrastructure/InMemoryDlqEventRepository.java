@@ -38,4 +38,8 @@ public class InMemoryDlqEventRepository implements DlqEventRepository {
                 .sorted(Comparator.comparing(DlqEvent::failedAt))
                 .toList();
     }
+
+    public void clear() {
+        events.clear();
+    }
 }

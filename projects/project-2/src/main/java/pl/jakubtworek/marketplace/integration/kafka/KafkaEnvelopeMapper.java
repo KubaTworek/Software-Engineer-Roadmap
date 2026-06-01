@@ -1,9 +1,15 @@
 package pl.jakubtworek.marketplace.integration.kafka;
 
+import org.springframework.stereotype.Component;
 import pl.jakubtworek.marketplace.integration.outbox.OutboxEvent;
 import pl.jakubtworek.marketplace.integration.outbox.OutboxEventStatus;
 
+@Component
 public class KafkaEnvelopeMapper {
+
+    public KafkaEnvelopeMapper() {
+    }
+
     public IntegrationEventEnvelope toEnvelope(OutboxEvent event) {
         return new IntegrationEventEnvelope(
                 event.id(),

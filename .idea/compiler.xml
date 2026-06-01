@@ -37,6 +37,7 @@
       <module name="backend-engineering" options="-parameters --add-exports java.base/jdk.internal.vm.annotation=ALL-UNNAMED" />
       <module name="booking-capacity-platform" options="-parameters" />
       <module name="marketplace-modular-monolith" options="-parameters" />
+      <module name="marketplace-modular-monolith.integrationTest" options="-parameters" />
       <module name="marketplace-modular-monolith.main" options="-parameters" />
       <module name="marketplace-modular-monolith.test" options="-parameters" />
       <module name="project-1" options="-parameters" />

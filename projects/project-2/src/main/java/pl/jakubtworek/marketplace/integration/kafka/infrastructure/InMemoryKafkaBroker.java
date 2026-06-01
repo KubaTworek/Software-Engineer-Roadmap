@@ -54,6 +54,11 @@ public class InMemoryKafkaBroker implements KafkaMessageBroker {
         return List.copyOf(records.getOrDefault(topic, List.of()));
     }
 
+    public void clear() {
+        records.clear();
+        committedOffsets.clear();
+    }
+
     private String key(String topic, String consumerGroup) {
         return topic + "::" + consumerGroup;
     }

@@ -1,5 +1,8 @@
 package pl.jakubtworek.marketplace.integration.outbox.infrastructure;
 
+import org.springframework.context.annotation.Profile;
+import org.springframework.stereotype.Repository;
+
 import pl.jakubtworek.marketplace.integration.outbox.OutboxEvent;
 import pl.jakubtworek.marketplace.integration.outbox.OutboxEventRepository;
 import pl.jakubtworek.marketplace.integration.outbox.OutboxEventStatus;
@@ -11,6 +14,8 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
+@Profile("!postgres")
+@Repository
 public class InMemoryOutboxEventRepository implements OutboxEventRepository {
     private final Map<UUID, OutboxEvent> events = new ConcurrentHashMap<>();
 

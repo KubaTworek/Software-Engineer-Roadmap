@@ -27,6 +27,10 @@ public class InMemoryProcessedEventRepository implements ProcessedEventRepositor
         events.put(key(processedEvent.eventId(), processedEvent.consumerName()), processedEvent);
     }
 
+    public void clear() {
+        events.clear();
+    }
+
     private String key(UUID eventId, String consumerName) {
         return eventId + "::" + consumerName;
     }
