@@ -2,10 +2,14 @@ package pl.jakubtworek.marketplace.inventory.application;
 
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
-import pl.jakubtworek.marketplace.inventory.domain.StockItem;
+import pl.jakubtworek.marketplace.inventory.domain.StockReservationFailed;
+import pl.jakubtworek.marketplace.inventory.domain.StockReserved;
 import pl.jakubtworek.marketplace.ordering.domain.OrderPlaced;
 import pl.jakubtworek.marketplace.shared.events.DomainEventHandler;
 import pl.jakubtworek.marketplace.shared.events.EventPublisher;
+
+import java.util.ArrayList;
+import java.util.List;
 
 @Component
 public class ReserveStockOnOrderPlacedHandler implements DomainEventHandler<OrderPlaced> {
@@ -25,12 +29,28 @@ public class ReserveStockOnOrderPlacedHandler implements DomainEventHandler<Orde
     @Override
     @Transactional
     public void handle(OrderPlaced event) {
-        // Szkielet: na starcie rezerwujemy symboliczny stock dla aggregateId.
-        // Docelowo OrderPlaced powinien przenosić linie zamówienia w payloadzie eventu integracyjnego.
-        StockItem item = repository.findByProductId(event.aggregateId()).orElseGet(() -> StockItem.create(event.aggregateId(), 100));
-        item.reserve(event.aggregateId(), 1, event.correlationId(), event.eventId());
-        repository.save(item);
-        item.domainEvents().forEach(eventPublisher::publish);
-        item.clearDomainEvents();
+        for (OrderPlaced.Line line : event.lines()) {
+            var item = repository.findByProductId(line.productId());
+            if (item.isEmpty()) {
+                eventPublisher.publish(StockReservationFailed.now(
+                        event.aggregateId(), line.productId(), "Missing stock item", event.correlationId(), event.eventId()));
+                return;
+            }
+            if (!item.get().canReserve(line.quantity())) {
+                eventPublisher.publish(StockReservationFailed.now(
+                        event.aggregateId(), line.productId(), "Not enough stock", event.correlationId(), event.eventId()));
+                return;
+            }
+        }
+
+        List<StockReserved.Line> reservedLines = new ArrayList<>();
+        for (OrderPlaced.Line line : event.lines()) {
+            var item = repository.findByProductId(line.productId()).orElseThrow();
+            item.reserveWithoutPublishingEvent(line.quantity());
+            repository.save(item);
+            reservedLines.add(new StockReserved.Line(line.productId(), line.quantity()));
+        }
+
+        eventPublisher.publish(StockReserved.now(event.aggregateId(), reservedLines, event.correlationId(), event.eventId()));
     }
 }

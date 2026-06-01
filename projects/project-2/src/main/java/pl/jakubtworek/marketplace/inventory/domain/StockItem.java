@@ -25,15 +25,27 @@ public class StockItem extends AggregateRoot {
         availableQuantity += quantity;
     }
 
-    public boolean reserve(UUID orderId, int quantity, UUID correlationId, UUID causationId) {
+    public boolean canReserve(int quantity) {
         if (quantity <= 0) throw new IllegalArgumentException("quantity must be positive");
-        if (availableQuantity < quantity) {
-            registerEvent(StockReservationFailed.now(productId, orderId, "Not enough stock", correlationId, causationId));
-            return false;
-        }
+        return availableQuantity >= quantity;
+    }
+
+    public void reserveWithoutPublishingEvent(int quantity) {
+        if (!canReserve(quantity)) throw new IllegalStateException("not enough stock");
         availableQuantity -= quantity;
         reservedQuantity += quantity;
-        registerEvent(StockReserved.now(productId, orderId, correlationId, causationId));
+    }
+
+    /**
+     * Kept for aggregate-level unit tests. The application handler uses one order-level StockReserved event instead.
+     */
+    public boolean reserve(UUID orderId, int quantity, UUID correlationId, UUID causationId) {
+        if (!canReserve(quantity)) {
+            registerEvent(StockReservationFailed.now(orderId, productId, "Not enough stock", correlationId, causationId));
+            return false;
+        }
+        reserveWithoutPublishingEvent(quantity);
+        registerEvent(StockReserved.now(orderId, java.util.List.of(new StockReserved.Line(productId, quantity)), correlationId, causationId));
         return true;
     }
 

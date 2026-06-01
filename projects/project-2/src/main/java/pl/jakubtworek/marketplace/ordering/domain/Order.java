@@ -25,7 +25,7 @@ public class Order extends AggregateRoot {
     }
 
     public static Order place(CustomerId customerId, List<OrderLine> lines, UUID correlationId) {
-        Order order = new Order(OrderId.newId(), customerId, lines, OrderStatus.PLACED, false, false);
+        Order order = new Order(OrderId.newId(), customerId, lines, OrderStatus.PENDING, false, false);
         order.registerEvent(OrderPlaced.now(order, correlationId, null));
         return order;
     }
@@ -46,9 +46,14 @@ public class Order extends AggregateRoot {
         confirmIfReady(correlationId, causationId);
     }
 
-    public void reject() {
+    public void reject(String reason) {
         if (status == OrderStatus.COMPLETED) throw new IllegalStateException("completed order cannot be rejected");
+        if (status == OrderStatus.CANCELLED || status == OrderStatus.REJECTED) return;
         this.status = OrderStatus.REJECTED;
+    }
+
+    public void reject() {
+        reject("Rejected");
     }
 
     public void cancel(UUID correlationId, UUID causationId) {

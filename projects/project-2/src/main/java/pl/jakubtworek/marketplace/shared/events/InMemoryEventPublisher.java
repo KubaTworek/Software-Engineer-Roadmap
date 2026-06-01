@@ -1,23 +1,23 @@
 package pl.jakubtworek.marketplace.shared.events;
 
-import org.springframework.stereotype.Component;
 import pl.jakubtworek.marketplace.shared.kernel.DomainEvent;
 
 import java.util.List;
 
-@Component
+/**
+ * Backward-compatible name kept for early tests and examples.
+ * Prefer ApplicationEventBus for the phase-2 implementation.
+ */
+@Deprecated
 public class InMemoryEventPublisher implements EventPublisher {
-    private final List<DomainEventHandler<?>> handlers;
+    private final ApplicationEventBus delegate;
 
     public InMemoryEventPublisher(List<DomainEventHandler<?>> handlers) {
-        this.handlers = handlers;
+        this.delegate = new ApplicationEventBus(handlers);
     }
 
     @Override
-    @SuppressWarnings({"unchecked", "rawtypes"})
     public void publish(DomainEvent event) {
-        handlers.stream()
-                .filter(handler -> handler.eventType().isAssignableFrom(event.getClass()))
-                .forEach(handler -> ((DomainEventHandler) handler).handle(event));
+        delegate.publish(event);
     }
 }
