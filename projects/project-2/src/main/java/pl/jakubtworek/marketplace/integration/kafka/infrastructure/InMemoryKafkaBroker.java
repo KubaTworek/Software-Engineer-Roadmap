@@ -39,6 +39,17 @@ public class InMemoryKafkaBroker implements KafkaMessageBroker {
         return committedOffsets.getOrDefault(key(topic, consumerGroup), -1L);
     }
 
+    @Override
+    public long endOffset(String topic) {
+        return records.getOrDefault(topic, List.of()).size() - 1L;
+    }
+
+    public long lag(String topic, String consumerGroup) {
+        long end = endOffset(topic);
+        long committed = committedOffset(topic, consumerGroup);
+        return Math.max(0, end - committed);
+    }
+
     public List<KafkaRecord> records(String topic) {
         return List.copyOf(records.getOrDefault(topic, List.of()));
     }
