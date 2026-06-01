@@ -2,6 +2,7 @@ package pl.jakubtworek.marketplace.integration.outbox;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import pl.jakubtworek.marketplace.integration.contracts.OrderPlacedContractMapper;
 import pl.jakubtworek.marketplace.inventory.domain.StockReservationFailed;
 import pl.jakubtworek.marketplace.inventory.domain.StockReserved;
 import pl.jakubtworek.marketplace.ordering.domain.OrderCancelled;
@@ -17,6 +18,7 @@ import java.util.UUID;
 
 public class OutboxEventMapper {
     private final ObjectMapper objectMapper;
+    private final OrderPlacedContractMapper orderPlacedContractMapper;
     private final Map<String, Class<? extends DomainEvent>> eventTypes = Map.of(
             "OrderPlaced", OrderPlaced.class,
             "OrderCancelled", OrderCancelled.class,
@@ -31,6 +33,7 @@ public class OutboxEventMapper {
         this.objectMapper = objectMapper.copy()
                 .findAndRegisterModules()
                 .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        this.orderPlacedContractMapper = new OrderPlacedContractMapper(this.objectMapper);
     }
 
     public OutboxEvent toOutboxEvent(DomainEvent event) {
@@ -57,6 +60,10 @@ public class OutboxEventMapper {
     }
 
     public DomainEvent toDomainEvent(OutboxEvent outboxEvent) {
+        if ("OrderPlaced".equals(outboxEvent.eventType())) {
+            return orderPlacedContractMapper.toDomainEvent(outboxEvent.payload(), outboxEvent.eventVersion());
+        }
+
         Class<? extends DomainEvent> targetType = eventTypes.get(outboxEvent.eventType());
         if (targetType == null) {
             throw new IllegalArgumentException("Unsupported outbox event type: " + outboxEvent.eventType());
