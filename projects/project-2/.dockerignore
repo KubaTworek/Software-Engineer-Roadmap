@@ -1,7 +1,9 @@
+.git
 .gradle
 build
+out
 .idea
-.git
-.gitignore
-README.md
-.env
+*.iml
+*.log
+.DS_Store
+docker-compose.override.yml
