@@ -37,3 +37,20 @@ marketplace:
     mode: ${EVENTS_MODE:in-memory}
   payment-gateway:
     mode: ${PAYMENT_GATEWAY_MODE:fake-success}
+  payment:
+    fake:
+      accept-reservations: ${PAYMENT_FAKE_ACCEPT_RESERVATIONS:true}
+
+  kafka:
+    topics:
+      order-events: marketplace.order-events.v1
+      payment-events: marketplace.payment-events.v1
+      inventory-events: marketplace.inventory-events.v1
+      fulfillment-events: marketplace.fulfillment-events.v1
+      dlq: marketplace.dlq.v1
+    consumer-groups:
+      payment: marketplace-payment
+      inventory: marketplace-inventory
+      ordering: marketplace-ordering
+    retry:
+      max-attempts: 3

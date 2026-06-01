@@ -1,6 +1,7 @@
 package pl.jakubtworek.marketplace.integration.outbox;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -9,6 +10,7 @@ import pl.jakubtworek.marketplace.shared.kernel.DomainEvent;
 
 import java.util.UUID;
 
+@Profile("stage3")
 @Component
 public class OutboxWorker {
     private static final int DEFAULT_BATCH_SIZE = 50;

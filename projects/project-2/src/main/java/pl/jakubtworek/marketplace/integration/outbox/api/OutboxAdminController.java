@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.RestController;
 import pl.jakubtworek.marketplace.integration.outbox.OutboxEvent;
 import pl.jakubtworek.marketplace.integration.outbox.OutboxEventRepository;
 import pl.jakubtworek.marketplace.integration.outbox.OutboxEventStatus;
-import pl.jakubtworek.marketplace.integration.outbox.OutboxWorker;
+import pl.jakubtworek.marketplace.integration.kafka.KafkaOutboxWorker;
 
 import java.util.List;
 import java.util.UUID;
@@ -18,9 +18,9 @@ import java.util.UUID;
 @RequestMapping("/admin/outbox")
 public class OutboxAdminController {
     private final OutboxEventRepository repository;
-    private final OutboxWorker worker;
+    private final KafkaOutboxWorker worker;
 
-    public OutboxAdminController(OutboxEventRepository repository, OutboxWorker worker) {
+    public OutboxAdminController(OutboxEventRepository repository, KafkaOutboxWorker worker) {
         this.repository = repository;
         this.worker = worker;
     }

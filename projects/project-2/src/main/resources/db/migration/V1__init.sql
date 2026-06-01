@@ -93,3 +93,29 @@ CREATE TABLE IF NOT EXISTS integration.dead_letter_events (
     failed_at TIMESTAMP NOT NULL DEFAULT now(),
     retry_count INTEGER NOT NULL DEFAULT 0
 );
+
+-- Stage 4: Kafka consumers, idempotency and DLQ
+CREATE TABLE IF NOT EXISTS integration.processed_events (
+    event_id UUID NOT NULL,
+    consumer_name VARCHAR(200) NOT NULL,
+    status VARCHAR(40) NOT NULL,
+    processed_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    error TEXT,
+    PRIMARY KEY (event_id, consumer_name)
+);
+
+CREATE TABLE IF NOT EXISTS integration.dead_letter_events (
+    id UUID PRIMARY KEY,
+    original_topic VARCHAR(300) NOT NULL,
+    consumer_group_name VARCHAR(200) NOT NULL,
+    original_offset BIGINT NOT NULL,
+    event_id UUID NOT NULL,
+    event_type VARCHAR(200) NOT NULL,
+    event_version INTEGER NOT NULL,
+    payload JSONB NOT NULL,
+    reason TEXT NOT NULL,
+    attempts INTEGER NOT NULL,
+    status VARCHAR(40) NOT NULL,
+    failed_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    replayed_at TIMESTAMP WITH TIME ZONE
+);
