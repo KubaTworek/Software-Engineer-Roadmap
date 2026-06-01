@@ -10,6 +10,8 @@
         <processorPath useClasspath="false">
           <entry name="$MAVEN_REPOSITORY$/org/projectlombok/lombok/1.18.42/lombok-1.18.42.jar" />
           <entry name="$MAVEN_REPOSITORY$/org/springframework/boot/spring-boot-configuration-processor/4.0.3/spring-boot-configuration-processor-4.0.3.jar" />
+          <entry name="$MAVEN_REPOSITORY$/org/projectlombok/lombok/1.18.42/lombok-1.18.42.jar" />
+          <entry name="$MAVEN_REPOSITORY$/org/springframework/boot/spring-boot-configuration-processor/4.0.3/spring-boot-configuration-processor-4.0.3.jar" />
         </processorPath>
         <module name="backend-engineering" />
         <module name="backend-systems-lab-stage-1" />
@@ -21,16 +23,22 @@
         <module name="project-1" />
         <module name="booking-capacity-platform" />
       </profile>
+      <profile name="Gradle Imported" enabled="true">
+        <outputRelativeToContentRoot value="true" />
+        <processorPath useClasspath="false">
+          <entry name="$USER_HOME$/.gradle/caches/modules-2/files-2.1/org.projectlombok/lombok/1.18.34/ec547ef414ab1d2c040118fb9c1c265ada63af14/lombok-1.18.34.jar" />
+        </processorPath>
+        <module name="marketplace-modular-monolith.main" />
+      </profile>
     </annotationProcessing>
-    <bytecodeTargetLevel>
-      <module name="booking-capacity-platform-benchmarks" target="21" />
-      <module name="project-1 (1)" target="1.8" />
-    </bytecodeTargetLevel>
   </component>
   <component name="JavacSettings">
     <option name="ADDITIONAL_OPTIONS_OVERRIDE">
       <module name="backend-engineering" options="-parameters --add-exports java.base/jdk.internal.vm.annotation=ALL-UNNAMED" />
       <module name="booking-capacity-platform" options="-parameters" />
+      <module name="marketplace-modular-monolith" options="-parameters" />
+      <module name="marketplace-modular-monolith.main" options="-parameters" />
+      <module name="marketplace-modular-monolith.test" options="-parameters" />
       <module name="project-1" options="-parameters" />
     </option>
   </component>

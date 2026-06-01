@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: marketplace-config
+data:
+  SERVER_PORT: "8080"
+  DATABASE_URL: "jdbc:postgresql://postgres:5432/marketplace"
+  DATABASE_USERNAME: "marketplace"
+  KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+  EVENTS_MODE: "in-memory"
