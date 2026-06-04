@@ -4,11 +4,31 @@ metadata:
   name: marketplace-config
   namespace: marketplace
 data:
-  SPRING_PROFILES_ACTIVE: "k8s"
+  SPRING_PROFILES_ACTIVE: "postgres,kafka"
+
   SERVER_PORT: "8080"
+
   DATABASE_URL: "jdbc:postgresql://postgres:5432/marketplace"
   DATABASE_USERNAME: "marketplace"
+
   KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+
   EVENTS_MODE: "kafka"
   PAYMENT_GATEWAY_MODE: "fake-success"
   PAYMENT_FAKE_ACCEPT_RESERVATIONS: "true"
+
+  KAFKA_TOPIC_ORDER_EVENTS: "marketplace.order-events.v1"
+  KAFKA_TOPIC_PAYMENT_EVENTS: "marketplace.payment-events.v1"
+  KAFKA_TOPIC_INVENTORY_EVENTS: "marketplace.inventory-events.v1"
+  KAFKA_TOPIC_FULFILLMENT_EVENTS: "marketplace.fulfillment-events.v1"
+  KAFKA_TOPIC_DLQ: "marketplace.dlq.v1"
+
+  KAFKA_CONSUMER_GROUP_PAYMENT: "marketplace-payment"
+  KAFKA_CONSUMER_GROUP_INVENTORY: "marketplace-inventory"
+  KAFKA_CONSUMER_GROUP_ORDERING: "marketplace-ordering"
+
+  KAFKA_RETRY_MAX_ATTEMPTS: "3"
+  KAFKA_POLL_TIMEOUT_MS: "1000"
+
+  KAFKA_OUTBOX_SCHEDULED_ENABLED: "true"
+  KAFKA_OUTBOX_WORKER_DELAY_MS: "5000"

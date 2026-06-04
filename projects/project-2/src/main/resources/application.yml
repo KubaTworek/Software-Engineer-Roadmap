@@ -17,6 +17,14 @@ spring:
     enabled: true
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "*"
 
 server:
   port: ${SERVER_PORT:8080}
@@ -50,6 +58,7 @@ marketplace:
     fake:
       accept-reservations: ${PAYMENT_FAKE_ACCEPT_RESERVATIONS:true}
   kafka:
+    poll-timeout-ms: 1000
     topics:
       order-events: marketplace.order-events.v1
       payment-events: marketplace.payment-events.v1
