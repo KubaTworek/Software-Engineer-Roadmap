@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: payment-mock-service
+
+server:
+  port: ${SERVER_PORT:8084}
+
+payment:
+  failure-rate: ${PAYMENT_FAILURE_RATE:0.2}
+  max-delay-ms: ${PAYMENT_MAX_DELAY_MS:1500}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  metrics:
+    tags:
+      application: ${spring.application.name}

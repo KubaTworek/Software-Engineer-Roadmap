@@ -9,6 +9,8 @@
         <option value="$PROJECT_DIR$/project-1/pom.xml" />
         <option value="$PROJECT_DIR$/projects/project-1/pom.xml" />
         <option value="$PROJECT_DIR$/projects/project-1/benchmarks/pom.xml" />
+        <option value="$PROJECT_DIR$/projects/project-3/pom.xml" />
+        <option value="$PROJECT_DIR$/projects/project-3/api-gateway/pom.xml" />
       </list>
     </option>
     <option name="ignoredFiles">
