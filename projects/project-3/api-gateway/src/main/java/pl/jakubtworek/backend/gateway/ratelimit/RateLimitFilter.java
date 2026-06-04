@@ -80,7 +80,7 @@ class RateLimitFilterConfig {
     FilterRegistrationBean<RateLimitFilter> rateLimitFilterRegistration(RateLimitFilter filter) {
         FilterRegistrationBean<RateLimitFilter> registration = new FilterRegistrationBean<>();
         registration.setFilter(filter);
-        registration.setOrder(2);
+        registration.setOrder(3);
         return registration;
     }
 }

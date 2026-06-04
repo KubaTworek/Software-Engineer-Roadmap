@@ -2,27 +2,52 @@ package pl.jakubtworek.backend.notification.application;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import pl.jakubtworek.backend.common.events.OrderPaidEvent;
+import pl.jakubtworek.backend.common.web.CorrelationId;
 import pl.jakubtworek.backend.notification.config.RabbitConfig;
 
 @Component
 public class NotificationListener {
     private static final Logger log = LoggerFactory.getLogger(NotificationListener.class);
     private final long processingDelayMs;
+    private final Counter notificationSentCounter;
 
-    public NotificationListener(@Value("${notification.processing-delay-ms:0}") long processingDelayMs) {
+    public NotificationListener(@Value("${notification.processing-delay-ms:0}") long processingDelayMs,
+                                MeterRegistry meterRegistry) {
         this.processingDelayMs = processingDelayMs;
+        this.notificationSentCounter = Counter.builder("app_notifications_sent_total")
+                .description("Notifications successfully processed by notification-service")
+                .register(meterRegistry);
     }
 
     @RabbitListener(queues = RabbitConfig.NOTIFICATIONS_QUEUE)
     public void onOrderPaid(OrderPaidEvent event) throws InterruptedException {
-        if (processingDelayMs > 0) {
-            Thread.sleep(processingDelayMs);
+        if (event.correlationId() != null) {
+            MDC.put(CorrelationId.MDC_CORRELATION_ID, event.correlationId());
         }
-        log.info("Sending notification for paid order: orderId={}, reservationId={}, eventId={}, userId={}, amount={}",
-                event.orderId(), event.reservationId(), event.eventId(), event.userId(), event.amount());
+        if (event.requestId() != null) {
+            MDC.put(CorrelationId.MDC_REQUEST_ID, event.requestId());
+        }
+        if (event.traceId() != null) {
+            MDC.put(CorrelationId.MDC_TRACE_ID, event.traceId());
+        }
+        try {
+            if (processingDelayMs > 0) {
+                Thread.sleep(processingDelayMs);
+            }
+            notificationSentCounter.increment();
+            log.info("notification_sent orderId={} reservationId={} eventId={} userId={} amount={}",
+                    event.orderId(), event.reservationId(), event.eventId(), event.userId(), event.amount());
+        } finally {
+            MDC.remove(CorrelationId.MDC_CORRELATION_ID);
+            MDC.remove(CorrelationId.MDC_REQUEST_ID);
+            MDC.remove(CorrelationId.MDC_TRACE_ID);
+        }
     }
 }

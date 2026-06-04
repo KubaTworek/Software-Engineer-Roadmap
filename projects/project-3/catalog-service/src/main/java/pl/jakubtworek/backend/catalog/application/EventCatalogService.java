@@ -2,6 +2,8 @@ package pl.jakubtworek.backend.catalog.application;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import pl.jakubtworek.backend.catalog.api.AvailabilityResponse;
 import pl.jakubtworek.backend.catalog.api.EventResponse;
@@ -15,6 +17,7 @@ import java.util.UUID;
 
 @Service
 public class EventCatalogService {
+    private static final Logger log = LoggerFactory.getLogger(EventCatalogService.class);
     private final EventRepository eventRepository;
     private final RedisJsonCache cache;
     private final ObjectMapper objectMapper;

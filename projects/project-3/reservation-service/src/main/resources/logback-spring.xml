@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <springProperty scope="context" name="applicationName" source="spring.application.name" defaultValue="unknown-service"/>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+            <pattern>{"timestamp":"%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX}","level":"%level","service":"${applicationName}","thread":"%thread","logger":"%logger{40}","traceId":"%X{traceId:-}","spanId":"%X{spanId:-}","correlationId":"%X{correlationId:-}","requestId":"%X{requestId:-}","method":"%X{httpMethod:-}","path":"%X{httpPath:-}","status":"%X{httpStatus:-}","durationMs":"%X{durationMs:-}","message":"%replace(%msg){'\"','\\\"'}","exception":"%replace(%ex{5}){'\"','\\\"'}"}%n</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <logger name="org.springframework" level="INFO"/>
+    <logger name="org.hibernate.SQL" level="WARN"/>
+    <root level="${LOG_LEVEL:INFO}">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+</configuration>

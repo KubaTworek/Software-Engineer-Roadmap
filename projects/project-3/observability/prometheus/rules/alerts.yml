@@ -1,0 +1,78 @@
+groups:
+  - name: microservices-ticketing-platform
+    rules:
+      - alert: HighOrderServiceP95Latency
+        expr: histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket{application="order-service"}[5m])) by (le, uri)) > 1.5
+        for: 5m
+        labels:
+          severity: warning
+          service: order-service
+        annotations:
+          summary: "Order Service p95 latency is high"
+          description: "p95 latency for {{ $labels.uri }} is above 1.5s. Start with trace search by traceId, then check downstream payment/reservation spans."
+          runbook_url: "docs/runbooks/high-latency.md"
+
+      - alert: HighReservationErrorRate
+        expr: sum(rate(http_server_requests_seconds_count{application="reservation-service",status=~"5.."}[5m])) / clamp_min(sum(rate(http_server_requests_seconds_count{application="reservation-service"}[5m])), 1) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          service: reservation-service
+        annotations:
+          summary: "Reservation Service error rate is high"
+          description: "5xx ratio is above 5%. Check logs by correlationId and traces to catalog-service."
+          runbook_url: "docs/runbooks/error-rate-spike.md"
+
+      - alert: PaymentCircuitBreakerOpen
+        expr: resilience4j_circuitbreaker_state{name="payment",state="open"} == 1
+        for: 1m
+        labels:
+          severity: critical
+          service: order-service
+        annotations:
+          summary: "Payment circuit breaker is open"
+          description: "Order Service is degrading orders to PAYMENT_PENDING because payment dependency is failing."
+          runbook_url: "docs/runbooks/payment-dependency-failure.md"
+
+      - alert: DatabaseConnectionPoolSaturation
+        expr: hikaricp_connections_active / clamp_min(hikaricp_connections_max, 1) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Database connection pool saturation"
+          description: "Hikari active connections are above 85% of max. Inspect endpoint latency and DB spans."
+          runbook_url: "docs/runbooks/db-down-or-saturated.md"
+
+      - alert: RedisCacheHitRatioDropped
+        expr: sum(rate(app_cache_requests_total{result="hit"}[10m])) / clamp_min(sum(rate(app_cache_requests_total[10m])), 1) < 0.60
+        for: 10m
+        labels:
+          severity: warning
+          service: catalog-service
+        annotations:
+          summary: "Catalog cache hit ratio dropped"
+          description: "Cache hit ratio is below 60%. Check Redis health, TTL churn, and cache stampede risk."
+          runbook_url: "docs/runbooks/redis-down-or-cache-degraded.md"
+
+      - alert: RateLimitRejectionsSpike
+        expr: sum(rate(http_server_requests_seconds_count{application="api-gateway",status="429"}[5m])) > 1
+        for: 3m
+        labels:
+          severity: info
+          service: api-gateway
+        annotations:
+          summary: "Rate limit rejection spike"
+          description: "API Gateway is rejecting traffic with 429. Confirm whether this is expected abuse or bad limit config."
+          runbook_url: "docs/runbooks/rate-limit-spike.md"
+
+      - alert: NotificationConsumerLagSuspected
+        expr: increase(app_notifications_sent_total[10m]) == 0 and sum(rate(http_server_requests_seconds_count{application="order-service",uri="/orders",status=~"2.."}[10m])) > 0
+        for: 10m
+        labels:
+          severity: warning
+          service: notification-service
+        annotations:
+          summary: "Notifications may not be processed"
+          description: "Orders are being created, but notification-service reports no processed notifications. Check RabbitMQ queue depth and consumer logs."
+          runbook_url: "docs/runbooks/broker-lag.md"

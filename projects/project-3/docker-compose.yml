@@ -59,6 +59,7 @@ services:
     image: prom/prometheus:v2.55.1
     volumes:
       - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus/rules:/etc/prometheus/rules:ro
     ports:
       - "9090:9090"
 
@@ -80,6 +81,33 @@ services:
       - "3200:3200"
       - "4318:4318"
 
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"
+      - "4319:4318"
+    profiles: ["observability-extra"]
+
+  loki:
+    image: grafana/loki:3.2.1
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    volumes:
+      - ./observability/loki/loki.yml:/etc/loki/local-config.yaml:ro
+    ports:
+      - "3100:3100"
+
+  promtail:
+    image: grafana/promtail:3.2.1
+    command: ["-config.file=/etc/promtail/config.yml"]
+    volumes:
+      - ./observability/promtail/promtail.yml:/etc/promtail/config.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+
   catalog-service:
     profiles: ["apps"]
     build:
@@ -87,6 +115,9 @@ services:
       dockerfile: catalog-service/Dockerfile
     environment:
       SERVER_PORT: 8081
+      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
+      MANAGEMENT_TRACING_SAMPLING_PROBABILITY: 1.0
+      LOG_LEVEL: INFO
       SPRING_DATASOURCE_URL: jdbc:postgresql://catalog-db:5432/catalog
       SPRING_DATASOURCE_USERNAME: app
       SPRING_DATASOURCE_PASSWORD: app
@@ -106,6 +137,9 @@ services:
       dockerfile: reservation-service/Dockerfile
     environment:
       SERVER_PORT: 8082
+      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
+      MANAGEMENT_TRACING_SAMPLING_PROBABILITY: 1.0
+      LOG_LEVEL: INFO
       SPRING_DATASOURCE_URL: jdbc:postgresql://reservation-db:5432/reservation
       SPRING_DATASOURCE_USERNAME: app
       SPRING_DATASOURCE_PASSWORD: app
@@ -125,6 +159,9 @@ services:
       dockerfile: order-service/Dockerfile
     environment:
       SERVER_PORT: 8083
+      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
+      MANAGEMENT_TRACING_SAMPLING_PROBABILITY: 1.0
+      LOG_LEVEL: INFO
       SPRING_DATASOURCE_URL: jdbc:postgresql://order-db:5432/orders
       SPRING_DATASOURCE_USERNAME: app
       SPRING_DATASOURCE_PASSWORD: app
@@ -150,6 +187,9 @@ services:
       dockerfile: payment-mock-service/Dockerfile
     environment:
       SERVER_PORT: 8084
+      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
+      MANAGEMENT_TRACING_SAMPLING_PROBABILITY: 1.0
+      LOG_LEVEL: INFO
       PAYMENT_FAILURE_RATE: 0.0
       PAYMENT_MAX_DELAY_MS: 300
     ports:
@@ -162,6 +202,9 @@ services:
       dockerfile: notification-service/Dockerfile
     environment:
       SERVER_PORT: 8085
+      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
+      MANAGEMENT_TRACING_SAMPLING_PROBABILITY: 1.0
+      LOG_LEVEL: INFO
       SPRING_RABBITMQ_HOST: rabbitmq
     ports:
       - "8085:8085"
@@ -176,6 +219,9 @@ services:
       dockerfile: api-gateway/Dockerfile
     environment:
       SERVER_PORT: 8080
+      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
+      MANAGEMENT_TRACING_SAMPLING_PROBABILITY: 1.0
+      LOG_LEVEL: INFO
       CATALOG_SERVICE_URL: http://catalog-service:8081
       RESERVATION_SERVICE_URL: http://reservation-service:8082
       ORDER_SERVICE_URL: http://order-service:8083

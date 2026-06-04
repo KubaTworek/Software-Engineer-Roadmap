@@ -13,4 +13,12 @@ public class CommonWebConfig {
         registration.setOrder(1);
         return registration;
     }
+
+    @Bean
+    FilterRegistrationBean<RequestLoggingFilter> requestLoggingFilter() {
+        FilterRegistrationBean<RequestLoggingFilter> registration = new FilterRegistrationBean<>();
+        registration.setFilter(new RequestLoggingFilter());
+        registration.setOrder(2);
+        return registration;
+    }
 }

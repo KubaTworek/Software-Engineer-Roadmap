@@ -1,9 +1,13 @@
 package pl.jakubtworek.backend.order.application;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pl.jakubtworek.backend.common.events.OrderPaidEvent;
+import pl.jakubtworek.backend.common.web.CorrelationId;
 import pl.jakubtworek.backend.order.api.CreateOrderRequest;
 import pl.jakubtworek.backend.order.api.OrderResponse;
 import pl.jakubtworek.backend.order.client.PaymentClient;
@@ -16,6 +20,7 @@ import java.util.UUID;
 
 @Service
 public class OrderService {
+    private static final Logger log = LoggerFactory.getLogger(OrderService.class);
     private final OrderRepository repository;
     private final PaymentClient paymentClient;
     private final ReservationClient reservationClient;
@@ -36,6 +41,7 @@ public class OrderService {
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
             var existing = repository.findByIdempotencyKey(idempotencyKey);
             if (existing.isPresent()) {
+                log.info("idempotent_order_replayed orderId={} idempotencyKey={}", existing.get().getId(), idempotencyKey);
                 return toResponse(existing.get());
             }
         }
@@ -52,6 +58,7 @@ public class OrderService {
         }
 
         OrderEntity order = repository.save(OrderEntity.pending(request.reservationId(), request.userId(), idempotencyKey));
+        log.info("order_created orderId={} reservationId={} userId={}", order.getId(), order.getReservationId(), order.getUserId());
         try {
             paymentClient.pay(order.getId(), order.getUserId(), order.getAmount());
             ReservationClient.ReservationResponse confirmedReservation = reservationClient.confirm(order.getReservationId());
@@ -64,10 +71,15 @@ public class OrderService {
                             order.getId(),
                             order.getReservationId(),
                             order.getUserId(),
-                            order.getAmount()
+                            order.getAmount(),
+                            MDC.get(CorrelationId.MDC_CORRELATION_ID),
+                            MDC.get(CorrelationId.MDC_REQUEST_ID),
+                            MDC.get(CorrelationId.MDC_TRACE_ID)
                     )
             );
+            log.info("order_paid orderId={} reservationId={}", order.getId(), order.getReservationId());
         } catch (Exception exception) {
+            log.warn("order_degraded_to_payment_pending orderId={} reservationId={} reason={}", order.getId(), order.getReservationId(), exception.getMessage());
             order.markPaymentPending(exception.getMessage());
         }
         return toResponse(order);

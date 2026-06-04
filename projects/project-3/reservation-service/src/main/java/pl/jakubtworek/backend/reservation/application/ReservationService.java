@@ -1,5 +1,7 @@
 package pl.jakubtworek.backend.reservation.application;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pl.jakubtworek.backend.reservation.api.CreateReservationRequest;
@@ -13,6 +15,7 @@ import java.util.UUID;
 
 @Service
 public class ReservationService {
+    private static final Logger log = LoggerFactory.getLogger(ReservationService.class);
     private final ReservationRepository repository;
     private final CatalogClient catalogClient;
 
