@@ -5,7 +5,8 @@ CREATE TABLE orders (
     amount NUMERIC(12, 2) NOT NULL,
     status VARCHAR(32) NOT NULL,
     idempotency_key VARCHAR(255),
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    degradation_reason VARCHAR(500)
 );
 
 CREATE UNIQUE INDEX ux_orders_idempotency_key ON orders(idempotency_key) WHERE idempotency_key IS NOT NULL;

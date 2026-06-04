@@ -179,9 +179,19 @@ services:
       CATALOG_SERVICE_URL: http://catalog-service:8081
       RESERVATION_SERVICE_URL: http://reservation-service:8082
       ORDER_SERVICE_URL: http://order-service:8083
+      SPRING_DATA_REDIS_HOST: redis
+      RATE_LIMIT_ENABLED: "true"
+      RATE_LIMIT_ANON_CAPACITY: 60
+      RATE_LIMIT_ANON_REFILL_TOKENS: 60
+      RATE_LIMIT_ANON_REFILL_PERIOD: 60s
+      RATE_LIMIT_API_KEY_CAPACITY: 600
+      RATE_LIMIT_API_KEY_REFILL_TOKENS: 600
+      RATE_LIMIT_API_KEY_REFILL_PERIOD: 60s
     ports:
       - "8080:8080"
     depends_on:
+      redis:
+        condition: service_started
       catalog-service:
         condition: service_started
       reservation-service:

@@ -13,13 +13,18 @@ spring:
     redis:
       host: ${SPRING_DATA_REDIS_HOST:localhost}
       port: ${SPRING_DATA_REDIS_PORT:6379}
-  cache:
-    type: redis
-    redis:
-      time-to-live: 30s
 
 server:
   port: ${SERVER_PORT:8081}
+
+app:
+  cache:
+    events:
+      ttl: ${CACHE_EVENTS_TTL:60s}
+    event-details:
+      ttl: ${CACHE_EVENT_DETAILS_TTL:120s}
+    availability:
+      ttl: ${CACHE_AVAILABILITY_TTL:10s}
 
 management:
   endpoints:

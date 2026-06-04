@@ -26,6 +26,11 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.BAD_REQUEST, exception.getMessage(), request);
     }
 
+    @ExceptionHandler(IllegalStateException.class)
+    ResponseEntity<ApiError> serviceUnavailable(IllegalStateException exception, HttpServletRequest request) {
+        return error(HttpStatus.SERVICE_UNAVAILABLE, exception.getMessage(), request);
+    }
+
     @ExceptionHandler(Exception.class)
     ResponseEntity<ApiError> generic(Exception exception, HttpServletRequest request) {
         return error(HttpStatus.INTERNAL_SERVER_ERROR, "Unexpected error", request);

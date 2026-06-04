@@ -17,11 +17,33 @@ services:
   catalog:
     url: ${CATALOG_SERVICE_URL:http://localhost:8081}
 
+app:
+  http-client:
+    connect-timeout-ms: ${HTTP_CLIENT_CONNECT_TIMEOUT_MS:1000}
+    response-timeout-ms: ${HTTP_CLIENT_RESPONSE_TIMEOUT_MS:2500}
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      catalog:
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+  retry:
+    instances:
+      catalog:
+        max-attempts: 2
+        wait-duration: 200ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,prometheus,metrics
+        include: health,info,prometheus,metrics,circuitbreakers,retries
   metrics:
     tags:
       application: ${spring.application.name}

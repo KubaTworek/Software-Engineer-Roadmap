@@ -1,6 +1,10 @@
 spring:
   application:
     name: api-gateway
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
 
 server:
   port: ${SERVER_PORT:8080}
@@ -12,6 +16,21 @@ services:
     url: ${RESERVATION_SERVICE_URL:http://localhost:8082}
   order:
     url: ${ORDER_SERVICE_URL:http://localhost:8083}
+
+app:
+  http-client:
+    connect-timeout-ms: ${HTTP_CLIENT_CONNECT_TIMEOUT_MS:1000}
+    response-timeout-ms: ${HTTP_CLIENT_RESPONSE_TIMEOUT_MS:2500}
+  rate-limit:
+    enabled: ${RATE_LIMIT_ENABLED:true}
+    anonymous:
+      capacity: ${RATE_LIMIT_ANON_CAPACITY:60}
+      refill-tokens: ${RATE_LIMIT_ANON_REFILL_TOKENS:60}
+      refill-period: ${RATE_LIMIT_ANON_REFILL_PERIOD:60s}
+    api-key:
+      capacity: ${RATE_LIMIT_API_KEY_CAPACITY:600}
+      refill-tokens: ${RATE_LIMIT_API_KEY_REFILL_TOKENS:600}
+      refill-period: ${RATE_LIMIT_API_KEY_REFILL_PERIOD:60s}
 
 management:
   endpoints:

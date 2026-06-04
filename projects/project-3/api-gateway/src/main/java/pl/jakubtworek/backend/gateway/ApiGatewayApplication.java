@@ -2,13 +2,10 @@ package pl.jakubtworek.backend.gateway;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.context.annotation.Import;
-import pl.jakubtworek.backend.common.web.CommonWebConfig;
-import pl.jakubtworek.backend.common.web.GlobalExceptionHandler;
-import pl.jakubtworek.backend.common.web.CorrelationWebClientConfig;
+import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 
-@SpringBootApplication
-@Import({CommonWebConfig.class, GlobalExceptionHandler.class, CorrelationWebClientConfig.class})
+@SpringBootApplication(scanBasePackages = "pl.jakubtworek.backend")
+@ConfigurationPropertiesScan(basePackages = "pl.jakubtworek.backend.gateway")
 public class ApiGatewayApplication {
     public static void main(String[] args) {
         SpringApplication.run(ApiGatewayApplication.class, args);

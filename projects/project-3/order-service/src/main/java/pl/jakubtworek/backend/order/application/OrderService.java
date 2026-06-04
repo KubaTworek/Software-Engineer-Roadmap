@@ -68,7 +68,7 @@ public class OrderService {
                     )
             );
         } catch (Exception exception) {
-            order.markPaymentPending();
+            order.markPaymentPending(exception.getMessage());
         }
         return toResponse(order);
     }
@@ -80,6 +80,6 @@ public class OrderService {
     }
 
     private OrderResponse toResponse(OrderEntity order) {
-        return new OrderResponse(order.getId(), order.getReservationId(), order.getUserId(), order.getAmount(), order.getStatus(), order.getCreatedAt());
+        return new OrderResponse(order.getId(), order.getReservationId(), order.getUserId(), order.getAmount(), order.getStatus(), order.getCreatedAt(), order.getDegradationReason());
     }
 }
