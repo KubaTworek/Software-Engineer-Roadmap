@@ -6,21 +6,21 @@ import org.slf4j.MDC;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import pl.jakubtworek.backend.common.events.OrderPaidEvent;
 import pl.jakubtworek.backend.common.web.CorrelationId;
 import pl.jakubtworek.backend.notification.config.RabbitConfig;
+import pl.jakubtworek.backend.notification.chaos.NotificationChaosSettings;
 
 @Component
 public class NotificationListener {
     private static final Logger log = LoggerFactory.getLogger(NotificationListener.class);
-    private final long processingDelayMs;
+    private final NotificationChaosSettings chaosSettings;
     private final Counter notificationSentCounter;
 
-    public NotificationListener(@Value("${notification.processing-delay-ms:0}") long processingDelayMs,
+    public NotificationListener(NotificationChaosSettings chaosSettings,
                                 MeterRegistry meterRegistry) {
-        this.processingDelayMs = processingDelayMs;
+        this.chaosSettings = chaosSettings;
         this.notificationSentCounter = Counter.builder("app_notifications_sent_total")
                 .description("Notifications successfully processed by notification-service")
                 .register(meterRegistry);
@@ -38,7 +38,9 @@ public class NotificationListener {
             MDC.put(CorrelationId.MDC_TRACE_ID, event.traceId());
         }
         try {
+            long processingDelayMs = chaosSettings.processingDelayMs();
             if (processingDelayMs > 0) {
+                log.warn("notification_processing_delay_simulated delayMs={}", processingDelayMs);
                 Thread.sleep(processingDelayMs);
             }
             notificationSentCounter.increment();

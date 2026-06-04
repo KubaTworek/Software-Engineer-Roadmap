@@ -244,3 +244,30 @@ services:
         condition: service_started
       order-service:
         condition: service_started
+
+  k6:
+    image: grafana/k6:0.54.0
+    profiles: ["load-tests"]
+    working_dir: /work
+    volumes:
+      - .:/work
+    environment:
+      BASE_URL: http://api-gateway:8080
+      CATALOG_URL: http://catalog-service:8081
+      PAYMENT_URL: http://payment-mock-service:8084
+      NOTIFICATION_URL: http://notification-service:8085
+      RABBITMQ_API_URL: http://rabbitmq:15672/api
+      RABBITMQ_AUTH: guest:guest
+    depends_on:
+      api-gateway:
+        condition: service_started
+      catalog-service:
+        condition: service_started
+      reservation-service:
+        condition: service_started
+      order-service:
+        condition: service_started
+      payment-mock-service:
+        condition: service_started
+      notification-service:
+        condition: service_started

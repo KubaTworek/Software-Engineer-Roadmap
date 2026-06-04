@@ -3,8 +3,8 @@ package pl.jakubtworek.backend.payment.api;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
+import pl.jakubtworek.backend.payment.chaos.PaymentChaosSettings;
 
 import java.util.Random;
 import java.util.UUID;
@@ -14,19 +14,16 @@ import java.util.UUID;
 public class PaymentController {
     private static final Logger log = LoggerFactory.getLogger(PaymentController.class);
     private final Random random = new Random();
-    private final double failureRate;
-    private final int maxDelayMs;
+    private final PaymentChaosSettings chaosSettings;
 
-    public PaymentController(@Value("${payment.failure-rate:0.2}") double failureRate,
-                             @Value("${payment.max-delay-ms:1500}") int maxDelayMs) {
-        this.failureRate = failureRate;
-        this.maxDelayMs = maxDelayMs;
+    public PaymentController(PaymentChaosSettings chaosSettings) {
+        this.chaosSettings = chaosSettings;
     }
 
     @PostMapping
     PaymentResponse pay(@Valid @RequestBody PaymentRequest request) throws InterruptedException {
-        Thread.sleep(random.nextInt(Math.max(1, maxDelayMs)));
-        if (random.nextDouble() < failureRate) {
+        Thread.sleep(random.nextInt(Math.max(1, chaosSettings.maxDelayMs())));
+        if (random.nextDouble() < chaosSettings.failureRate()) {
             log.warn("payment_failed orderId={} userId={} simulated=true", request.orderId(), request.userId());
             throw new IllegalStateException("Simulated payment provider failure");
         }
