@@ -37,10 +37,10 @@ export function makeSummary(name, data) {
     '',
     '## Key metrics',
     '',
-    `- http_req_duration p95: ${metrics.http_req_duration?.percentiles?.['p(95)'] ?? 'n/a'} ms`,
-    `- http_req_duration p99: ${metrics.http_req_duration?.percentiles?.['p(99)'] ?? 'n/a'} ms`,
-    `- http_req_failed rate: ${metrics.http_req_failed?.rate ?? 'n/a'}`,
-    `- checks rate: ${metrics.checks?.rate ?? 'n/a'}`,
+    `- http_req_duration p95: ${metrics.http_req_duration?.values?.['p(95)'] ?? 'n/a'} ms`,
+    `- http_req_duration p99: ${metrics.http_req_duration?.values?.['p(99)'] ?? 'n/a'} ms`,
+    `- http_req_failed rate: ${metrics.http_req_failed?.values?.rate ?? 'n/a'}`,
+    `- checks rate: ${metrics.checks?.values?.rate ?? 'n/a'}`,
     '',
     'Raw JSON summary is stored next to this file when the script is run from the repository root.',
     '',
@@ -50,4 +50,16 @@ export function makeSummary(name, data) {
     [`load-tests/reports/${name}.summary.json`]: JSON.stringify(data, null, 2),
     [`load-tests/reports/${name}.summary.md`]: lines.join('\n'),
   };
+}
+
+export function isSuccessStatus(response) {
+  return response.status === 200 || response.status === 201;
+}
+
+export function safeJson(response, path) {
+  try {
+    return response.json(path);
+  } catch (e) {
+    return null;
+  }
 }

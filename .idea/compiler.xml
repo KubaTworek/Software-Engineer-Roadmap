@@ -18,17 +18,10 @@
         <sourceOutputDir name="target/generated-sources/annotations" />
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
-        <module name="api-gateway (1)" />
         <module name="catalog-service" />
-        <module name="catalog-service (1)" />
-        <module name="common (1)" />
-        <module name="order-service (1)" />
         <module name="notification-service" />
         <module name="project-1" />
         <module name="common" />
-        <module name="payment-mock-service (1)" />
-        <module name="notification-service (1)" />
-        <module name="reservation-service (1)" />
         <module name="reservation-service" />
         <module name="api-gateway" />
         <module name="order-service" />
@@ -43,11 +36,22 @@
         <module name="marketplace-modular-monolith.main" />
       </profile>
     </annotationProcessing>
+    <bytecodeTargetLevel>
+      <module name="api-gateway (1)" target="1.8" />
+      <module name="api-gateway (2)" target="1.8" />
+      <module name="catalog-service (1)" target="1.8" />
+      <module name="common (1)" target="1.8" />
+      <module name="notification-service (1)" target="1.8" />
+      <module name="order-service (1)" target="1.8" />
+      <module name="payment-mock-service (1)" target="1.8" />
+      <module name="reservation-service (1)" target="1.8" />
+    </bytecodeTargetLevel>
   </component>
   <component name="JavacSettings">
     <option name="ADDITIONAL_OPTIONS_OVERRIDE">
       <module name="api-gateway" options="-parameters" />
       <module name="api-gateway (1)" options="-parameters" />
+      <module name="api-gateway (2)" options="-parameters" />
       <module name="backend-engineering" options="-parameters --add-exports java.base/jdk.internal.vm.annotation=ALL-UNNAMED" />
       <module name="booking-capacity-platform" options="-parameters" />
       <module name="catalog-service" options="-parameters" />
