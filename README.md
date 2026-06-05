@@ -1234,3 +1234,483 @@ Pytaj:
 - Czy system da się utrzymać po moim odejściu?
 
 To jest różnica między pisaniem kodu a dojrzałą inżynierią.
+
+---
+
+# TODO
+
+## 1. API Design
+
+- Czym jest API i czym różni się API publiczne, prywatne i wewnętrzne.
+- REST vs GraphQL:
+    - kiedy REST jest wystarczający,
+    - kiedy GraphQL rozwiązuje realny problem,
+    - overfetching i underfetching,
+    - resolver N+1,
+    - query complexity,
+    - autoryzacja na poziomie pól i zasobów.
+- HTTP methods:
+    - GET,
+    - POST,
+    - PUT,
+    - PATCH,
+    - DELETE.
+- Safe vs idempotent methods:
+    - które metody powinny być bezpieczne,
+    - które powinny być idempotentne,
+    - dlaczego ma to znaczenie przy retry.
+- HTTP status codes:
+    - 2xx,
+    - 3xx,
+    - 4xx,
+    - 5xx.
+- Stateless vs Stateful APIs:
+    - stateless request,
+    - sesja po stronie serwera,
+    - skalowanie API,
+    - konsekwencje dla load balancingu.
+- API contract:
+    - request/response schema,
+    - walidacja wejścia,
+    - error contract,
+    - backward compatibility,
+    - wersjonowanie API.
+- Idempotency:
+    - idempotency key,
+    - duplikaty requestów,
+    - retry po timeoutach,
+    - operacje finansowe i płatności.
+- Rate limiting vs throttling:
+    - limit per user,
+    - limit per IP,
+    - limit per API key,
+    - token bucket,
+    - sliding window,
+    - ochrona przed nadużyciami i przeciążeniem.
+
+---
+
+## 2. Authentication & Authorization
+
+- Authentication vs Authorization:
+    - kim jesteś,
+    - co możesz zrobić.
+- Session-based authentication:
+    - session ID,
+    - cookies,
+    - server-side session store,
+    - sticky sessions,
+    - konsekwencje dla skalowania.
+- JWT:
+    - access token,
+    - refresh token,
+    - expiry,
+    - rotacja refresh tokenów,
+    - revocation problem,
+    - ryzyka zbyt długiego TTL.
+- OAuth 2.0:
+    - authorization code flow,
+    - login przez Google/GitHub,
+    - różnica między authentication a delegated authorization.
+- Resource ownership:
+    - właściciel zasobu,
+    - organizacja,
+    - tenant,
+    - role,
+    - permission checks na poziomie danych.
+- Security boundaries:
+    - nie ufać frontendowi,
+    - nie ufać samemu `userId` z requestu,
+    - walidować dostęp po stronie backendu.
+
+---
+
+## 3. Databases & Data Handling
+
+- SQL vs NoSQL:
+    - kiedy relacyjna baza jest lepsza,
+    - kiedy dokumentowa baza ma sens,
+    - kiedy key-value store wystarczy,
+    - kiedy wide-column store jest dobrym wyborem,
+    - kiedy grafowa baza rzeczywiście pomaga.
+- ACID:
+    - atomicity,
+    - consistency,
+    - isolation,
+    - durability,
+    - praktyczne znaczenie ACID w backendzie.
+- Transakcje:
+    - granice transakcji,
+    - commit,
+    - rollback,
+    - transakcje aplikacyjne vs bazodanowe.
+- Isolation levels:
+    - READ COMMITTED,
+    - REPEATABLE READ,
+    - SERIALIZABLE,
+    - dirty reads,
+    - non-repeatable reads,
+    - phantom reads.
+- Indexes:
+    - B-tree index,
+    - composite index,
+    - selectivity,
+    - indeks pod konkretny query pattern,
+    - koszt indeksu przy zapisie.
+- Execution plans:
+    - EXPLAIN,
+    - EXPLAIN ANALYZE,
+    - sequential scan,
+    - index scan,
+    - nested loop,
+    - hash join.
+- Normalization vs denormalization:
+    - kiedy normalizacja chroni spójność,
+    - kiedy denormalizacja przyspiesza odczyt,
+    - koszt duplikacji danych,
+    - spójność danych zdenormalizowanych.
+- Pagination:
+    - offset pagination,
+    - cursor-based pagination,
+    - keyset pagination,
+    - stabilne sortowanie,
+    - problem duplikatów i pominięć.
+- Sharding & partitioning:
+    - partycjonowanie tabel,
+    - shard key,
+    - hot partitions,
+    - routing zapytań,
+    - koszt operacyjny shardingu.
+- Read replicas:
+    - skalowanie odczytu,
+    - replication lag,
+    - read-your-writes problem,
+    - kiedy nie czytać z repliki.
+- Write scaling:
+    - batching,
+    - partitioning,
+    - queue-based writes,
+    - ograniczenia pojedynczej bazy.
+- Handling duplicate records:
+    - unique constraints,
+    - UPSERT,
+    - natural key vs surrogate key,
+    - idempotency key,
+    - deduplikacja po stronie DB vs aplikacji.
+- Optimistic vs pessimistic locking:
+    - version column,
+    - `SELECT FOR UPDATE`,
+    - lock wait,
+    - deadlock,
+    - kiedy lock jest poprawnym trade-offem.
+
+---
+
+## 4. Caching & Performance
+
+- Czym jest cache i po co go używać.
+- Gdzie cache’ować:
+    - browser/client cache,
+    - CDN,
+    - API gateway,
+    - application cache,
+    - Redis,
+    - database cache.
+- Cache patterns:
+    - cache-aside,
+    - read-through,
+    - write-through,
+    - write-behind.
+- Cache eviction:
+    - TTL,
+    - LRU,
+    - LFU,
+    - manual invalidation.
+- Cache consistency:
+    - stale cache,
+    - cache invalidation,
+    - write-read race,
+    - read-your-writes problem.
+- Cache stampede:
+    - single-flight,
+    - jitter,
+    - request coalescing,
+    - background refresh.
+- Negative caching:
+    - cache’owanie braku danych,
+    - ryzyko blokowania świeżo utworzonych zasobów.
+- CDN and edge caching:
+    - statyczne assety,
+    - publiczne treści,
+    - cache headers,
+    - invalidacja CDN.
+- Kiedy cache może popsuć system:
+    - pokazanie starych danych,
+    - pokazanie danych nieuprawnionemu użytkownikowi,
+    - nieaktualny stan płatności,
+    - błędne liczniki,
+    - niespójne read modele.
+- Performance basics:
+    - latency,
+    - throughput,
+    - p50/p95/p99,
+    - bottleneck,
+    - saturation,
+    - CPU-bound vs IO-bound.
+
+---
+
+## 5. Distributed Systems & Scaling
+
+- Horizontal vs vertical scaling:
+    - skalowanie instancji,
+    - skalowanie maszyny,
+    - limity obu podejść.
+- Stateless services:
+    - dlaczego łatwiej je skalować,
+    - gdzie trzymać stan,
+    - konsekwencje dla sesji.
+- Load balancing:
+    - round-robin,
+    - least connections,
+    - weighted routing,
+    - consistent hashing,
+    - health checks,
+    - sticky sessions.
+- Microservices vs monolith:
+    - monolith,
+    - modular monolith,
+    - microservices,
+    - koszty sieci,
+    - koszty operacyjne,
+    - granice domenowe,
+    - ownership zespołów.
+- Service-to-service communication:
+    - sync HTTP/gRPC,
+    - async messaging,
+    - temporal coupling,
+    - latency coupling,
+    - failure propagation.
+- Message queues:
+    - Kafka,
+    - RabbitMQ,
+    - SQS,
+    - topic,
+    - queue,
+    - partition,
+    - offset,
+    - consumer group.
+- Ordering:
+    - ordering per partition,
+    - global ordering jako kosztowna iluzja,
+    - partycjonowanie po aggregate ID.
+- Delivery semantics:
+    - at-most-once,
+    - at-least-once,
+    - effectively-once,
+    - exactly-once jako ograniczona gwarancja techniczna.
+- Event-driven architecture:
+    - event jako fakt biznesowy,
+    - event notification vs event-carried state transfer,
+    - schema versioning,
+    - backward compatibility,
+    - replay.
+- CQRS:
+    - command model,
+    - query model,
+    - projection,
+    - read model,
+    - eventual consistency,
+    - rebuild projekcji.
+- Saga pattern:
+    - distributed transaction vs saga,
+    - choreography,
+    - orchestration,
+    - compensation action,
+    - partial failure,
+    - idempotentne kroki sagi.
+
+---
+
+## 6. Reliability & Real-World Failure Handling
+
+- Retry:
+    - kiedy retry ma sens,
+    - kiedy retry pogarsza awarię,
+    - retry storm,
+    - exponential backoff,
+    - jitter.
+- Timeouts:
+    - timeout klienta,
+    - timeout serwera,
+    - timeout do dependency,
+    - brak timeoutu jako ukryty błąd produkcyjny.
+- Circuit breaker:
+    - closed,
+    - open,
+    - half-open,
+    - ochrona zależności downstream,
+    - fallback.
+- Graceful degradation:
+    - partial response,
+    - fallback response,
+    - degraded mode,
+    - wyłączanie mniej ważnych funkcji.
+- Backpressure:
+    - kolejki,
+    - limity,
+    - odrzucanie nadmiarowego ruchu,
+    - ochrona bazy i downstreamów.
+- Load shedding:
+    - kontrolowane odrzucanie requestów,
+    - priorytetyzacja ruchu,
+    - zachowanie systemu pod przeciążeniem.
+- Handling race conditions:
+    - lost update,
+    - check-then-act,
+    - read-modify-write,
+    - overselling,
+    - duplikaty requestów.
+- Distributed locking:
+    - kiedy ludzie próbują go używać,
+    - lock lease,
+    - timeout locka,
+    - fencing token,
+    - split brain,
+    - kiedy lepsza jest idempotencja albo optimistic locking.
+- Idempotent consumers:
+    - deduplication table,
+    - unique event ID,
+    - retry bez duplikowania skutków ubocznych.
+- DLQ:
+    - kiedy event trafia do DLQ,
+    - replay,
+    - manual repair,
+    - runbook dla DLQ.
+- Reconciliation:
+    - porównanie lokalnego stanu ze źródłem prawdy,
+    - naprawa stuck states,
+    - szczególnie ważne w płatnościach.
+- Data repair:
+    - naprawa błędnych projekcji,
+    - naprawa zdublowanych danych,
+    - korekta po błędnym deployu.
+- Handling traffic spikes:
+    - viral load,
+    - autoscaling delay,
+    - cache pre-warming,
+    - rate limiting,
+    - graceful degradation.
+
+---
+
+## 7. Observability
+
+- Logs:
+    - structured logs,
+    - JSON logs,
+    - correlation ID,
+    - request ID,
+    - user ID,
+    - tenant ID,
+    - logowanie błędów bez utraty kontekstu.
+- Metrics:
+    - request count,
+    - error rate,
+    - latency p50/p95/p99,
+    - saturation,
+    - queue depth,
+    - cache hit ratio,
+    - DB latency,
+    - consumer lag.
+- Tracing:
+    - distributed tracing,
+    - trace ID,
+    - span ID,
+    - propagation context,
+    - API → service → DB → broker.
+- Alerting:
+    - alerty symptomowe,
+    - error rate,
+    - latency,
+    - saturation,
+    - dependency failure,
+    - unikanie alert fatigue.
+- Dashboards:
+    - golden signals,
+    - RED metrics,
+    - USE metrics,
+    - dashboard dla API,
+    - dashboard dla DB,
+    - dashboard dla brokera.
+- Runbooks:
+    - DB down,
+    - Redis down,
+    - broker lag,
+    - stuck payments,
+    - failed deployments,
+    - DLQ growth.
+
+---
+
+## 8. Deployment & Operations
+
+- Deployment strategies:
+    - rolling deployment,
+    - blue-green deployment,
+    - canary deployment,
+    - feature flags.
+- Rollback:
+    - kiedy rollback jest możliwy,
+    - kiedy potrzebny jest forward fix,
+    - rollback aplikacji vs rollback migracji DB.
+- Database migrations:
+    - backward-compatible migration,
+    - expand-contract pattern,
+    - zero-downtime migration,
+    - migracje dużych tabel.
+- Operational readiness:
+    - health check,
+    - readiness probe,
+    - liveness probe,
+    - graceful shutdown,
+    - connection draining.
+- Configuration:
+    - config per environment,
+    - secrets,
+    - feature toggles,
+    - runtime config vs build-time config.
+- Incident handling:
+    - detekcja,
+    - diagnoza,
+    - mitigation,
+    - rollback,
+    - data repair,
+    - postmortem.
+- SLO/SLA/Error budget:
+    - co obiecujesz użytkownikowi,
+    - jak mierzysz niezawodność,
+    - kiedy zatrzymać feature development i poprawiać stabilność.
+
+---
+
+## 9. Security & Privacy w System Design
+
+- TLS everywhere.
+- Walidacja wejścia.
+- Rate limiting endpointów publicznych.
+- Ochrona przed brute force.
+- Ochrona przed replay attack.
+- Secret rotation.
+- Principle of least privilege.
+- Tenant isolation.
+- Access control na poziomie danych.
+- Audit log dla operacji krytycznych.
+- Nie logować sekretów, tokenów, numerów kart i danych wrażliwych.
+- Privacy by design:
+    - block,
+    - mute,
+    - private resources,
+    - usuwanie danych,
+    - minimalizacja danych.
+
