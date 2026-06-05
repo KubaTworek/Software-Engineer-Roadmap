@@ -1,0 +1,14 @@
+aws_region       = "eu-central-1"
+project_name     = "ticketing-platform"
+environment      = "dev"
+
+# Use strong values. Do not commit real secrets.
+database_password = "CHANGE_ME_database_password_123!"
+mq_password       = "CHANGE_ME_mq_password_123!"
+
+# Cost controls for a training environment.
+enable_nat_gateway = true
+enable_mq          = true
+desired_count      = 1
+min_capacity       = 1
+max_capacity       = 3
