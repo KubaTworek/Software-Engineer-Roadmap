@@ -1,40 +1,109 @@
 spring:
   application:
+    # Nazwa aplikacji używana w logach, metrykach, trace'ach i tagach Micrometer.
+    #
+    # Dzięki temu w Grafanie/Prometheusie/Tempo można odróżnić notification-service
+    # od pozostałych mikroserwisów.
     name: notification-service
+
   rabbitmq:
+    # Host RabbitMQ, z którego Notification Service konsumuje eventy.
+    #
+    # Lokalnie domyślnie localhost.
+    # W Docker Compose zwykle: rabbitmq
     host: ${SPRING_RABBITMQ_HOST:localhost}
+
+    # Port AMQP RabbitMQ.
+    #
+    # 5672 to port protokołu AMQP używany przez aplikację.
+    # Panel webowy RabbitMQ zwykle działa na 15672.
     port: ${SPRING_RABBITMQ_PORT:5672}
+
+    # Użytkownik RabbitMQ.
+    #
+    # guest/guest jest wygodne lokalnie, ale nie powinno być używane produkcyjnie.
     username: ${SPRING_RABBITMQ_USERNAME:guest}
+
+    # Hasło RabbitMQ.
+    #
+    # Produkcyjnie powinno pochodzić z secrets managera albo zmiennych środowiskowych,
+    # a nie z jawnego pliku konfiguracyjnego.
     password: ${SPRING_RABBITMQ_PASSWORD:guest}
 
 server:
+  # Port HTTP notification-service.
+  #
+  # Serwis konsumuje wiadomości z RabbitMQ, ale nadal wystawia HTTP,
+  # m.in. dla health-checków, Actuatora i endpointów diagnostycznych/chaos.
   port: ${SERVER_PORT:8085}
 
 notification:
+  # Sztuczne opóźnienie przetwarzania powiadomień w milisekundach.
+  #
+  # 0 oznacza brak opóźnienia.
+  #
+  # Ta wartość jest używana do testów broker lag:
+  # - zwiększasz processing-delay-ms,
+  # - publikujesz dużo order.paid eventów,
+  # - obserwujesz, czy kolejka RabbitMQ zaczyna rosnąć,
+  # - sprawdzasz alerty, metryki i runbook dla broker lag.
   processing-delay-ms: ${NOTIFICATION_PROCESSING_DELAY_MS:0}
 
 management:
   tracing:
     sampling:
+      # Prawdopodobieństwo próbkowania trace'ów.
+      #
+      # 1.0 oznacza 100% trace'ów, co jest dobre lokalnie i edukacyjnie.
+      # Produkcyjnie zwykle obniża się tę wartość ze względu na koszt i wolumen danych.
       probability: ${MANAGEMENT_TRACING_SAMPLING_PROBABILITY:1.0}
+
   otlp:
     tracing:
+      # Endpoint OTLP, do którego aplikacja wysyła trace'y.
+      #
+      # Lokalnie może wskazywać na Tempo albo Jaeger collector.
+      # W Docker Compose zwykle:
+      # http://tempo:4318/v1/traces
       endpoint: ${MANAGEMENT_OTLP_TRACING_ENDPOINT:http://localhost:4318/v1/traces}
+
   observations:
     key-values:
+      # Stały tag dodawany do obserwacji i metryk.
+      #
+      # Pomaga filtrować dane po nazwie serwisu.
       service.name: ${spring.application.name}
+
   endpoint:
     health:
       probes:
+        # Włącza liveness/readiness probes.
+        #
+        # Przydatne w kontenerach, ECS/Kubernetes i health-checkach load balancera.
         enabled: true
+
   endpoints:
     web:
       exposure:
+        # Endpointy Actuator wystawione przez HTTP.
+        #
+        # health     -> status zdrowia aplikacji
+        # info       -> informacje o aplikacji
+        # prometheus -> metryki w formacie Prometheus
+        # metrics    -> diagnostyczny podgląd metryk
         include: health,info,prometheus,metrics
+
   metrics:
     tags:
+      # Globalny tag dla metryk Micrometer.
+      #
+      # Dzięki temu w Prometheus/Grafana można grupować metryki po aplikacji.
       application: ${spring.application.name}
 
 logging:
   level:
+    # Globalny poziom logowania.
+    #
+    # INFO jest rozsądnym poziomem domyślnym.
+    # DEBUG warto włączać tylko tymczasowo przy diagnozie problemów.
     root: ${LOG_LEVEL:INFO}

@@ -1,26 +1,88 @@
+# Wyłącza uwierzytelnianie w Loki.
+#
+# To jest dobre dla lokalnego środowiska developerskiego / Docker Compose.
+# Produkcyjnie nie powinno się wystawiać Loki bez kontroli dostępu.
 auth_enabled: false
 
 server:
+  # Port HTTP, na którym Loki przyjmuje zapytania i ingestion logów.
+  #
+  # Grafana będzie łączyć się z Loki zwykle przez:
+  # http://loki:3100
+  #
+  # Lokalnie z hosta:
+  # http://localhost:3100
   http_listen_port: 3100
 
 common:
+  # Katalog bazowy dla lokalnych danych Loki.
+  #
+  # Przy storage filesystem Loki będzie zapisywać chunki i indeksy lokalnie
+  # w kontenerze albo w podmontowanym wolumenie.
   path_prefix: /loki
+
   storage:
     filesystem:
+      # Katalog, w którym Loki zapisuje skompresowane fragmenty logów.
+      #
+      # Chunks zawierają właściwe dane logów.
       chunks_directory: /loki/chunks
+
+      # Katalog dla reguł Loki.
+      #
+      # W bardziej rozbudowanej konfiguracji można tu trzymać reguły alertów
+      # albo recording rules.
       rules_directory: /loki/rules
+
+  # Liczba replik danych.
+  #
+  # replication_factor: 1 jest właściwe dla lokalnego single-node setupu.
+  # Produkcyjnie zwykle wymaga się większej liczby replik i zewnętrznego storage.
   replication_factor: 1
+
   ring:
+    # Adres instancji Loki w ringu.
+    #
+    # 127.0.0.1 jest wystarczające dla pojedynczej lokalnej instancji.
+    # W klastrze/distributed setupie ta wartość musiałaby wskazywać adres
+    # dostępny dla innych komponentów Loki.
     instance_addr: 127.0.0.1
+
     kvstore:
+      # In-memory KV store dla ringu.
+      #
+      # To jest dobre lokalnie, bo nie wymaga Consula/etcd.
+      # Produkcyjnie in-memory nie jest dobrym wyborem dla HA.
       store: inmemory
 
 schema_config:
   configs:
+    # Data, od której obowiązuje ta konfiguracja schematu.
+    #
+    # Loki pozwala mieć wiele konfiguracji schematu zależnie od okresu.
     - from: 2024-01-01
+
+      # Typ magazynu indeksów.
+      #
+      # tsdb to obecnie typowy wybór dla nowszych konfiguracji Loki.
       store: tsdb
+
+      # Miejsce przechowywania obiektów.
+      #
+      # filesystem oznacza lokalny dysk.
+      # Produkcyjnie często byłby to S3/GCS/Azure Blob.
       object_store: filesystem
+
+      # Wersja schematu Loki.
+      #
+      # v13 pasuje do nowszych konfiguracji TSDB.
       schema: v13
+
       index:
+        # Prefix plików/obiektów indeksu.
         prefix: index_
+
+        # Okres tworzenia indeksów.
+        #
+        # 24h oznacza dzienny podział indeksu.
         period: 24h

@@ -1,39 +1,104 @@
 global:
+  # Jak często Prometheus ma odpytywać skonfigurowane targety o metryki.
+  #
+  # 15s to rozsądna wartość lokalna:
+  # - wystarczająco często, żeby szybko widzieć zmiany w Grafanie,
+  # - nie tak często, żeby niepotrzebnie obciążać aplikacje.
   scrape_interval: 15s
 
+# Pliki z regułami alertów / recording rules.
+#
+# Prometheus załaduje wszystkie pliki .yml z katalogu:
+# /etc/prometheus/rules/
+#
+# W tym projekcie można tam trzymać np. alerty dla:
+# - wysokiego p95 latency,
+# - error rate,
+# - circuit breaker open,
+# - Redis down,
+# - broker lag.
 rule_files:
   - /etc/prometheus/rules/*.yml
 
 scrape_configs:
+  # Sam Prometheus też wystawia własne metryki.
+  #
+  # Dzięki temu można obserwować jego stan, np. liczbę targetów,
+  # błędy scrape'owania albo czas wykonywania zapytań.
   - job_name: prometheus
     static_configs:
       - targets: ["localhost:9090"]
 
+  # Metryki API Gateway.
+  #
+  # metrics_path wskazuje endpoint Spring Boot Actuator,
+  # który eksportuje metryki w formacie Prometheus.
+  #
+  # Są tu dwa targety:
+  # - host.docker.internal:8080 -> gdy usługa działa na hoście poza Dockerem,
+  # - api-gateway:8080         -> gdy usługa działa jako kontener w tej samej sieci Compose.
+  #
+  # Uwaga:
+  # Jeśli oba targety są aktywne jednocześnie i wskazują na tę samą aplikację,
+  # możesz widzieć zdublowane serie metryk. Lokalnie jest to wygodne,
+  # ale w czystszym setupie zostawiłbym tylko wariant dockerowy.
   - job_name: api-gateway
     metrics_path: /actuator/prometheus
     static_configs:
       - targets: ["host.docker.internal:8080", "api-gateway:8080"]
 
+  # Metryki Catalog Service.
+  #
+  # Szczególnie ważne dla:
+  # - cache hit/miss,
+  # - latency endpointów /events,
+  # - wpływu Redis cache,
+  # - testów db-slow.
   - job_name: catalog-service
     metrics_path: /actuator/prometheus
     static_configs:
       - targets: ["host.docker.internal:8081", "catalog-service:8081"]
 
+  # Metryki Reservation Service.
+  #
+  # Szczególnie ważne dla:
+  # - latency tworzenia rezerwacji,
+  # - error rate przy braku dostępności,
+  # - circuit breaker/retry dla catalog-service,
+  # - wpływu awarii Catalog Service na proces rezerwacji.
   - job_name: reservation-service
     metrics_path: /actuator/prometheus
     static_configs:
       - targets: ["host.docker.internal:8082", "reservation-service:8082"]
 
+  # Metryki Order Service.
+  #
+  # Szczególnie ważne dla:
+  # - latency POST /orders,
+  # - degradacji do PAYMENT_PENDING,
+  # - circuit breaker/retry dla payment-service,
+  # - circuit breaker/retry dla reservation-service,
+  # - error rate całego workflow zamówienia.
   - job_name: order-service
     metrics_path: /actuator/prometheus
     static_configs:
       - targets: ["host.docker.internal:8083", "order-service:8083"]
 
+  # Metryki Payment Mock Service.
+  #
+  # Ten serwis celowo symuluje awarie i opóźnienia, więc jego metryki pomagają
+  # odróżnić problem po stronie payment-service od problemu w order-service.
   - job_name: payment-mock-service
     metrics_path: /actuator/prometheus
     static_configs:
       - targets: ["host.docker.internal:8084", "payment-mock-service:8084"]
 
+  # Metryki Notification Service.
+  #
+  # Przydatne szczególnie dla testów broker lag:
+  # - czy consumer działa,
+  # - czy przetwarzanie eventów jest wolne,
+  # - czy opóźnienia powiadomień korelują ze wzrostem kolejki RabbitMQ.
   - job_name: notification-service
     metrics_path: /actuator/prometheus
     static_configs:

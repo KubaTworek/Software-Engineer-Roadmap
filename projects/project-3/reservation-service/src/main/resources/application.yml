@@ -1,66 +1,170 @@
 spring:
   application:
+    # Nazwa aplikacji używana m.in. w logach, metrykach, tracingu i tagach Micrometer.
+    # Dzięki temu w Grafanie/Prometheusie łatwo odróżnić reservation-service od innych serwisów.
     name: reservation-service
+
   datasource:
+    # URL do bazy PostgreSQL reservation-service.
+    #
+    # Domyślnie wskazuje na localhost:5434, czyli wariant lokalny poza Dockerem.
+    # W Docker Compose ta wartość powinna być nadpisana przez SPRING_DATASOURCE_URL,
+    # np. jdbc:postgresql://reservation-db:5432/reservation
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5434/reservation}
+
+    # Użytkownik bazy danych.
+    # Domyślna wartość "app" jest dobra lokalnie, ale nie powinna być używana produkcyjnie.
     username: ${SPRING_DATASOURCE_USERNAME:app}
+
+    # Hasło do bazy danych.
+    # W środowisku produkcyjnym powinno pochodzić z secret managera, a nie z jawnego pliku YAML.
     password: ${SPRING_DATASOURCE_PASSWORD:app}
+
   jpa:
     hibernate:
+      # validate oznacza, że Hibernate sprawdzi zgodność encji z istniejącym schematem DB,
+      # ale nie będzie sam tworzył ani modyfikował tabel.
+      #
+      # To jest bezpieczniejsze niż update, bo wymusza kontrolę migracji schematu,
+      # np. przez Flyway/Liquibase albo init SQL.
       ddl-auto: validate
+
+    # Wyłącza Open Session in View.
+    #
+    # Dzięki temu transakcje i sesja Hibernate nie "przeciekają" do warstwy web.
+    # To wymusza jawne pobieranie danych w warstwie aplikacyjnej i zmniejsza ryzyko
+    # przypadkowych lazy-loadów podczas serializacji odpowiedzi HTTP.
     open-in-view: false
 
 server:
+  # Port HTTP reservation-service.
+  # Lokalnie domyślnie 8082. W kontenerze może być nadpisany przez SERVER_PORT.
   port: ${SERVER_PORT:8082}
 
 services:
   catalog:
+    # Bazowy adres Catalog Service.
+    #
+    # Reservation Service używa go do sprawdzenia dostępności biletów przed utworzeniem rezerwacji.
+    # W Docker Compose powinno to być zwykle http://catalog-service:8081.
     url: ${CATALOG_SERVICE_URL:http://localhost:8081}
 
 app:
   http-client:
+    # Timeout na zestawienie połączenia TCP dla wywołań wychodzących WebClientem.
+    #
+    # Chroni przed długim oczekiwaniem, gdy downstream host/port jest niedostępny.
     connect-timeout-ms: ${HTTP_CLIENT_CONNECT_TIMEOUT_MS:1000}
+
+    # Maksymalny czas oczekiwania na odpowiedź HTTP od downstream service.
+    #
+    # Dla reservation-service dotyczy głównie wywołań do catalog-service.
+    # Powinien być spójny z retry/backoff i timeoutem całego requestu użytkownika.
     response-timeout-ms: ${HTTP_CLIENT_RESPONSE_TIMEOUT_MS:2500}
 
 resilience4j:
   circuitbreaker:
     instances:
       catalog:
+        # Liczba ostatnich wywołań branych pod uwagę przez circuit breaker.
+        #
+        # Przy sliding-window-size=20 circuit breaker analizuje ostatnie 20 calli do catalog-service.
         sliding-window-size: 20
+
+        # Minimalna liczba wywołań zanim circuit breaker zacznie podejmować decyzje.
+        #
+        # Dzięki temu pojedynczy przypadkowy błąd na starcie nie otworzy od razu circuit breakera.
         minimum-number-of-calls: 10
+
+        # Jeśli co najmniej 50% wywołań w oknie zakończy się błędem,
+        # circuit breaker może przejść w stan OPEN.
         failure-rate-threshold: 50
+
+        # Jak długo circuit breaker pozostaje w stanie OPEN,
+        # zanim przejdzie do HALF_OPEN i pozwoli na próbne requesty.
         wait-duration-in-open-state: 10s
+
+        # Ile requestów testowych może przejść w stanie HALF_OPEN.
+        #
+        # Jeśli te requesty się powiodą, circuit breaker wróci do CLOSED.
+        # Jeśli zawiodą, wróci do OPEN.
         permitted-number-of-calls-in-half-open-state: 3
+
   retry:
     instances:
       catalog:
+        # Maksymalna liczba prób wykonania calla do catalog-service.
+        #
+        # max-attempts=2 oznacza: pierwsza próba + jedna ponowna próba.
         max-attempts: 2
+
+        # Bazowy czas oczekiwania przed retry.
         wait-duration: 200ms
+
+        # Włącza exponential backoff.
+        #
+        # Dzięki temu kolejne retry nie uderzają w downstream natychmiast,
+        # tylko z rosnącym opóźnieniem.
         enable-exponential-backoff: true
+
+        # Mnożnik backoffu.
+        #
+        # Przy wait-duration=200ms i multiplier=2 kolejne opóźnienia będą rosły:
+        # 200ms, 400ms, 800ms itd. — zależnie od max-attempts.
         exponential-backoff-multiplier: 2
 
 management:
   tracing:
     sampling:
+      # Prawdopodobieństwo próbkowania trace'ów.
+      #
+      # 1.0 oznacza 100% requestów, co jest dobre lokalnie i w projekcie edukacyjnym.
+      # Produkcyjnie często ustawia się niższą wartość, żeby ograniczyć koszt i wolumen danych.
       probability: ${MANAGEMENT_TRACING_SAMPLING_PROBABILITY:1.0}
+
   otlp:
     tracing:
+      # Endpoint OTLP, do którego aplikacja wysyła trace'y.
+      #
+      # Lokalnie może to być Tempo/Jaeger collector.
+      # W Docker Compose zwykle będzie to http://tempo:4318/v1/traces.
       endpoint: ${MANAGEMENT_OTLP_TRACING_ENDPOINT:http://localhost:4318/v1/traces}
+
   observations:
     key-values:
+      # Stały tag dodawany do obserwacji/metryk.
+      # Pozwala filtrować dane po nazwie serwisu.
       service.name: ${spring.application.name}
+
   endpoint:
     health:
       probes:
+        # Włącza liveness/readiness probes.
+        #
+        # Przydatne w kontenerach, ECS/Kubernetes i health-checkach load balancera.
         enabled: true
+
   endpoints:
     web:
       exposure:
+        # Lista endpointów Actuator wystawionych przez HTTP.
+        #
+        # prometheus  -> scrape metryk przez Prometheusa
+        # metrics     -> diagnostyka metryk
+        # circuitbreakers -> stan circuit breakerów
+        # retries     -> stan retry
         include: health,info,prometheus,metrics,circuitbreakers,retries
+
   metrics:
     tags:
+      # Globalny tag dla metryk Micrometer.
+      # Dzięki temu w Prometheus/Grafana można grupować metryki po aplikacji.
       application: ${spring.application.name}
 
 logging:
   level:
+    # Globalny poziom logowania.
+    #
+    # INFO jest sensowny lokalnie i w środowisku testowym.
+    # DEBUG może być użyte tymczasowo przy diagnozie, ale generuje dużo logów.
     root: ${LOG_LEVEL:INFO}

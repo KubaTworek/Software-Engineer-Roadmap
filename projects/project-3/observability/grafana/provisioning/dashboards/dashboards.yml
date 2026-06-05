@@ -1,11 +1,49 @@
+# Wersja formatu provisioning config Grafany.
+#
+# apiVersion: 1 to standardowa wersja używana dla datasource'ów i dashboard providerów
+# w plikach provisioningowych Grafany.
 apiVersion: 1
 
 providers:
+  # Definicja providera dashboardów.
+  #
+  # Provider mówi Grafanie:
+  # "szukaj dashboardów w plikach JSON w podanym katalogu i załaduj je automatycznie".
   - name: Ticketing Platform Dashboards
+
+    # ID organizacji Grafany.
+    #
+    # W lokalnym setupie Docker Compose zwykle istnieje jedna organizacja o ID = 1.
     orgId: 1
+
+    # Folder w UI Grafany, do którego trafią dashboardy.
+    #
+    # Dzięki temu dashboardy projektu nie mieszają się z innymi dashboardami.
     folder: Ticketing Platform
+
+    # Typ providera.
+    #
+    # file oznacza, że dashboardy są ładowane z plików na dysku kontenera.
     type: file
+
+    # Czy Grafana ma blokować usuwanie dashboardów zarządzanych przez ten provider.
+    #
+    # false oznacza, że dashboard można usunąć z UI.
+    # Przy restarcie Grafany dashboard może jednak wrócić, jeśli plik JSON nadal istnieje.
     disableDeletion: false
+
+    # Czy dashboardy mają być edytowalne w UI Grafany.
+    #
+    # true jest wygodne lokalnie, bo możesz eksperymentować z panelami.
+    # Produkcyjnie często ustawia się false, żeby dashboardy były zarządzane wyłącznie jako code.
     editable: true
+
     options:
+      # Ścieżka w kontenerze Grafany, z której provider ładuje dashboardy JSON.
+      #
+      # W Docker Compose ten katalog powinien być podmontowany z repozytorium, np.:
+      #
+      # ./observability/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
+      #
+      # Wszystkie dashboardy .json w tym katalogu zostaną automatycznie załadowane.
       path: /etc/grafana/provisioning/dashboards

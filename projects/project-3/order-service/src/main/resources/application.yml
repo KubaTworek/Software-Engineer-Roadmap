@@ -1,57 +1,167 @@
 spring:
   application:
+    # Nazwa aplikacji używana w logach, metrykach, trace'ach i tagach Micrometer.
+    #
+    # Dzięki temu w Grafanie/Prometheusie/Tempo można jednoznacznie odróżnić
+    # order-service od pozostałych mikroserwisów.
     name: order-service
+
   datasource:
+    # URL do bazy PostgreSQL należącej do Order Service.
+    #
+    # Domyślna wartość wskazuje na lokalną bazę poza Dockerem.
+    # W Docker Compose powinna być nadpisana np. na:
+    # jdbc:postgresql://order-db:5432/orders
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5435/orders}
+
+    # Użytkownik bazy danych.
+    # Dobre lokalnie, ale produkcyjnie powinno pochodzić z secrets managera.
     username: ${SPRING_DATASOURCE_USERNAME:app}
+
+    # Hasło do bazy danych.
+    # Nie powinno być trzymane jawnie w repozytorium dla środowisk produkcyjnych.
     password: ${SPRING_DATASOURCE_PASSWORD:app}
+
   jpa:
     hibernate:
+      # validate sprawdza zgodność encji z istniejącym schematem DB,
+      # ale nie tworzy ani nie modyfikuje tabel.
+      #
+      # To jest bezpieczniejsze niż ddl-auto=update, bo wymusza kontrolowane migracje
+      # np. przez Flyway, Liquibase albo init SQL.
       ddl-auto: validate
+
+    # Wyłącza Open Session in View.
+    #
+    # Dzięki temu sesja Hibernate nie pozostaje otwarta aż do serializacji odpowiedzi HTTP.
+    # To zmniejsza ryzyko przypadkowych lazy-loadów i ukrytych zapytań SQL w warstwie web.
     open-in-view: false
+
   rabbitmq:
+    # Host RabbitMQ używany do publikowania eventów order.paid.
+    #
+    # Lokalnie domyślnie localhost.
+    # W Docker Compose zwykle: rabbitmq
     host: ${SPRING_RABBITMQ_HOST:localhost}
+
+    # Port AMQP RabbitMQ.
+    # 5672 to standardowy port protokołu AMQP, nie panelu webowego.
     port: ${SPRING_RABBITMQ_PORT:5672}
+
+    # Użytkownik RabbitMQ.
+    # Domyślne guest/guest jest akceptowalne lokalnie, ale nie produkcyjnie.
     username: ${SPRING_RABBITMQ_USERNAME:guest}
+
+    # Hasło RabbitMQ.
     password: ${SPRING_RABBITMQ_PASSWORD:guest}
 
 server:
+  # Port HTTP order-service.
+  #
+  # Lokalnie domyślnie 8083.
+  # W kontenerze może być nadpisany przez SERVER_PORT.
   port: ${SERVER_PORT:8083}
 
 services:
   payment:
+    # Bazowy URL payment-mock-service.
+    #
+    # Order Service wywołuje go podczas tworzenia zamówienia.
+    # W Docker Compose zwykle: http://payment-mock-service:8084
     url: ${PAYMENT_SERVICE_URL:http://localhost:8084}
+
   reservation:
+    # Bazowy URL reservation-service.
+    #
+    # Order Service używa go do:
+    # - pobrania rezerwacji,
+    # - potwierdzenia rezerwacji po udanej płatności.
+    #
+    # W Docker Compose zwykle: http://reservation-service:8082
     url: ${RESERVATION_SERVICE_URL:http://localhost:8082}
 
 app:
   http-client:
+    # Timeout na zestawienie połączenia TCP dla wywołań WebClientem.
+    #
+    # Chroni przed długim oczekiwaniem, gdy downstream host/port jest niedostępny.
     connect-timeout-ms: ${HTTP_CLIENT_CONNECT_TIMEOUT_MS:1000}
+
+    # Maksymalny czas oczekiwania na odpowiedź HTTP od downstream service.
+    #
+    # Dotyczy wywołań do payment-service i reservation-service.
+    # Powinien być spójny z retry/backoff i timeoutem całego requestu użytkownika.
     response-timeout-ms: ${HTTP_CLIENT_RESPONSE_TIMEOUT_MS:2500}
 
 resilience4j:
   circuitbreaker:
     instances:
       payment:
+        # Liczba ostatnich wywołań do payment-service analizowanych przez circuit breaker.
         sliding-window-size: 20
+
+        # Minimalna liczba wywołań zanim circuit breaker zacznie podejmować decyzje.
+        #
+        # Dzięki temu pojedynczy błąd na starcie nie otworzy od razu obwodu.
         minimum-number-of-calls: 10
+
+        # Jeśli co najmniej 50% wywołań w oknie zakończy się błędem,
+        # circuit breaker może przejść w stan OPEN.
         failure-rate-threshold: 50
+
+        # Jak długo circuit breaker pozostaje OPEN, zanim przejdzie do HALF_OPEN.
+        #
+        # W stanie OPEN requesty do payment-service są szybko odrzucane,
+        # zamiast czekać na timeout.
         wait-duration-in-open-state: 10s
+
+        # Liczba próbnych requestów w stanie HALF_OPEN.
+        #
+        # Jeśli się powiodą, circuit breaker wróci do CLOSED.
+        # Jeśli zawiodą, wróci do OPEN.
         permitted-number-of-calls-in-half-open-state: 3
+
       reservation:
+        # Osobny circuit breaker dla reservation-service.
+        #
+        # Payment i reservation to różne zależności, więc powinny mieć osobne obwody.
+        # Awaria payment-service nie powinna automatycznie otwierać circuit breakera
+        # dla reservation-service.
         sliding-window-size: 20
         minimum-number-of-calls: 10
         failure-rate-threshold: 50
         wait-duration-in-open-state: 10s
         permitted-number-of-calls-in-half-open-state: 3
+
   retry:
     instances:
       payment:
+        # Maksymalna liczba prób wywołania payment-service.
+        #
+        # max-attempts=3 oznacza: pierwsza próba + dwa retry.
+        # Przy płatnościach trzeba z tym uważać — retry bez idempotencji po stronie providera
+        # może prowadzić do podwójnego obciążenia klienta.
         max-attempts: 3
+
+        # Bazowy czas oczekiwania przed retry.
         wait-duration: 300ms
+
+        # Włącza exponential backoff.
+        #
+        # Kolejne próby będą rozdzielone rosnącym opóźnieniem,
+        # zamiast uderzać w payment-service natychmiast.
         enable-exponential-backoff: true
+
+        # Mnożnik backoffu.
+        #
+        # Dla 300ms i multiplier=2 opóźnienia będą rosły np. 300ms, 600ms.
         exponential-backoff-multiplier: 2
+
       reservation:
+        # Retry dla reservation-service.
+        #
+        # Tu limit jest niższy niż dla payment, bo confirm/get reservation powinny być szybkie,
+        # a nadmierne retry mogłoby tylko zwiększyć obciążenie uszkodzonego downstreamu.
         max-attempts: 2
         wait-duration: 200ms
         enable-exponential-backoff: true
@@ -60,25 +170,58 @@ resilience4j:
 management:
   tracing:
     sampling:
+      # Prawdopodobieństwo próbkowania trace'ów.
+      #
+      # 1.0 oznacza 100% requestów. To jest dobre lokalnie i edukacyjnie.
+      # Produkcyjnie zwykle obniża się tę wartość ze względu na koszt i wolumen danych.
       probability: ${MANAGEMENT_TRACING_SAMPLING_PROBABILITY:1.0}
+
   otlp:
     tracing:
+      # Endpoint OTLP, do którego aplikacja wysyła trace'y.
+      #
+      # Lokalnie może wskazywać na Tempo/Jaeger collector.
+      # W Docker Compose zwykle: http://tempo:4318/v1/traces
       endpoint: ${MANAGEMENT_OTLP_TRACING_ENDPOINT:http://localhost:4318/v1/traces}
+
   observations:
     key-values:
+      # Stały tag dodawany do obserwacji i metryk.
+      # Pomaga filtrować dane po nazwie serwisu.
       service.name: ${spring.application.name}
+
   endpoint:
     health:
       probes:
+        # Włącza liveness/readiness probes.
+        #
+        # Przydatne dla kontenerów, ECS/Kubernetes i health-checków load balancera.
         enabled: true
+
   endpoints:
     web:
       exposure:
+        # Endpointy Actuator wystawione przez HTTP.
+        #
+        # health          -> status zdrowia aplikacji
+        # info            -> informacje o aplikacji
+        # prometheus      -> metryki w formacie Prometheus
+        # metrics         -> diagnostyczny podgląd metryk
+        # circuitbreakers -> stan circuit breakerów Resilience4j
+        # retries         -> metryki retry Resilience4j
         include: health,info,prometheus,metrics,circuitbreakers,retries
+
   metrics:
     tags:
+      # Globalny tag dla metryk Micrometer.
+      #
+      # Dzięki temu w Prometheus/Grafana można grupować metryki po aplikacji.
       application: ${spring.application.name}
 
 logging:
   level:
+    # Globalny poziom logowania.
+    #
+    # INFO jest sensownym poziomem domyślnym.
+    # DEBUG warto włączać tylko tymczasowo podczas diagnozy.
     root: ${LOG_LEVEL:INFO}

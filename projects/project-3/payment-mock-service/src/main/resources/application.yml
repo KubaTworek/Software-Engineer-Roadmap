@@ -1,36 +1,100 @@
 spring:
   application:
+    # Nazwa aplikacji używana w logach, metrykach i trace'ach.
+    #
+    # Dzięki temu w Grafanie, Prometheusie, Tempo/Jaegerze i logach JSON
+    # można łatwo odróżnić payment-mock-service od pozostałych mikroserwisów.
     name: payment-mock-service
 
 server:
+  # Port HTTP payment-mock-service.
+  #
+  # Lokalnie domyślnie 8084.
+  # W Docker Compose może być nadpisany przez SERVER_PORT.
   port: ${SERVER_PORT:8084}
 
 payment:
+  # Prawdopodobieństwo błędu płatności.
+  #
+  # 0.2 oznacza, że około 20% requestów do payment-mock-service zakończy się błędem.
+  # To jest celowe: serwis płatności ma symulować zawodną zależność downstream,
+  # żeby testować retry, circuit breaker, timeouty i graceful degradation w order-service.
+  #
+  # Przykłady:
+  # 0.0 = brak losowych błędów
+  # 0.2 = 20% błędów
+  # 1.0 = 100% błędów
   failure-rate: ${PAYMENT_FAILURE_RATE:0.2}
+
+  # Maksymalne losowe opóźnienie odpowiedzi płatności w milisekundach.
+  #
+  # Przy wartości 1500 payment-mock-service może sztucznie opóźnić odpowiedź
+  # nawet do 1.5 sekundy.
+  #
+  # To pozwala sprawdzić:
+  # - latency order-service,
+  # - timeouty HTTP,
+  # - retry/backoff,
+  # - circuit breaker,
+  # - zachowanie systemu przy wolnym providerze płatności.
   max-delay-ms: ${PAYMENT_MAX_DELAY_MS:1500}
 
 management:
   tracing:
     sampling:
+      # Prawdopodobieństwo próbkowania trace'ów.
+      #
+      # 1.0 oznacza, że 100% requestów będzie trace'owane.
+      # To jest dobre lokalnie i w projekcie edukacyjnym.
+      # Produkcyjnie często zmniejsza się tę wartość, żeby ograniczyć koszt i wolumen danych.
       probability: ${MANAGEMENT_TRACING_SAMPLING_PROBABILITY:1.0}
+
   otlp:
     tracing:
+      # Endpoint OTLP, do którego aplikacja wysyła trace'y.
+      #
+      # Lokalnie może wskazywać na Tempo albo Jaeger collector.
+      # W Docker Compose zwykle będzie to:
+      # http://tempo:4318/v1/traces
       endpoint: ${MANAGEMENT_OTLP_TRACING_ENDPOINT:http://localhost:4318/v1/traces}
+
   observations:
     key-values:
+      # Stały tag dodawany do obserwacji/metryk.
+      #
+      # Ułatwia filtrowanie danych po nazwie serwisu w systemach observability.
       service.name: ${spring.application.name}
+
   endpoint:
     health:
       probes:
+        # Włącza liveness/readiness probes.
+        #
+        # Przydatne dla kontenerów, ECS/Kubernetes i health-checków load balancera.
         enabled: true
+
   endpoints:
     web:
       exposure:
+        # Lista endpointów Actuator wystawionych przez HTTP.
+        #
+        # health     -> status zdrowia aplikacji
+        # info       -> informacje o aplikacji
+        # prometheus -> metryki w formacie Prometheus
+        # metrics    -> diagnostyczny podgląd metryk
         include: health,info,prometheus,metrics
+
   metrics:
     tags:
+      # Globalny tag dla metryk Micrometer.
+      #
+      # Dzięki temu metryki można grupować i filtrować po aplikacji.
       application: ${spring.application.name}
 
 logging:
   level:
+    # Globalny poziom logowania.
+    #
+    # INFO jest dobrym poziomem domyślnym.
+    # DEBUG warto włączać tylko czasowo, bo może mocno zwiększyć ilość logów.
     root: ${LOG_LEVEL:INFO}

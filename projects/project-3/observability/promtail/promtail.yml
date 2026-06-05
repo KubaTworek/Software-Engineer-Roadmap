@@ -1,28 +1,75 @@
 server:
+  # Port HTTP Promtaila.
+  #
+  # Promtail wystawia na nim m.in. endpointy diagnostyczne.
+  # Nie jest to port, na który aplikacje wysyłają logi.
   http_listen_port: 9080
+
+  # Wyłącza serwer gRPC.
+  #
+  # W lokalnym Docker Compose nie jest potrzebny, więc ustawiamy 0.
   grpc_listen_port: 0
 
 positions:
+  # Plik pozycji Promtaila.
+  #
+  # Promtail zapisuje tutaj informację, do którego miejsca w plikach logów już doszedł.
+  # Dzięki temu po restarcie nie musi wysyłać wszystkich logów od początku.
   filename: /tmp/positions.yaml
 
 clients:
+  # Adres Loki, do którego Promtail wysyła zebrane logi.
+  #
+  # W Docker Compose nazwa "loki" działa przez DNS sieci Dockera.
   - url: http://loki:3100/loki/api/v1/push
 
 scrape_configs:
+  # Konfiguracja zbierania logów z kontenerów Docker.
   - job_name: docker-containers
     static_configs:
       - targets: [localhost]
         labels:
+          # Stała etykieta job używana potem w Loki/Grafana do filtrowania logów.
           job: docker
+
+          # Ścieżka do plików logów kontenerów Dockera na hoście.
+          #
+          # Wymaga, żeby katalog /var/lib/docker/containers był zamontowany
+          # do kontenera Promtaila jako read-only.
           __path__: /var/lib/docker/containers/*/*.log
+
     pipeline_stages:
+      # Parser formatu logów Dockera.
+      #
+      # Docker zapisuje logi w swoim wrapperze JSON, np. z polami:
+      # log, stream, time.
+      # Ten stage wyciąga właściwą treść loga.
       - docker: {}
+
+      # Parser JSON dla właściwej treści loga aplikacyjnego.
+      #
+      # Zakładamy, że aplikacje logują structured logs w JSON-ie i mają pola:
+      # service, level, traceId, correlationId.
       - json:
           expressions:
             service: service
             level: level
             traceId: traceId
             correlationId: correlationId
+
+      # Zamienia wybrane pola z JSON-a na etykiety Loki.
+      #
+      # Dzięki temu można filtrować logi np. po:
+      # {service="order-service"}
+      # {level="ERROR"}
+      # {correlationId="..."}
+      #
+      # Uwaga praktyczna:
+      # traceId i correlationId mają wysoką kardynalność, bo prawie każdy request
+      # ma inną wartość. W dużym środowisku produkcyjnym nie powinno się robić
+      # z nich etykiet Loki, bo to może bardzo podnieść koszt i obciążenie indeksu.
+      #
+      # Lokalnie i edukacyjnie jest to wygodne, bo można szybko filtrować po konkretnym requestcie.
       - labels:
           service:
           level:

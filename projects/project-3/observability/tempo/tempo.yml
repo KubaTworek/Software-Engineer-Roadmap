@@ -1,15 +1,48 @@
 server:
+  # Port HTTP Tempo.
+  #
+  # Na tym porcie Tempo wystawia API oraz endpointy diagnostyczne.
+  # Grafana będzie używać tego portu jako datasource Tempo, np.:
+  #
+  # http://tempo:3200
+  #
+  # Lokalnie z hosta, jeśli port jest wystawiony przez Docker Compose:
+  #
+  # http://localhost:3200
   http_listen_port: 3200
 
 distributor:
   receivers:
+    # Konfiguracja receiverów, czyli sposobów przyjmowania trace'ów.
+    #
+    # OTLP to standardowy protokół OpenTelemetry.
+    # Spring Boot / Micrometer Tracing może wysyłać trace'y do Tempo właśnie przez OTLP.
     otlp:
       protocols:
         http:
+          # Endpoint OTLP HTTP, na którym Tempo przyjmuje trace'y.
+          #
+          # Aplikacje powinny wysyłać trace'y na:
+          #
+          # http://tempo:4318/v1/traces
+          #
+          # 0.0.0.0 oznacza, że Tempo nasłuchuje na wszystkich interfejsach sieciowych
+          # wewnątrz kontenera.
           endpoint: 0.0.0.0:4318
 
 storage:
   trace:
+    # Backend storage dla trace'ów.
+    #
+    # local oznacza zapis lokalny na dysku/katalogu kontenera.
+    # To jest dobre dla lokalnego środowiska developerskiego.
+    #
+    # Produkcyjnie zwykle używa się trwałego object storage, np. S3/GCS/Azure Blob,
+    # bo lokalny dysk kontenera nie daje trwałości ani skalowalności.
     backend: local
+
     local:
+      # Katalog, w którym Tempo zapisuje trace'y.
+      #
+      # W Docker Compose warto podpiąć tu wolumen, jeśli trace'y mają przetrwać restart kontenera.
       path: /tmp/tempo/traces

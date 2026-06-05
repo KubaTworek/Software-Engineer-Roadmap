@@ -1,24 +1,104 @@
+# Wersja formatu provisioning config Grafany.
+#
+# apiVersion: 1 to standardowa wersja plików provisioningowych Grafany.
 apiVersion: 1
 
 datasources:
+  # Datasource Prometheus.
+  #
+  # Prometheus jest źródłem metryk:
+  #
+  # - request rate,
+  # - latency p95/p99,
+  # - error rate,
+  # - JVM metrics,
+  # - HTTP server metrics,
+  # - circuit breaker metrics,
+  # - retry metrics,
+  # - cache metrics.
   - name: Prometheus
+
+    # Typ datasource'u w Grafanie.
     type: prometheus
+
+    # access: proxy oznacza, że Grafana backendowo odpytuje Prometheusa.
+    #
+    # Przeglądarka użytkownika nie musi mieć bezpośredniego dostępu do Prometheusa.
     access: proxy
+
+    # Adres Prometheusa widoczny z kontenera Grafany.
+    #
+    # W Docker Compose "prometheus" to nazwa serwisu i jednocześnie DNS w sieci Compose.
     url: http://prometheus:9090
+
+    # Ustawia Prometheusa jako domyślne źródło danych dla dashboardów.
     isDefault: true
+
+  # Datasource Tempo.
+  #
+  # Tempo przechowuje distributed traces.
+  # Dzięki temu można zobaczyć ścieżkę requestu przez mikroserwisy, np.:
+  #
+  # api-gateway
+  #   -> order-service
+  #   -> reservation-service
+  #   -> payment-mock-service
   - name: Tempo
     type: tempo
     access: proxy
+
+    # Adres Tempo widoczny z kontenera Grafany.
     url: http://tempo:3200
+
     jsonData:
+      # Integracja traces -> logs.
+      #
+      # Pozwala z poziomu trace'a w Grafanie przejść do powiązanych logów w Loki.
       tracesToLogsV2:
+        # UID datasource'u Loki.
+        #
+        # Musi odpowiadać polu uid w definicji datasource'u Loki niżej.
         datasourceUid: loki
+
+        # Tagi używane do korelacji trace'ów z logami.
+        #
+        # service.name pochodzi zwykle z OpenTelemetry/Micrometer.
+        # service może pochodzić ze structured logs aplikacji.
         tags: ["service.name", "service"]
+
+        # Włącza filtrowanie logów po trace ID.
+        #
+        # Dzięki temu z konkretnego trace'a można zobaczyć tylko logi związane
+        # z tym samym requestem.
         filterByTraceID: true
+
+      # Integracja traces -> metrics.
+      #
+      # Pozwala z widoku trace'ów przechodzić do metryk w Prometheusie.
       tracesToMetrics:
+        # UID albo nazwa datasource'u Prometheus, zależnie od wersji Grafany.
+        #
+        # W tej konfiguracji zakładamy, że datasource Prometheus jest dostępny pod tym UID/nazwą.
         datasourceUid: prometheus
+
+  # Datasource Loki.
+  #
+  # Loki przechowuje logi aplikacji zbierane przez Promtail.
+  # Używamy go do wyszukiwania logów po:
+  #
+  # - service,
+  # - level,
+  # - traceId,
+  # - correlationId.
   - name: Loki
+
+    # UID datasource'u.
+    #
+    # Tempo używa tego UID w tracesToLogsV2.datasourceUid.
     uid: loki
+
     type: loki
     access: proxy
+
+    # Adres Loki widoczny z kontenera Grafany.
     url: http://loki:3100
