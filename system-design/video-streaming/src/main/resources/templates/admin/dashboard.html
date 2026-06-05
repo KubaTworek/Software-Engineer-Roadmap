@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Video Streaming Admin</title>
+    <style>
+        body { font-family: system-ui, sans-serif; margin: 32px; }
+        table { border-collapse: collapse; width: 100%; margin-bottom: 32px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background: #f6f6f6; }
+        code { background: #f6f6f6; padding: 2px 4px; }
+    </style>
+</head>
+<body>
+<h1>Video Streaming MVP Admin</h1>
+<p>Use REST API with the admin JWT for creating videos, generating upload URLs and publishing content.</p>
+
+<h2>Videos</h2>
+<table>
+    <thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Visibility</th><th>Published</th></tr></thead>
+    <tbody>
+    <tr th:each="video : ${videos}">
+        <td><code th:text="${video.id}"></code></td>
+        <td th:text="${video.title}"></td>
+        <td th:text="${video.status}"></td>
+        <td th:text="${video.visibility}"></td>
+        <td th:text="${video.publishedAt}"></td>
+    </tr>
+    </tbody>
+</table>
+
+<h2>Transcoding jobs</h2>
+<table>
+    <thead><tr><th>ID</th><th>Video</th><th>Status</th><th>Attempts</th><th>Error</th></tr></thead>
+    <tbody>
+    <tr th:each="job : ${jobs}">
+        <td><code th:text="${job.id}"></code></td>
+        <td><code th:text="${job.video.id}"></code></td>
+        <td th:text="${job.status}"></td>
+        <td th:text="${job.attempts}"></td>
+        <td th:text="${job.errorMessage}"></td>
+    </tr>
+    </tbody>
+</table>
+</body>
+</html>

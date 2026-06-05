@@ -1,0 +1,121 @@
+### Register passenger
+POST http://localhost:8080/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "email": "passenger@example.com",
+  "phoneNumber": "+48100100100",
+  "password": "secret123",
+  "fullName": "Passenger One",
+  "role": "PASSENGER"
+}
+
+### Register driver
+POST http://localhost:8080/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "email": "driver@example.com",
+  "phoneNumber": "+48200200200",
+  "password": "secret123",
+  "fullName": "Driver One",
+  "role": "DRIVER"
+}
+
+### Login passenger
+POST http://localhost:8080/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "passenger@example.com",
+  "password": "secret123"
+}
+
+### Create driver profile
+POST http://localhost:8080/api/v1/drivers/me/profile
+Authorization: Bearer {{driver_token}}
+Content-Type: application/json
+
+{
+  "vehicleMake": "Toyota",
+  "vehicleModel": "Corolla",
+  "plateNumber": "WA12345",
+  "vehicleColor": "Black",
+  "vehicleType": "standard"
+}
+
+### Driver available
+POST http://localhost:8080/api/v1/drivers/me/availability
+Authorization: Bearer {{driver_token}}
+Content-Type: application/json
+
+{
+  "status": "AVAILABLE"
+}
+
+### Driver location Warsaw Central
+POST http://localhost:8080/api/v1/drivers/me/location
+Authorization: Bearer {{driver_token}}
+Content-Type: application/json
+
+{
+  "lat": 52.2297,
+  "lng": 21.0122,
+  "heading": 90,
+  "speed": 20
+}
+
+### Estimate ride
+POST http://localhost:8080/api/v1/rides/estimate
+Authorization: Bearer {{passenger_token}}
+Content-Type: application/json
+
+{
+  "pickup": {
+    "lat": 52.2297,
+    "lng": 21.0122,
+    "address": "Warszawa Centralna"
+  },
+  "dropoff": {
+    "lat": 52.2470,
+    "lng": 21.0138,
+    "address": "Plac Zamkowy"
+  },
+  "vehicleType": "standard"
+}
+
+### Request ride
+POST http://localhost:8080/api/v1/rides
+Authorization: Bearer {{passenger_token}}
+Content-Type: application/json
+
+{
+  "pickup": {
+    "lat": 52.2297,
+    "lng": 21.0122,
+    "address": "Warszawa Centralna"
+  },
+  "dropoff": {
+    "lat": 52.2470,
+    "lng": 21.0138,
+    "address": "Plac Zamkowy"
+  },
+  "vehicleType": "standard",
+  "paymentMethodId": "mock-card"
+}
+
+### Driver accepts ride
+POST http://localhost:8080/api/v1/driver/rides/{{ride_id}}/accept
+Authorization: Bearer {{driver_token}}
+
+### Driver arrived
+POST http://localhost:8080/api/v1/driver/rides/{{ride_id}}/arrived
+Authorization: Bearer {{driver_token}}
+
+### Start ride
+POST http://localhost:8080/api/v1/driver/rides/{{ride_id}}/start
+Authorization: Bearer {{driver_token}}
+
+### Complete ride
+POST http://localhost:8080/api/v1/driver/rides/{{ride_id}}/complete
+Authorization: Bearer {{driver_token}}

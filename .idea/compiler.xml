@@ -18,15 +18,27 @@
         <sourceOutputDir name="target/generated-sources/annotations" />
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
-        <module name="api-gateway (1)" />
+        <module name="telemetry-server" />
         <module name="catalog-service" />
+        <module name="payment-system-stage-1" />
+        <module name="news-feed-stage-1" />
+        <module name="rate-limiter-stage1" />
+        <module name="chat-system-stage1" />
+        <module name="ride-sharing-mvp" />
         <module name="notification-service" />
+        <module name="video-streaming-mvp" />
+        <module name="file-storage-stage1" />
+        <module name="ecommerce-java-mvp" />
         <module name="project-1" />
         <module name="common" />
+        <module name="notification-system-stage-1" />
         <module name="reservation-service" />
         <module name="api-gateway" />
+        <module name="search-autocomplete-stage-1" />
         <module name="order-service" />
+        <module name="url-shortener" />
         <module name="booking-capacity-platform" />
+        <module name="telemetry-agent" />
         <module name="payment-mock-service" />
       </profile>
       <profile name="Gradle Imported" enabled="true">
@@ -38,6 +50,7 @@
       </profile>
     </annotationProcessing>
     <bytecodeTargetLevel>
+      <module name="api-gateway (1)" target="1.8" />
       <module name="api-gateway (2)" target="1.8" />
       <module name="catalog-service (1)" target="1.8" />
       <module name="common (1)" target="1.8" />
@@ -56,12 +69,16 @@
       <module name="booking-capacity-platform" options="-parameters" />
       <module name="catalog-service" options="-parameters" />
       <module name="catalog-service (1)" options="-parameters" />
+      <module name="chat-system-stage1" options="-parameters" />
       <module name="common" options="-parameters" />
       <module name="common (1)" options="-parameters" />
+      <module name="ecommerce-java-mvp" options="-parameters" />
+      <module name="file-storage-stage1" options="-parameters" />
       <module name="marketplace-modular-monolith" options="-parameters" />
       <module name="marketplace-modular-monolith.integrationTest" options="-parameters" />
       <module name="marketplace-modular-monolith.main" options="-parameters" />
       <module name="marketplace-modular-monolith.test" options="-parameters" />
+      <module name="news-feed-stage-1" options="-parameters" />
       <module name="notification-service" options="-parameters" />
       <module name="notification-service (1)" options="-parameters" />
       <module name="order-service" options="-parameters" />
@@ -71,6 +88,10 @@
       <module name="project-1" options="-parameters" />
       <module name="reservation-service" options="-parameters" />
       <module name="reservation-service (1)" options="-parameters" />
+      <module name="ride-sharing-mvp" options="-parameters" />
+      <module name="search-autocomplete-stage-1" options="-parameters" />
+      <module name="url-shortener" options="-parameters" />
+      <module name="video-streaming-mvp" options="-parameters" />
     </option>
   </component>
 </project>

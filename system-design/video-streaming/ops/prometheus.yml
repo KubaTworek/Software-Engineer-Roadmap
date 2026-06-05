@@ -1,0 +1,11 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: video-streaming-mvp
+    metrics_path: /actuator/prometheus
+    basic_auth:
+      username: admin@example.com
+      password: admin1234
+    static_configs:
+      - targets: ['app:8080']

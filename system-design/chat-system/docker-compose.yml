@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: chat-stage1-postgres
+    environment:
+      POSTGRES_DB: chat_stage1
+      POSTGRES_USER: chat
+      POSTGRES_PASSWORD: chat
+    ports:
+      - "5432:5432"
+    volumes:
+      - chat_stage1_pgdata:/var/lib/postgresql/data
+
+volumes:
+  chat_stage1_pgdata:

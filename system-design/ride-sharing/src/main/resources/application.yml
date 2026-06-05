@@ -1,0 +1,42 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: ride-sharing-mvp
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/ridesharing}
+    username: ${SPRING_DATASOURCE_USERNAME:rides}
+    password: ${SPRING_DATASOURCE_PASSWORD:rides}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+app:
+  jwt:
+    secret: ${APP_JWT_SECRET:change-me-change-me-change-me-change-me-change-me}
+    expiration-minutes: ${APP_JWT_EXPIRATION_MINUTES:1440}
+  matching:
+    initial-radius-km: 3
+    max-candidates: 10
+  maps:
+    provider: ${MAPS_PROVIDER:mock}
+  payments:
+    provider: ${PAYMENTS_PROVIDER:mock}

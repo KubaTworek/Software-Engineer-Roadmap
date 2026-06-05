@@ -1,0 +1,59 @@
+spring:
+  application:
+    name: video-streaming-mvp
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/video}
+    username: ${DATABASE_USERNAME:video}
+    password: ${DATABASE_PASSWORD:video}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc.time_zone: UTC
+  flyway:
+    enabled: true
+
+server:
+  port: ${SERVER_PORT:8080}
+
+app:
+  jwt:
+    issuer: video-streaming-mvp
+    # Local/dev only. Override with a strong secret in production.
+    secret: ${JWT_SECRET:dev-secret-dev-secret-dev-secret-dev-secret-dev-secret}
+    access-token-minutes: ${JWT_ACCESS_TOKEN_MINUTES:60}
+  storage:
+    endpoint: ${S3_ENDPOINT:http://localhost:9000}
+    public-endpoint: ${S3_PUBLIC_ENDPOINT:http://localhost:9000}
+    access-key: ${S3_ACCESS_KEY:minioadmin}
+    secret-key: ${S3_SECRET_KEY:minioadmin}
+    bucket: ${S3_BUCKET:video-streaming}
+    region: ${S3_REGION:us-east-1}
+    presigned-upload-expiry-minutes: ${S3_UPLOAD_EXPIRY_MINUTES:30}
+    cdn-base-url: ${CDN_BASE_URL:http://localhost:9000/video-streaming}
+  transcoding:
+    ffmpeg-path: ${FFMPEG_PATH:ffmpeg}
+    enabled: ${TRANSCODING_ENABLED:true}
+    work-dir: ${TRANSCODING_WORK_DIR:./var/transcoding}
+    hls-segment-seconds: ${HLS_SEGMENT_SECONDS:6}
+    poll-interval-ms: ${TRANSCODING_POLL_INTERVAL_MS:10000}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+logging:
+  level:
+    root: INFO
+    com.example.videostreaming: DEBUG

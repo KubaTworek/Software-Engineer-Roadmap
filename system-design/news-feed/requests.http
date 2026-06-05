@@ -1,0 +1,48 @@
+### Health
+GET http://localhost:8080/api/v1/health
+
+### Register
+POST http://localhost:8080/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "email": "anna@example.com",
+  "username": "anna",
+  "displayName": "Anna Nowak",
+  "password": "strong-password"
+}
+
+### Login
+POST http://localhost:8080/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "anna@example.com",
+  "password": "strong-password"
+}
+
+### Me
+GET http://localhost:8080/api/v1/users/me
+Authorization: Bearer {{token}}
+
+### Update me
+PATCH http://localhost:8080/api/v1/users/me
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "displayName": "Anna",
+  "bio": "Software engineer"
+}
+
+### Create post
+POST http://localhost:8080/api/v1/posts
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "content": "Pierwszy post w News Feed!"
+}
+
+### Feed
+GET http://localhost:8080/api/v1/feed?limit=20

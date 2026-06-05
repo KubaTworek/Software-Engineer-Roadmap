@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: news-feed-stage-1-postgres
+    environment:
+      POSTGRES_DB: news_feed
+      POSTGRES_USER: news_feed
+      POSTGRES_PASSWORD: news_feed
+    ports:
+      - "5432:5432"
+    volumes:
+      - news_feed_pgdata:/var/lib/postgresql/data
+
+volumes:
+  news_feed_pgdata:

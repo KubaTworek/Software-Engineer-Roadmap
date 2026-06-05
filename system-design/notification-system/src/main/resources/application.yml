@@ -1,0 +1,10 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: notification-system-stage-1
+
+logging:
+  level:
+    com.example.notification: INFO
