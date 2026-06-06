@@ -46,6 +46,16 @@ app:
     read-url: ${spring.datasource.url}
     read-username: ${spring.datasource.username}
     read-password: ${spring.datasource.password}
+  region:
+    region-id: ${APP_REGION_ID:local}
+    primary-region: ${APP_PRIMARY_REGION:local}
+    active-active: ${APP_ACTIVE_ACTIVE:false}
+    edge-cache-ttl: PT10M
+    negative-cache-ttl: PT30S
+  edge:
+    enabled: true
+    internal-token: ${EDGE_INTERNAL_TOKEN:local-edge-token}
+    cache-control-for-redirects: public, max-age=60, stale-while-revalidate=300
   cache:
     url-ttl: PT24H
   queue:
@@ -81,6 +91,13 @@ app:
       - go-http-client
   admin:
     token: local-admin-token
+  enterprise:
+    enabled: true
+    api-key-header: X-Api-Key
+    api-key-hash-salt: ${ENTERPRISE_API_KEY_HASH_SALT:change-me-enterprise-salt}
+    bulk-max-size: 100
+    default-rate-limit-per-minute: 1000
+    idempotency-ttl: PT24H
 
 management:
   endpoints:

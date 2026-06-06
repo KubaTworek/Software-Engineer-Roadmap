@@ -9,6 +9,9 @@ import com.example.urlshortener.exception.ShortUrlNotFoundException;
 import com.example.urlshortener.model.ShortUrl;
 import com.example.urlshortener.model.UrlStatus;
 import com.example.urlshortener.repository.ShortUrlRepository;
+import com.example.urlshortener.region.RegionProperties;
+import com.example.urlshortener.storage.DistributedStorageReplicationService;
+import com.example.urlshortener.storage.UrlLookupRecord;
 import com.example.urlshortener.validation.AliasValidator;
 import com.example.urlshortener.validation.UrlValidator;
 import java.net.URI;
@@ -31,6 +34,8 @@ public class ShortUrlService {
     private final ShortUrlCacheService cacheService;
     private final Clock clock;
     private final String publicBaseUrl;
+    private final RegionProperties regionProperties;
+    private final DistributedStorageReplicationService replicationService;
 
     public ShortUrlService(
         ShortUrlRepository repository,
@@ -39,7 +44,9 @@ public class ShortUrlService {
         AliasValidator aliasValidator,
         ShortUrlCacheService cacheService,
         Clock clock,
-        @Value("${app.public-base-url}") String publicBaseUrl
+        @Value("${app.public-base-url}") String publicBaseUrl,
+        RegionProperties regionProperties,
+        DistributedStorageReplicationService replicationService
     ) {
         this.repository = repository;
         this.base62Encoder = base62Encoder;
@@ -48,10 +55,13 @@ public class ShortUrlService {
         this.cacheService = cacheService;
         this.clock = clock;
         this.publicBaseUrl = publicBaseUrl;
+        this.regionProperties = regionProperties;
+        this.replicationService = replicationService;
     }
 
     @Transactional
     public CreateShortUrlResponse create(CreateShortUrlRequest request) {
+        ensureRegionAcceptsWrites();
         URI normalizedUrl = urlValidator.validatePublicHttpUrl(request.longUrl());
         String customAlias = normalizeAlias(request.customAlias());
 
@@ -85,6 +95,7 @@ public class ShortUrlService {
         entity.block(reason, Instant.now(clock));
         ShortUrl saved = repository.save(entity);
         cacheService.evict(shortCode);
+        replicate(saved);
         return toDetailsResponse(saved);
     }
 
@@ -100,6 +111,7 @@ public class ShortUrlService {
         } else {
             cacheService.evict(shortCode);
         }
+        replicate(saved);
         return toDetailsResponse(saved);
     }
 
@@ -111,6 +123,7 @@ public class ShortUrlService {
         ShortUrl saved = repository.saveAndFlush(entity);
 
         cacheIfActive(saved);
+        replicate(saved);
         return toCreateResponse(saved);
     }
 
@@ -124,6 +137,7 @@ public class ShortUrlService {
             ShortUrl entity = new ShortUrl(id, customAlias, normalizedUrl.toString(), expiresAt);
             ShortUrl saved = repository.saveAndFlush(entity);
             cacheIfActive(saved);
+            replicate(saved);
             return toCreateResponse(saved);
         } catch (DataIntegrityViolationException exception) {
             throw new CustomAliasAlreadyExistsException(customAlias);
@@ -189,6 +203,24 @@ public class ShortUrlService {
             .pathSegment(shortCode)
             .build()
             .toUriString();
+    }
+
+
+    private void ensureRegionAcceptsWrites() {
+        if (!regionProperties.isPrimaryRegion()) {
+            throw new IllegalArgumentException("This region does not accept writes. Primary region: " + regionProperties.getPrimaryRegion());
+        }
+    }
+
+    private void replicate(ShortUrl entity) {
+        replicationService.publishUpsert(new UrlLookupRecord(
+            entity.getShortCode(),
+            entity.getLongUrl(),
+            entity.getStatus(),
+            entity.getExpiresAt(),
+            regionProperties.getRegionId(),
+            entity.getUpdatedAt()
+        ));
     }
 
     private String normalizeAlias(String customAlias) {

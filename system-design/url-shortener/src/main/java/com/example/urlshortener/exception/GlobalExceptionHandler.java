@@ -67,6 +67,13 @@ public class GlobalExceptionHandler {
         );
     }
 
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException exception, HttpServletRequest request) {
+        return ResponseEntity.badRequest().body(
+            ErrorResponse.of(400, "BAD_REQUEST", exception.getMessage(), request.getRequestURI())
+        );
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException exception, HttpServletRequest request) {
         Map<String, String> errors = new LinkedHashMap<>();

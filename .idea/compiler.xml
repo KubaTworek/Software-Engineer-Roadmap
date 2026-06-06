@@ -30,7 +30,6 @@
         <module name="notification-service" />
         <module name="video-streaming-mvp" />
         <module name="file-storage-stage1" />
-        <module name="url-shortener (3) (com.example)" />
         <module name="ecommerce-java-mvp" />
         <module name="project-1" />
         <module name="common" />
@@ -62,6 +61,7 @@
       <module name="reservation-service (1)" target="1.8" />
       <module name="url-shortener" target="1.8" />
       <module name="url-shortener (2) (com.example)" target="21" />
+      <module name="url-shortener (3) (com.example)" target="21" />
     </bytecodeTargetLevel>
   </component>
   <component name="JavacSettings">

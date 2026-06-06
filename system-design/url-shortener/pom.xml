@@ -13,9 +13,9 @@
 
     <groupId>com.example</groupId>
     <artifactId>url-shortener</artifactId>
-    <version>0.4.0</version>
+    <version>0.5.0</version>
     <name>url-shortener</name>
-    <description>Stage 4 production-oriented URL shortener API with queue analytics, abuse detection and read replicas</description>
+    <description>Stage 5 global URL shortener API with edge support, multi-region configuration, distributed storage abstraction and enterprise API</description>
 
     <properties>
         <java.version>21</java.version>

@@ -16,6 +16,7 @@
     <file url="file://$PROJECT_DIR$/system-design/url-shortener/src/main/resources/db/migration/V2__stage2_alias_and_integrity.sql" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/system-design/url-shortener/src/main/resources/db/migration/V3__stage3_analytics_and_blocking.sql" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/system-design/url-shortener/src/main/resources/db/migration/V4__stage4_queue_advanced_analytics.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/system-design/url-shortener/src/main/resources/db/migration/V5__stage5_enterprise_global.sql" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/system-design/video-streaming/src/main/resources/db/migration/V1__init.sql" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/system-design/video-streaming/src/main/resources/db/migration/V2__seed_admin.sql" dialect="GenericSQL" />
   </component>

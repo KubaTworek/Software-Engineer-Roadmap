@@ -1,0 +1,7 @@
+name = "url-shortener-edge"
+main = "worker.js"
+compatibility_date = "2026-06-01"
+
+[vars]
+ORIGIN_BASE_URL = "https://origin.example.com"
+EDGE_INTERNAL_TOKEN = "replace-me"

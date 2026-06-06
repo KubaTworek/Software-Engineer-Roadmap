@@ -4,4 +4,8 @@ public class AdminUnauthorizedException extends RuntimeException {
     public AdminUnauthorizedException() {
         super("Admin token is missing or invalid");
     }
+
+    public AdminUnauthorizedException(String message) {
+        super(message);
+    }
 }
