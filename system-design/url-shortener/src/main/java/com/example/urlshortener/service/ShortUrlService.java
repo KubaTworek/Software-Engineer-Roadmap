@@ -74,16 +74,33 @@ public class ShortUrlService {
         ShortUrl entity = repository.findByShortCode(shortCode)
             .orElseThrow(() -> new ShortUrlNotFoundException(shortCode));
 
-        return new UrlDetailsResponse(
-            entity.getId(),
-            entity.getShortCode(),
-            buildShortUrl(entity.getShortCode()),
-            entity.getLongUrl(),
-            entity.getStatus(),
-            entity.getExpiresAt(),
-            entity.getCreatedAt(),
-            entity.getUpdatedAt()
-        );
+        return toDetailsResponse(entity);
+    }
+
+    @Transactional
+    public UrlDetailsResponse block(String shortCode, String reason) {
+        ShortUrl entity = repository.findByShortCode(shortCode)
+            .orElseThrow(() -> new ShortUrlNotFoundException(shortCode));
+
+        entity.block(reason, Instant.now(clock));
+        ShortUrl saved = repository.save(entity);
+        cacheService.evict(shortCode);
+        return toDetailsResponse(saved);
+    }
+
+    @Transactional
+    public UrlDetailsResponse unblock(String shortCode) {
+        ShortUrl entity = repository.findByShortCode(shortCode)
+            .orElseThrow(() -> new ShortUrlNotFoundException(shortCode));
+
+        entity.unblock();
+        ShortUrl saved = repository.save(entity);
+        if (!saved.isExpired(Instant.now(clock))) {
+            cacheService.putLongUrl(saved.getShortCode(), saved.getLongUrl(), saved.getExpiresAt());
+        } else {
+            cacheService.evict(shortCode);
+        }
+        return toDetailsResponse(saved);
     }
 
     private CreateShortUrlResponse createWithGeneratedCode(URI normalizedUrl, Instant expiresAt) {
@@ -149,6 +166,21 @@ public class ShortUrlService {
             saved.getLongUrl(),
             saved.getExpiresAt(),
             saved.getCreatedAt()
+        );
+    }
+
+    private UrlDetailsResponse toDetailsResponse(ShortUrl entity) {
+        return new UrlDetailsResponse(
+            entity.getId(),
+            entity.getShortCode(),
+            buildShortUrl(entity.getShortCode()),
+            entity.getLongUrl(),
+            entity.getStatus(),
+            entity.getExpiresAt(),
+            entity.getCreatedAt(),
+            entity.getUpdatedAt(),
+            entity.getBlockedReason(),
+            entity.getBlockedAt()
         );
     }
 

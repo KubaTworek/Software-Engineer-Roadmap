@@ -24,6 +24,7 @@
         <module name="news-feed-stage-1" />
         <module name="rate-limiter-stage1" />
         <module name="chat-system-stage1" />
+        <module name="url-shortener (1)" />
         <module name="ride-sharing-mvp" />
         <module name="notification-service" />
         <module name="video-streaming-mvp" />
@@ -37,8 +38,8 @@
         <module name="search-autocomplete-stage-1" />
         <module name="order-service" />
         <module name="url-shortener" />
-        <module name="booking-capacity-platform" />
         <module name="telemetry-agent" />
+        <module name="booking-capacity-platform" />
         <module name="payment-mock-service" />
       </profile>
       <profile name="Gradle Imported" enabled="true">
@@ -58,7 +59,7 @@
       <module name="order-service (1)" target="1.8" />
       <module name="payment-mock-service (1)" target="1.8" />
       <module name="reservation-service (1)" target="1.8" />
-      <module name="url-shortener (1)" target="1.8" />
+      <module name="url-shortener (2) (com.example)" target="21" />
     </bytecodeTargetLevel>
   </component>
   <component name="JavacSettings">
@@ -93,6 +94,7 @@
       <module name="search-autocomplete-stage-1" options="-parameters" />
       <module name="url-shortener" options="-parameters" />
       <module name="url-shortener (1)" options="-parameters" />
+      <module name="url-shortener (2) (com.example)" options="-parameters" />
       <module name="video-streaming-mvp" options="-parameters" />
     </option>
   </component>

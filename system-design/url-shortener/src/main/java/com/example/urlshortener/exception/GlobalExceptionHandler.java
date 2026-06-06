@@ -60,6 +60,13 @@ public class GlobalExceptionHandler {
         );
     }
 
+    @ExceptionHandler(AdminUnauthorizedException.class)
+    public ResponseEntity<ErrorResponse> handleAdminUnauthorized(AdminUnauthorizedException exception, HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(
+            ErrorResponse.of(401, "ADMIN_UNAUTHORIZED", exception.getMessage(), request.getRequestURI())
+        );
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException exception, HttpServletRequest request) {
         Map<String, String> errors = new LinkedHashMap<>();

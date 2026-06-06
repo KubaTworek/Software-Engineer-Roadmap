@@ -40,6 +40,8 @@ services:
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
       APP_PUBLIC_BASE_URL: http://localhost:8080
+      APP_ANALYTICS_IP_HASH_SALT: local-dev-salt
+      APP_ADMIN_TOKEN: local-admin-token
     ports:
       - "8080:8080"
     depends_on:

@@ -11,5 +11,8 @@ public record UrlDetailsResponse(
     UrlStatus status,
     Instant expiresAt,
     Instant createdAt,
-    Instant updatedAt
-) {}
+    Instant updatedAt,
+    String blockedReason,
+    Instant blockedAt
+) {
+}

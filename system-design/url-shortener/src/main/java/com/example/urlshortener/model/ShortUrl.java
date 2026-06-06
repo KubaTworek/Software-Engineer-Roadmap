@@ -39,6 +39,12 @@ public class ShortUrl {
     @Column(name = "expires_at")
     private Instant expiresAt;
 
+    @Column(name = "blocked_reason", columnDefinition = "TEXT")
+    private String blockedReason;
+
+    @Column(name = "blocked_at")
+    private Instant blockedAt;
+
     protected ShortUrl() {}
 
     public ShortUrl(Long id, String shortCode, String longUrl, Instant expiresAt) {
@@ -72,5 +78,20 @@ public class ShortUrl {
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
     public Instant getExpiresAt() { return expiresAt; }
+    public String getBlockedReason() { return blockedReason; }
+    public Instant getBlockedAt() { return blockedAt; }
+
+    public void block(String reason, Instant blockedAt) {
+        this.status = UrlStatus.BLOCKED;
+        this.blockedReason = reason;
+        this.blockedAt = blockedAt;
+    }
+
+    public void unblock() {
+        this.status = UrlStatus.ACTIVE;
+        this.blockedReason = null;
+        this.blockedAt = null;
+    }
+
     public boolean isExpired(Instant now) { return expiresAt != null && expiresAt.isBefore(now); }
 }

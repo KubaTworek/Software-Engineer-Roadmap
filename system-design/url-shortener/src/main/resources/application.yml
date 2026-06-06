@@ -35,6 +35,11 @@ app:
     redirect:
       requests: 600
       window: PT1M
+  analytics:
+    enabled: true
+    ip-hash-salt: change-me-in-production
+  admin:
+    token: local-admin-token
 
 management:
   endpoints:
