@@ -13,6 +13,7 @@
     <file url="file://$PROJECT_DIR$/system-design/payment-system/src/main/resources/schema.sql" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/system-design/ride-sharing/src/main/resources/db/migration/V1__initial_schema.sql" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/system-design/url-shortener/src/main/resources/db/migration/V1__create_urls_table.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/system-design/url-shortener/src/main/resources/db/migration/V2__stage2_alias_and_integrity.sql" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/system-design/video-streaming/src/main/resources/db/migration/V1__init.sql" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/system-design/video-streaming/src/main/resources/db/migration/V2__seed_admin.sql" dialect="GenericSQL" />
   </component>

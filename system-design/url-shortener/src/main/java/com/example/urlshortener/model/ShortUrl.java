@@ -15,8 +15,6 @@ import java.time.Instant;
 public class ShortUrl {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "url_id_seq")
-    @SequenceGenerator(name = "url_id_seq", sequenceName = "url_id_seq", allocationSize = 50)
     private Long id;
 
     @Column(name = "short_code", unique = true, length = 32)
@@ -43,7 +41,9 @@ public class ShortUrl {
 
     protected ShortUrl() {}
 
-    public ShortUrl(String longUrl, Instant expiresAt) {
+    public ShortUrl(Long id, String shortCode, String longUrl, Instant expiresAt) {
+        this.id = id;
+        this.shortCode = shortCode;
         this.longUrl = longUrl;
         this.expiresAt = expiresAt;
         this.status = UrlStatus.ACTIVE;

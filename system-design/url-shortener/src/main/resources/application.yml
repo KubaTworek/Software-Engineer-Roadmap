@@ -5,6 +5,11 @@ spring:
     url: jdbc:postgresql://localhost:5432/url_shortener
     username: url_shortener
     password: url_shortener
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 1s
   jpa:
     hibernate:
       ddl-auto: validate
@@ -21,6 +26,15 @@ server:
 
 app:
   public-base-url: http://localhost:8080
+  cache:
+    url-ttl: PT24H
+  rate-limit:
+    create:
+      requests: 10
+      window: PT1M
+    redirect:
+      requests: 600
+      window: PT1M
 
 management:
   endpoints:

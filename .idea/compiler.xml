@@ -58,6 +58,7 @@
       <module name="order-service (1)" target="1.8" />
       <module name="payment-mock-service (1)" target="1.8" />
       <module name="reservation-service (1)" target="1.8" />
+      <module name="url-shortener (1)" target="1.8" />
     </bytecodeTargetLevel>
   </component>
   <component name="JavacSettings">
@@ -91,6 +92,7 @@
       <module name="ride-sharing-mvp" options="-parameters" />
       <module name="search-autocomplete-stage-1" options="-parameters" />
       <module name="url-shortener" options="-parameters" />
+      <module name="url-shortener (1)" options="-parameters" />
       <module name="video-streaming-mvp" options="-parameters" />
     </option>
   </component>

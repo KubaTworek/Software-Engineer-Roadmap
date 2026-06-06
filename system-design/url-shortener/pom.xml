@@ -15,7 +15,7 @@
     <artifactId>url-shortener</artifactId>
     <version>0.1.0</version>
     <name>url-shortener</name>
-    <description>Stage 1 production-oriented URL shortener API</description>
+    <description>Stage 2 production-oriented URL shortener API</description>
 
     <properties>
         <java.version>21</java.version>
@@ -33,6 +33,10 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
         <dependency>
             <groupId>org.flywaydb</groupId>

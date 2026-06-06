@@ -18,7 +18,9 @@ import org.springframework.test.web.servlet.MvcResult;
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 class ShortUrlApiControllerTest {
-    @Autowired MockMvc mockMvc;
+
+    @Autowired
+    MockMvc mockMvc;
 
     @Test
     void createsAndRedirectsShortUrl() throws Exception {
@@ -32,11 +34,50 @@ class ShortUrlApiControllerTest {
             .andReturn();
 
         String body = createResult.getResponse().getContentAsString();
-        String shortCode = body.replaceAll(".*\"shortCode\":\"([^\"]+)\".*", "$1");
+        String shortCode = body.replaceAll(".*\\\"shortCode\\\":\\\"([^\\\"]+)\\\".*", "$1");
 
         mockMvc.perform(get("/" + shortCode))
             .andExpect(status().isFound())
             .andExpect(header().string("Location", "https://example.com/products?id=123"));
+    }
+
+    @Test
+    void createsShortUrlWithCustomAlias() throws Exception {
+        mockMvc.perform(post("/api/v1/urls")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"longUrl\":\"https://example.com/campaign\",\"customAlias\":\"promo-2026\"}"))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.shortCode").value("promo-2026"))
+            .andExpect(jsonPath("$.shortUrl").value("http://sho.rt/promo-2026"));
+
+        mockMvc.perform(get("/promo-2026"))
+            .andExpect(status().isFound())
+            .andExpect(header().string("Location", "https://example.com/campaign"));
+    }
+
+    @Test
+    void rejectsDuplicateCustomAlias() throws Exception {
+        String payload = "{\"longUrl\":\"https://example.com/a\",\"customAlias\":\"duplicate-alias\"}";
+
+        mockMvc.perform(post("/api/v1/urls")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payload))
+            .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/v1/urls")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payload.replace("/a", "/b")))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.error").value("CUSTOM_ALIAS_ALREADY_EXISTS"));
+    }
+
+    @Test
+    void rejectsReservedCustomAlias() throws Exception {
+        mockMvc.perform(post("/api/v1/urls")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"longUrl\":\"https://example.com\",\"customAlias\":\"api\"}"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.error").value("RESERVED_ALIAS"));
     }
 
     @Test
@@ -50,6 +91,7 @@ class ShortUrlApiControllerTest {
 
     @Test
     void returnsNotFoundForUnknownShortCode() throws Exception {
-        mockMvc.perform(get("/unknown123")).andExpect(status().isNotFound());
+        mockMvc.perform(get("/unknown123"))
+            .andExpect(status().isNotFound());
     }
 }
