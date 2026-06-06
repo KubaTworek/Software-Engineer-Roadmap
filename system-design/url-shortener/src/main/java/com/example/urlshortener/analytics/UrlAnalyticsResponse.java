@@ -6,7 +6,12 @@ import java.util.List;
 public record UrlAnalyticsResponse(
     String shortCode,
     long totalClicks,
+    long suspiciousClicks,
     LocalDate from,
     LocalDate to,
-    List<DailyClicksResponse> dailyClicks
+    List<DailyClicksResponse> dailyClicks,
+    List<DimensionCount> topCountries,
+    List<DimensionCount> topDevices,
+    List<DimensionCount> topBrowsers,
+    List<DimensionCount> topReferrers
 ) {}

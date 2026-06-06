@@ -5,6 +5,18 @@ spring:
     url: jdbc:postgresql://localhost:5432/url_shortener
     username: url_shortener
     password: url_shortener
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+    listener:
+      simple:
+        retry:
+          enabled: true
+          initial-interval: 500ms
+          max-attempts: 3
+          multiplier: 2
   data:
     redis:
       host: localhost
@@ -26,8 +38,23 @@ server:
 
 app:
   public-base-url: http://localhost:8080
+  datasource:
+    read-replica-enabled: false
+    write-url: ${spring.datasource.url}
+    write-username: ${spring.datasource.username}
+    write-password: ${spring.datasource.password}
+    read-url: ${spring.datasource.url}
+    read-username: ${spring.datasource.username}
+    read-password: ${spring.datasource.password}
   cache:
     url-ttl: PT24H
+  queue:
+    enabled: true
+    click-exchange: url-shortener.clicks.exchange
+    click-routing-key: click.created
+    click-queue: url-shortener.clicks.queue
+    click-dead-letter-exchange: url-shortener.clicks.dlx
+    click-dead-letter-queue: url-shortener.clicks.dlq
   rate-limit:
     create:
       requests: 10
@@ -38,6 +65,20 @@ app:
   analytics:
     enabled: true
     ip-hash-salt: change-me-in-production
+  abuse:
+    enabled: true
+    suspicious-clicks-per-ip-per-short-code: 120
+    ip-window: PT5M
+    auto-block-suspicious-events: 500
+    short-code-window: PT15M
+    blocked-referrer-domains: []
+    suspicious-user-agent-tokens:
+      - sqlmap
+      - nikto
+      - masscan
+      - zgrab
+      - python-requests
+      - go-http-client
   admin:
     token: local-admin-token
 
@@ -45,4 +86,4 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,metrics,prometheus

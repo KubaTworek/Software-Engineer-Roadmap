@@ -1,0 +1,13 @@
+# Optional profile showing how to route read-only transactions to a read replica.
+# Run with: SPRING_PROFILES_ACTIVE=read-replica
+# In production, point read-url at a real streaming replica or managed read replica.
+
+app:
+  datasource:
+    read-replica-enabled: true
+    write-url: ${APP_DATASOURCE_WRITE_URL:jdbc:postgresql://localhost:5432/url_shortener}
+    write-username: ${APP_DATASOURCE_WRITE_USERNAME:url_shortener}
+    write-password: ${APP_DATASOURCE_WRITE_PASSWORD:url_shortener}
+    read-url: ${APP_DATASOURCE_READ_URL:jdbc:postgresql://localhost:5432/url_shortener}
+    read-username: ${APP_DATASOURCE_READ_USERNAME:url_shortener}
+    read-password: ${APP_DATASOURCE_READ_PASSWORD:url_shortener}

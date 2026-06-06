@@ -13,9 +13,9 @@
 
     <groupId>com.example</groupId>
     <artifactId>url-shortener</artifactId>
-    <version>0.3.0</version>
+    <version>0.4.0</version>
     <name>url-shortener</name>
-    <description>Stage 3 production-oriented URL shortener API with async analytics and admin blocking</description>
+    <description>Stage 4 production-oriented URL shortener API with queue analytics, abuse detection and read replicas</description>
 
     <properties>
         <java.version>21</java.version>
@@ -37,6 +37,10 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
         </dependency>
         <dependency>
             <groupId>org.flywaydb</groupId>

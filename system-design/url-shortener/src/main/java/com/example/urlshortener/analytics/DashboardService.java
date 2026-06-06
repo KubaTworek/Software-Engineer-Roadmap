@@ -9,6 +9,7 @@ import java.time.ZoneOffset;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -43,6 +44,9 @@ public class DashboardService {
 
         LocalDate safeTo = to == null ? LocalDate.now(clock) : to;
         LocalDate safeFrom = from == null ? safeTo.minusDays(6) : from;
+        var fromInstant = safeFrom.atStartOfDay().toInstant(ZoneOffset.UTC);
+        var toInstant = safeTo.plusDays(1).atStartOfDay().minusNanos(1).toInstant(ZoneOffset.UTC);
+        var topLimit = PageRequest.of(0, 10);
 
         Map<LocalDate, DailyUrlStats> statsByDate = dailyUrlStatsRepository
             .findByShortCodeAndDateBetweenOrderByDateAsc(shortCode, safeFrom, safeTo)
@@ -59,8 +63,20 @@ public class DashboardService {
 
         long totalClicks = clickCounterService.getTotal(shortCode)
             .orElseGet(() -> clickEventRepository.countByShortCode(shortCode));
+        long suspiciousClicks = clickEventRepository.countByShortCodeAndSuspiciousTrue(shortCode);
 
-        return new UrlAnalyticsResponse(shortCode, totalClicks, safeFrom, safeTo, daily);
+        return new UrlAnalyticsResponse(
+            shortCode,
+            totalClicks,
+            suspiciousClicks,
+            safeFrom,
+            safeTo,
+            daily,
+            clickEventRepository.topCountries(shortCode, fromInstant, toInstant, topLimit),
+            clickEventRepository.topDevices(shortCode, fromInstant, toInstant, topLimit),
+            clickEventRepository.topBrowsers(shortCode, fromInstant, toInstant, topLimit),
+            clickEventRepository.topReferrers(shortCode, fromInstant, toInstant, topLimit)
+        );
     }
 
     @Transactional(readOnly = true)
@@ -70,11 +86,12 @@ public class DashboardService {
         long activeUrls = shortUrlRepository.countByStatus(UrlStatus.ACTIVE);
         long blockedUrls = shortUrlRepository.countByStatus(UrlStatus.BLOCKED);
         long totalClicks = clickEventRepository.count();
+        long suspiciousClicks = clickEventRepository.countBySuspiciousTrue();
         long clicksToday = dailyUrlStatsRepository.findAll().stream()
             .filter(stats -> stats.getDate().equals(today))
             .mapToLong(DailyUrlStats::getClicks)
             .sum();
 
-        return new DashboardSummaryResponse(totalUrls, activeUrls, blockedUrls, totalClicks, clicksToday, today);
+        return new DashboardSummaryResponse(totalUrls, activeUrls, blockedUrls, totalClicks, suspiciousClicks, clicksToday, today);
     }
 }

@@ -7,6 +7,7 @@ public record DashboardSummaryResponse(
     long activeUrls,
     long blockedUrls,
     long totalClicks,
+    long suspiciousClicks,
     long clicksToday,
     LocalDate today
 ) {}
