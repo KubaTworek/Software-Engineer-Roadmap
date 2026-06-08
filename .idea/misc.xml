@@ -29,7 +29,6 @@
     <option name="ignoredFiles">
       <set>
         <option value="$PROJECT_DIR$/projects/project-1/benchmarks/pom.xml" />
-        <option value="$PROJECT_DIR$/system-design/url-shortener/pom.xml" />
       </set>
     </option>
   </component>

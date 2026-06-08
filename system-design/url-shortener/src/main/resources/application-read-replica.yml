@@ -1,13 +1,80 @@
-# Optional profile showing how to route read-only transactions to a read replica.
-# Run with: SPRING_PROFILES_ACTIVE=read-replica
-# In production, point read-url at a real streaming replica or managed read replica.
+# Opcjonalny profil Springa pokazujący, jak skonfigurować routing transakcji read-only
+# do repliki odczytowej bazy danych.
+#
+# Ten plik powinien być używany jako profil, np.:
+#
+# application-read-replica.yml
+#
+# Uruchomienie:
+#
+# SPRING_PROFILES_ACTIVE=read-replica
+#
+# W produkcji read-url powinien wskazywać na prawdziwą replikę PostgreSQL:
+# - streaming replica,
+# - managed read replica w chmurze,
+# - endpoint read-only w managed database.
+#
+# Lokalnie read-url i write-url mogą wskazywać na tę samą bazę.
+# To nie daje realnej repliki, ale pozwala przetestować konfigurację aplikacji.
 
 app:
   datasource:
+    # Włącza własną konfigurację DataSourceConfig.
+    #
+    # Gdy wartość jest true, aplikacja tworzy:
+    #
+    # - write datasource,
+    # - read datasource,
+    # - routing datasource,
+    # - LazyConnectionDataSourceProxy.
+    #
+    # Dzięki temu metody oznaczone jako:
+    #
+    # @Transactional(readOnly = true)
+    #
+    # mogą być kierowane do read datasource, a transakcje zapisujące do write datasource.
     read-replica-enabled: true
+
+    # JDBC URL głównej bazy danych obsługującej zapisy.
+    #
+    # W trybie active-passive lub zwykłej konfiguracji PostgreSQL wszystkie operacje
+    # INSERT/UPDATE/DELETE powinny trafiać właśnie tutaj.
+    #
+    # Wartość może zostać nadpisana zmienną środowiskową:
+    #
+    # APP_DATASOURCE_WRITE_URL
+    #
+    # Jeśli zmienna nie istnieje, użyta zostanie lokalna baza:
+    #
+    # jdbc:postgresql://localhost:5432/url_shortener
     write-url: ${APP_DATASOURCE_WRITE_URL:jdbc:postgresql://localhost:5432/url_shortener}
+
+    # Użytkownik bazy danych dla write datasource.
+    #
+    # Produkcyjnie powinien pochodzić z secreta.
     write-username: ${APP_DATASOURCE_WRITE_USERNAME:url_shortener}
+
+    # Hasło użytkownika write datasource.
+    #
+    # Produkcyjnie nie powinno być commitowane do repozytorium.
     write-password: ${APP_DATASOURCE_WRITE_PASSWORD:url_shortener}
+
+    # JDBC URL repliki odczytowej.
+    #
+    # To źródło danych powinno być używane dla zapytań read-only.
+    #
+    # W produkcji powinno wskazywać na realną replikę, np.:
+    #
+    # jdbc:postgresql://read-replica.example.internal:5432/url_shortener
+    #
+    # Lokalnie domyślnie wskazuje na tę samą bazę co write-url, żeby aplikacja
+    # mogła wystartować bez dodatkowej infrastruktury.
     read-url: ${APP_DATASOURCE_READ_URL:jdbc:postgresql://localhost:5432/url_shortener}
+
+    # Użytkownik bazy danych dla read datasource.
+    #
+    # W produkcji warto rozważyć osobnego użytkownika z uprawnieniami tylko do odczytu.
     read-username: ${APP_DATASOURCE_READ_USERNAME:url_shortener}
+
+    # Hasło użytkownika read datasource.
     read-password: ${APP_DATASOURCE_READ_PASSWORD:url_shortener}
