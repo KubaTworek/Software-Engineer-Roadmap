@@ -19,6 +19,7 @@
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
         <module name="telemetry-server" />
+        <module name="rate-limiter" />
         <module name="catalog-service" />
         <module name="payment-system-stage-1" />
         <module name="news-feed-stage-1" />
@@ -85,6 +86,7 @@
       <module name="payment-mock-service" options="-parameters" />
       <module name="payment-mock-service (1)" options="-parameters" />
       <module name="project-1" options="-parameters" />
+      <module name="rate-limiter" options="-parameters" />
       <module name="reservation-service" options="-parameters" />
       <module name="reservation-service (1)" options="-parameters" />
       <module name="ride-sharing-mvp" options="-parameters" />

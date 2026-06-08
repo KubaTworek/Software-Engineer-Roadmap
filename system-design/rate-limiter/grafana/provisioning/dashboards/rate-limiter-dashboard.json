@@ -1,0 +1,23 @@
+{
+  "title": "Rate Limiter Platform",
+  "schemaVersion": 39,
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Allowed vs Denied",
+      "targets": [
+        {"expr": "sum(rate(rate_limiter_decisions_total[1m])) by (decision)", "legendFormat": "{{decision}}"}
+      ],
+      "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8}
+    },
+    {
+      "type": "timeseries",
+      "title": "Redis Errors",
+      "targets": [
+        {"expr": "sum(rate(rate_limiter_redis_errors_total[1m]))", "legendFormat": "errors/sec"}
+      ],
+      "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8}
+    }
+  ],
+  "refresh": "5s"
+}
