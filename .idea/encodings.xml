@@ -24,6 +24,7 @@
     <file url="file://$PROJECT_DIR$/system-design/metrics-logging-system/telemetry-agent/src/main/resources" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/system-design/metrics-logging-system/telemetry-server/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/system-design/metrics-logging-system/telemetry-server/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/system-design/notification-system/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/system-design/rate-limiter/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/system-design/rate-limiter/src/main/resources" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/system-design/ride-sharing/src/main/java" charset="UTF-8" />

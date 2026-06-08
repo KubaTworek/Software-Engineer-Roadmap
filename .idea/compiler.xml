@@ -29,6 +29,8 @@
         <module name="notification-service" />
         <module name="video-streaming-mvp" />
         <module name="file-storage-stage1" />
+        <module name="notification-system (1)" />
+        <module name="notification-system (2)" />
         <module name="ecommerce-java-mvp" />
         <module name="project-1" />
         <module name="common" />
@@ -55,6 +57,7 @@
       <module name="catalog-service (1)" target="1.8" />
       <module name="common (1)" target="1.8" />
       <module name="notification-service (1)" target="1.8" />
+      <module name="notification-system" target="21" />
       <module name="order-service (1)" target="1.8" />
       <module name="payment-mock-service (1)" target="1.8" />
       <module name="reservation-service (1)" target="1.8" />
@@ -81,6 +84,9 @@
       <module name="news-feed-stage-1" options="-parameters" />
       <module name="notification-service" options="-parameters" />
       <module name="notification-service (1)" options="-parameters" />
+      <module name="notification-system" options="-parameters" />
+      <module name="notification-system (1)" options="-parameters" />
+      <module name="notification-system (2)" options="-parameters" />
       <module name="order-service" options="-parameters" />
       <module name="order-service (1)" options="-parameters" />
       <module name="payment-mock-service" options="-parameters" />

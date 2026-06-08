@@ -1,98 +1,96 @@
 package com.example.notification.domain;
 
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 public class Notification {
-
     private final UUID id;
-    private final String recipient;
-    private final String subject;
-    private final String message;
-    private final NotificationChannel channel;
+    private final String tenantId;
+    private final String userId;
+    private final NotificationType notificationType;
+    private final List<Channel> requestedChannels;
+    private final List<Channel> selectedChannels;
+    private final ContactPoint contactPoint;
+    private final Map<String, Object> payload;
+    private final String idempotencyKey;
+    private final String deduplicationKey;
     private NotificationStatus status;
-    private String failureReason;
+    private final Instant expiresAt;
     private final Instant createdAt;
-    private Instant sentAt;
+    private Instant updatedAt;
+    private Instant archivedAt;
 
-    private Notification(UUID id,
-                         String recipient,
-                         String subject,
-                         String message,
-                         NotificationChannel channel,
-                         NotificationStatus status,
-                         String failureReason,
-                         Instant createdAt,
-                         Instant sentAt) {
+    public Notification(UUID id, String tenantId, String userId, NotificationType notificationType,
+                        List<Channel> requestedChannels, List<Channel> selectedChannels, ContactPoint contactPoint,
+                        Map<String, Object> payload, String idempotencyKey, String deduplicationKey, Instant expiresAt) {
         this.id = id;
-        this.recipient = recipient;
-        this.subject = subject;
-        this.message = message;
-        this.channel = channel;
+        this.tenantId = tenantId;
+        this.userId = userId;
+        this.notificationType = notificationType;
+        this.requestedChannels = List.copyOf(requestedChannels);
+        this.selectedChannels = List.copyOf(selectedChannels);
+        this.contactPoint = contactPoint;
+        this.payload = Map.copyOf(payload);
+        this.idempotencyKey = idempotencyKey;
+        this.deduplicationKey = deduplicationKey;
+        this.status = NotificationStatus.CREATED;
+        this.expiresAt = expiresAt;
+        this.createdAt = Instant.now();
+        this.updatedAt = createdAt;
+    }
+
+    public UUID getId() { return id; }
+    public String getTenantId() { return tenantId; }
+    public String getUserId() { return userId; }
+    public NotificationType getNotificationType() { return notificationType; }
+    public List<Channel> getRequestedChannels() { return requestedChannels; }
+    public List<Channel> getSelectedChannels() { return selectedChannels; }
+    public ContactPoint getContactPoint() { return contactPoint; }
+    public Map<String, Object> getPayload() { return payload; }
+    public String getIdempotencyKey() { return idempotencyKey; }
+    public String getDeduplicationKey() { return deduplicationKey; }
+    public NotificationStatus getStatus() { return status; }
+    public Instant getExpiresAt() { return expiresAt; }
+    public Instant getCreatedAt() { return createdAt; }
+    public Instant getUpdatedAt() { return updatedAt; }
+    public Instant getArchivedAt() { return archivedAt; }
+
+    public boolean isExpired() { return expiresAt != null && Instant.now().isAfter(expiresAt); }
+
+    public boolean isTerminal() {
+        return status == NotificationStatus.DELIVERED
+                || status == NotificationStatus.BOUNCED
+                || status == NotificationStatus.FAILED
+                || status == NotificationStatus.EXPIRED
+                || status == NotificationStatus.CANCELLED
+                || status == NotificationStatus.ARCHIVED;
+    }
+
+    public void markQueued() { if (!isTerminal()) transition(NotificationStatus.QUEUED); }
+    public void markProcessing() { if (!isTerminal()) transition(NotificationStatus.PROCESSING); }
+    public void markSent() { if (!isTerminal()) transition(NotificationStatus.SENT); }
+    public void markDelivered() { transition(NotificationStatus.DELIVERED); }
+    public void markBounced() { transition(NotificationStatus.BOUNCED); }
+    public void markFailed() { transition(NotificationStatus.FAILED); }
+    public void markExpired() { transition(NotificationStatus.EXPIRED); }
+
+    public void markCancelled() {
+        if (status != NotificationStatus.CREATED && status != NotificationStatus.QUEUED) {
+            throw new IllegalStateException("Only CREATED or QUEUED notifications can be cancelled");
+        }
+        transition(NotificationStatus.CANCELLED);
+    }
+
+    public void markArchived() {
+        this.status = NotificationStatus.ARCHIVED;
+        this.archivedAt = Instant.now();
+        this.updatedAt = Instant.now();
+    }
+
+    private void transition(NotificationStatus status) {
         this.status = status;
-        this.failureReason = failureReason;
-        this.createdAt = createdAt;
-        this.sentAt = sentAt;
-    }
-
-    public static Notification createEmail(String recipient, String subject, String message) {
-        return new Notification(
-                UUID.randomUUID(),
-                recipient,
-                subject,
-                message,
-                NotificationChannel.EMAIL,
-                NotificationStatus.CREATED,
-                null,
-                Instant.now(),
-                null
-        );
-    }
-
-    public void markAsSent() {
-        this.status = NotificationStatus.SENT;
-        this.sentAt = Instant.now();
-        this.failureReason = null;
-    }
-
-    public void markAsFailed(String reason) {
-        this.status = NotificationStatus.FAILED;
-        this.failureReason = reason;
-    }
-
-    public UUID getId() {
-        return id;
-    }
-
-    public String getRecipient() {
-        return recipient;
-    }
-
-    public String getSubject() {
-        return subject;
-    }
-
-    public String getMessage() {
-        return message;
-    }
-
-    public NotificationChannel getChannel() {
-        return channel;
-    }
-
-    public NotificationStatus getStatus() {
-        return status;
-    }
-
-    public String getFailureReason() {
-        return failureReason;
-    }
-
-    public Instant getCreatedAt() {
-        return createdAt;
-    }
-
-    public Instant getSentAt() {
-        return sentAt;
+        this.updatedAt = Instant.now();
     }
 }

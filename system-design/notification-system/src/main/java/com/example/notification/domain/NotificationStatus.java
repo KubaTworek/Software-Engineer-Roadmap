@@ -2,6 +2,13 @@ package com.example.notification.domain;
 
 public enum NotificationStatus {
     CREATED,
+    QUEUED,
+    PROCESSING,
     SENT,
-    FAILED
+    DELIVERED,
+    BOUNCED,
+    FAILED,
+    EXPIRED,
+    CANCELLED,
+    ARCHIVED
 }

@@ -3,8 +3,40 @@ server:
 
 spring:
   application:
-    name: notification-system-stage-1
+    name: notification-system-stage-6
+
+notification:
+  worker:
+    fixed-delay-ms: 1000
+  outbox:
+    fixed-delay-ms: 700
+  retry:
+    max-attempts: 3
+    base-delay-ms: 1500
+  deduplication:
+    window-minutes: 10
+  rate-limit:
+    tenant-per-minute: 60
+    user-per-minute: 20
+  digest:
+    fixed-delay-ms: 2000
+    window-seconds: 30
+  archive:
+    fixed-delay-ms: 10000
+    retention-seconds: 120
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  tracing:
+    sampling:
+      probability: 1.0
 
 logging:
-  level:
-    com.example.notification: INFO
+  pattern:
+    level: "%5p [tenant=%X{tenantId:-},traceId=%X{traceId:-},spanId=%X{spanId:-}]"

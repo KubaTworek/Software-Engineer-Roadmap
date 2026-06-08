@@ -10,7 +10,8 @@ System Notification ma umożliwiać niezawodne wysyłanie powiadomień do użytk
 - in-app notifications,
 - ewentualnie Slack/WhatsApp/webhook w przyszłości.
 
-System powinien obsługiwać zarówno powiadomienia **transakcyjne**, jak i **marketingowe / produktowe**, przy czym te pierwsze mają wyższy priorytet.
+System powinien obsługiwać zarówno powiadomienia **transakcyjne**, jak i **marketingowe / produktowe**, przy czym te
+pierwsze mają wyższy priorytet.
 
 Przykłady:
 
@@ -37,7 +38,9 @@ Przykład:
 {
   "user_id": "user_123",
   "type": "PASSWORD_RESET",
-  "channels": ["email"],
+  "channels": [
+    "email"
+  ],
   "priority": "high",
   "template_id": "password_reset_v2",
   "payload": {
@@ -62,12 +65,12 @@ Przykład:
 
 System powinien wspierać różne kanały dostarczenia:
 
-| Kanał | Przykład providera |
-|---|---|
-| Email | SendGrid, SES, Mailgun |
-| SMS | Twilio, Vonage |
-| Push | Firebase Cloud Messaging, APNs |
-| In-app | własna baza + WebSocket/SSE |
+| Kanał   | Przykład providera                    |
+|---------|---------------------------------------|
+| Email   | SendGrid, SES, Mailgun                |
+| SMS     | Twilio, Vonage                        |
+| Push    | Firebase Cloud Messaging, APNs        |
+| In-app  | własna baza + WebSocket/SSE           |
 | Webhook | HTTP callback do zewnętrznego systemu |
 
 Każdy kanał powinien mieć osobny adapter, żeby nie wiązać logiki biznesowej z konkretnym dostawcą.
@@ -114,13 +117,14 @@ body: ...
 Użytkownik powinien móc zdecydować, jakie typy powiadomień chce otrzymywać.
 
 | Typ powiadomienia | Email | SMS | Push | In-app |
-|---|---:|---:|---:|---:|
-| Security alerts | tak | tak | tak | tak |
-| Marketing | nie | nie | tak | tak |
-| Payment updates | tak | tak | nie | tak |
-| Weekly summary | tak | nie | nie | tak |
+|-------------------|------:|----:|-----:|-------:|
+| Security alerts   |   tak | tak |  tak |    tak |
+| Marketing         |   nie | nie |  tak |    tak |
+| Payment updates   |   tak | tak |  nie |    tak |
+| Weekly summary    |   tak | nie |  nie |    tak |
 
-Ważne: nie wszystkie powiadomienia powinny dać się wyłączyć. Przykładowo reset hasła, alert bezpieczeństwa albo informacja prawna mogą być obowiązkowe.
+Ważne: nie wszystkie powiadomienia powinny dać się wyłączyć. Przykładowo reset hasła, alert bezpieczeństwa albo
+informacja prawna mogą być obowiązkowe.
 
 ---
 
@@ -128,12 +132,12 @@ Ważne: nie wszystkie powiadomienia powinny dać się wyłączyć. Przykładowo 
 
 System powinien wspierać priorytety:
 
-| Priorytet | Przykład | SLA |
-|---|---|---|
-| Critical | OTP, reset hasła, alert bezpieczeństwa | sekundy |
-| High | płatność, zamówienie | < 1 min |
-| Normal | komentarz, wiadomość | kilka minut |
-| Low | newsletter, digest | best effort |
+| Priorytet | Przykład                               | SLA         |
+|-----------|----------------------------------------|-------------|
+| Critical  | OTP, reset hasła, alert bezpieczeństwa | sekundy     |
+| High      | płatność, zamówienie                   | < 1 min     |
+| Normal    | komentarz, wiadomość                   | kilka minut |
+| Low       | newsletter, digest                     | best effort |
 
 Priorytet wpływa na:
 
@@ -228,7 +232,8 @@ Przykładowe założenia:
 peak: 50 000 notification requests / minutę
 ```
 
-Nie projektowałbym tego jako jednego synchronicznego serwisu, bo wysyłka przez zewnętrznych providerów jest wolna, zawodna i ma limity.
+Nie projektowałbym tego jako jednego synchronicznego serwisu, bo wysyłka przez zewnętrznych providerów jest wolna,
+zawodna i ma limity.
 
 ---
 
@@ -241,7 +246,8 @@ API availability: 99.9%+
 Delivery pipeline availability: 99.5%+
 ```
 
-System powinien przyjmować zlecenia nawet wtedy, gdy provider email/SMS ma awarię. Wtedy powiadomienia trafiają do kolejki retry albo są kierowane do alternatywnego providera.
+System powinien przyjmować zlecenia nawet wtedy, gdy provider email/SMS ma awarię. Wtedy powiadomienia trafiają do
+kolejki retry albo są kierowane do alternatywnego providera.
 
 ---
 
@@ -468,13 +474,13 @@ Broker jest krytyczny.
 
 Możliwe opcje:
 
-| Technologia | Dobre zastosowanie |
-|---|---|
-| Kafka | duża skala, event streaming, audyt |
-| SQS | prostota, managed queue, AWS |
-| RabbitMQ | routing, mniejsze/średnie systemy |
-| Google Pub/Sub | GCP |
-| Azure Service Bus | Azure |
+| Technologia       | Dobre zastosowanie                 |
+|-------------------|------------------------------------|
+| Kafka             | duża skala, event streaming, audyt |
+| SQS               | prostota, managed queue, AWS       |
+| RabbitMQ          | routing, mniejsze/średnie systemy  |
+| Google Pub/Sub    | GCP                                |
+| Azure Service Bus | Azure                              |
 
 Dla dużego systemu wybrałbym:
 
@@ -607,7 +613,8 @@ Webhook Handler powinien:
 5. Dalej przepływ jest taki sam jak dla wysyłki natychmiastowej.
 ```
 
-Dla dużej skali scheduler nie powinien robić prostego `SELECT * WHERE send_at <= now()`, bo to może zabić bazę. Lepiej użyć indeksów, shardingu czasowego albo opóźnionych kolejek, jeśli technologia to wspiera.
+Dla dużej skali scheduler nie powinien robić prostego `SELECT * WHERE send_at <= now()`, bo to może zabić bazę. Lepiej
+użyć indeksów, shardingu czasowego albo opóźnionych kolejek, jeśli technologia to wspiera.
 
 ---
 
@@ -641,7 +648,10 @@ Request:
   "user_id": "user_123",
   "type": "PAYMENT_FAILED",
   "priority": "high",
-  "channels": ["email", "push"],
+  "channels": [
+    "email",
+    "push"
+  ],
   "template_id": "payment_failed_v1",
   "locale": "pl-PL",
   "payload": {
@@ -735,35 +745,36 @@ PATCH /v1/users/{user_id}/notifications/read-all
 ### 8.1. `notification_requests`
 
 ```sql
-CREATE TABLE notification_requests (
-    id UUID PRIMARY KEY,
-    user_id UUID NOT NULL,
-    type VARCHAR(100) NOT NULL,
-    priority VARCHAR(20) NOT NULL,
-    status VARCHAR(30) NOT NULL,
-    template_id VARCHAR(100),
-    locale VARCHAR(20),
-    payload JSONB NOT NULL,
+CREATE TABLE notification_requests
+(
+    id              UUID PRIMARY KEY,
+    user_id         UUID         NOT NULL,
+    type            VARCHAR(100) NOT NULL,
+    priority        VARCHAR(20)  NOT NULL,
+    status          VARCHAR(30)  NOT NULL,
+    template_id     VARCHAR(100),
+    locale          VARCHAR(20),
+    payload         JSONB        NOT NULL,
     idempotency_key VARCHAR(255),
-    scheduled_at TIMESTAMP NULL,
-    created_at TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP NOT NULL,
+    scheduled_at    TIMESTAMP NULL,
+    created_at      TIMESTAMP    NOT NULL,
+    updated_at      TIMESTAMP    NOT NULL,
 
-    UNIQUE(idempotency_key)
+    UNIQUE (idempotency_key)
 );
 ```
 
 Indeksy:
 
 ```sql
-CREATE INDEX idx_notification_requests_user_id 
-ON notification_requests(user_id);
+CREATE INDEX idx_notification_requests_user_id
+    ON notification_requests (user_id);
 
-CREATE INDEX idx_notification_requests_status_scheduled 
-ON notification_requests(status, scheduled_at);
+CREATE INDEX idx_notification_requests_status_scheduled
+    ON notification_requests (status, scheduled_at);
 
-CREATE INDEX idx_notification_requests_created_at 
-ON notification_requests(created_at);
+CREATE INDEX idx_notification_requests_created_at
+    ON notification_requests (created_at);
 ```
 
 ---
@@ -771,35 +782,36 @@ ON notification_requests(created_at);
 ### 8.2. `notification_jobs`
 
 ```sql
-CREATE TABLE notification_jobs (
-    id UUID PRIMARY KEY,
-    notification_request_id UUID NOT NULL,
-    user_id UUID NOT NULL,
-    channel VARCHAR(30) NOT NULL,
-    status VARCHAR(30) NOT NULL,
-    provider VARCHAR(50),
-    provider_message_id VARCHAR(255),
-    attempt_count INT NOT NULL DEFAULT 0,
-    max_attempts INT NOT NULL DEFAULT 5,
-    next_retry_at TIMESTAMP NULL,
-    error_code VARCHAR(100),
-    error_message TEXT,
-    created_at TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP NOT NULL
+CREATE TABLE notification_jobs
+(
+    id                      UUID PRIMARY KEY,
+    notification_request_id UUID        NOT NULL,
+    user_id                 UUID        NOT NULL,
+    channel                 VARCHAR(30) NOT NULL,
+    status                  VARCHAR(30) NOT NULL,
+    provider                VARCHAR(50),
+    provider_message_id     VARCHAR(255),
+    attempt_count           INT         NOT NULL DEFAULT 0,
+    max_attempts            INT         NOT NULL DEFAULT 5,
+    next_retry_at           TIMESTAMP NULL,
+    error_code              VARCHAR(100),
+    error_message           TEXT,
+    created_at              TIMESTAMP   NOT NULL,
+    updated_at              TIMESTAMP   NOT NULL
 );
 ```
 
 Indeksy:
 
 ```sql
-CREATE INDEX idx_notification_jobs_status_retry 
-ON notification_jobs(status, next_retry_at);
+CREATE INDEX idx_notification_jobs_status_retry
+    ON notification_jobs (status, next_retry_at);
 
-CREATE INDEX idx_notification_jobs_request_id 
-ON notification_jobs(notification_request_id);
+CREATE INDEX idx_notification_jobs_request_id
+    ON notification_jobs (notification_request_id);
 
-CREATE INDEX idx_notification_jobs_provider_message_id 
-ON notification_jobs(provider_message_id);
+CREATE INDEX idx_notification_jobs_provider_message_id
+    ON notification_jobs (provider_message_id);
 ```
 
 ---
@@ -807,20 +819,21 @@ ON notification_jobs(provider_message_id);
 ### 8.3. `notification_templates`
 
 ```sql
-CREATE TABLE notification_templates (
-    id UUID PRIMARY KEY,
-    template_key VARCHAR(100) NOT NULL,
-    channel VARCHAR(30) NOT NULL,
-    locale VARCHAR(20) NOT NULL,
-    version INT NOT NULL,
-    subject TEXT,
-    body TEXT NOT NULL,
+CREATE TABLE notification_templates
+(
+    id                 UUID PRIMARY KEY,
+    template_key       VARCHAR(100) NOT NULL,
+    channel            VARCHAR(30)  NOT NULL,
+    locale             VARCHAR(20)  NOT NULL,
+    version            INT          NOT NULL,
+    subject            TEXT,
+    body               TEXT         NOT NULL,
     required_variables JSONB,
-    is_active BOOLEAN NOT NULL DEFAULT true,
-    created_at TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP NOT NULL,
+    is_active          BOOLEAN      NOT NULL DEFAULT true,
+    created_at         TIMESTAMP    NOT NULL,
+    updated_at         TIMESTAMP    NOT NULL,
 
-    UNIQUE(template_key, channel, locale, version)
+    UNIQUE (template_key, channel, locale, version)
 );
 ```
 
@@ -829,14 +842,15 @@ CREATE TABLE notification_templates (
 ### 8.4. `notification_preferences`
 
 ```sql
-CREATE TABLE notification_preferences (
-    user_id UUID NOT NULL,
+CREATE TABLE notification_preferences
+(
+    user_id           UUID         NOT NULL,
     notification_type VARCHAR(100) NOT NULL,
-    channel VARCHAR(30) NOT NULL,
-    enabled BOOLEAN NOT NULL,
-    updated_at TIMESTAMP NOT NULL,
+    channel           VARCHAR(30)  NOT NULL,
+    enabled           BOOLEAN      NOT NULL,
+    updated_at        TIMESTAMP    NOT NULL,
 
-    PRIMARY KEY(user_id, notification_type, channel)
+    PRIMARY KEY (user_id, notification_type, channel)
 );
 ```
 
@@ -845,27 +859,27 @@ CREATE TABLE notification_preferences (
 ### 8.5. `in_app_notifications`
 
 ```sql
-CREATE TABLE in_app_notifications (
-    id UUID PRIMARY KEY,
-    user_id UUID NOT NULL,
+CREATE TABLE in_app_notifications
+(
+    id                      UUID PRIMARY KEY,
+    user_id                 UUID      NOT NULL,
     notification_request_id UUID,
-    title TEXT NOT NULL,
-    body TEXT NOT NULL,
-    action_url TEXT,
-    read_at TIMESTAMP NULL,
-    created_at TIMESTAMP NOT NULL
+    title                   TEXT      NOT NULL,
+    body                    TEXT      NOT NULL,
+    action_url              TEXT,
+    read_at                 TIMESTAMP NULL,
+    created_at              TIMESTAMP NOT NULL
 );
 ```
 
 Indeksy:
 
 ```sql
-CREATE INDEX idx_in_app_user_created 
-ON in_app_notifications(user_id, created_at DESC);
+CREATE INDEX idx_in_app_user_created
+    ON in_app_notifications (user_id, created_at DESC);
 
-CREATE INDEX idx_in_app_user_unread 
-ON in_app_notifications(user_id, read_at)
-WHERE read_at IS NULL;
+CREATE INDEX idx_in_app_user_unread
+    ON in_app_notifications (user_id, read_at) WHERE read_at IS NULL;
 ```
 
 ---
@@ -875,13 +889,14 @@ WHERE read_at IS NULL;
 Tabela audytowa.
 
 ```sql
-CREATE TABLE notification_events (
-    id UUID PRIMARY KEY,
-    notification_job_id UUID,
+CREATE TABLE notification_events
+(
+    id                      UUID PRIMARY KEY,
+    notification_job_id     UUID,
     notification_request_id UUID,
-    event_type VARCHAR(100) NOT NULL,
-    metadata JSONB,
-    created_at TIMESTAMP NOT NULL
+    event_type              VARCHAR(100) NOT NULL,
+    metadata                JSONB,
+    created_at              TIMESTAMP    NOT NULL
 );
 ```
 
@@ -1081,13 +1096,14 @@ Lepszy wzorzec:
 Tabela:
 
 ```sql
-CREATE TABLE outbox_events (
-    id UUID PRIMARY KEY,
-    aggregate_id UUID NOT NULL,
-    event_type VARCHAR(100) NOT NULL,
-    payload JSONB NOT NULL,
-    status VARCHAR(30) NOT NULL,
-    created_at TIMESTAMP NOT NULL,
+CREATE TABLE outbox_events
+(
+    id           UUID PRIMARY KEY,
+    aggregate_id UUID         NOT NULL,
+    event_type   VARCHAR(100) NOT NULL,
+    payload      JSONB        NOT NULL,
+    status       VARCHAR(30)  NOT NULL,
+    created_at   TIMESTAMP    NOT NULL,
     published_at TIMESTAMP NULL
 );
 ```
@@ -1122,7 +1138,8 @@ Strategia:
 3. Nie przełączaj przy błędach permanentnych, np. invalid phone.
 ```
 
-Trzeba uważać, żeby fallback nie wysłał duplikatu, jeśli primary faktycznie wysłał wiadomość, ale odpowiedź zaginęła. Dlatego provider-level idempotency, jeśli dostępne, jest bardzo przydatne.
+Trzeba uważać, żeby fallback nie wysłał duplikatu, jeśli primary faktycznie wysłał wiadomość, ale odpowiedź zaginęła.
+Dlatego provider-level idempotency, jeśli dostępne, jest bardzo przydatne.
 
 ---
 
@@ -1266,7 +1283,8 @@ Jeżeli system obsługuje wiele organizacji/tenantów, prawie wszystkie tabele p
 Przykład:
 
 ```sql
-tenant_id UUID NOT NULL
+tenant_id
+UUID NOT NULL
 ```
 
 Wtedy rate limits, providery, template’y i preferencje mogą być tenant-specific.
@@ -1332,7 +1350,8 @@ rate_limit:{provider}:{window}
 dedupe:{idempotency_key}
 ```
 
-Trzeba uważać, żeby cache preferencji nie spowodował wysłania wiadomości po unsubscribe. Dla operacji opt-out warto natychmiast invalidować cache.
+Trzeba uważać, żeby cache preferencji nie spowodował wysłania wiadomości po unsubscribe. Dla operacji opt-out warto
+natychmiast invalidować cache.
 
 ---
 
@@ -1401,16 +1420,17 @@ Push wymaga dodatkowej logiki.
 Tabela tokenów:
 
 ```sql
-CREATE TABLE push_tokens (
-    id UUID PRIMARY KEY,
-    user_id UUID NOT NULL,
-    platform VARCHAR(20) NOT NULL,
-    token TEXT NOT NULL,
-    status VARCHAR(20) NOT NULL,
+CREATE TABLE push_tokens
+(
+    id           UUID PRIMARY KEY,
+    user_id      UUID        NOT NULL,
+    platform     VARCHAR(20) NOT NULL,
+    token        TEXT        NOT NULL,
+    status       VARCHAR(20) NOT NULL,
     last_seen_at TIMESTAMP,
-    created_at TIMESTAMP NOT NULL,
+    created_at   TIMESTAMP   NOT NULL,
 
-    UNIQUE(token)
+    UNIQUE (token)
 );
 ```
 
@@ -1630,7 +1650,8 @@ Rozwiązanie:
 
 ### 28.5. Użytkownik wypisał się po zakolejkowaniu wiadomości
 
-Dla marketingu worker powinien sprawdzić preferencje tuż przed wysłaniem albo mieć krótki TTL cache. Dla krytycznych powiadomień obowiązują inne reguły.
+Dla marketingu worker powinien sprawdzić preferencje tuż przed wysłaniem albo mieć krótki TTL cache. Dla krytycznych
+powiadomień obowiązują inne reguły.
 
 ---
 
@@ -1700,13 +1721,14 @@ Można to zrobić przez:
 Tabela:
 
 ```sql
-CREATE TABLE notification_digest_buffer (
-    id UUID PRIMARY KEY,
-    user_id UUID NOT NULL,
+CREATE TABLE notification_digest_buffer
+(
+    id         UUID PRIMARY KEY,
+    user_id    UUID         NOT NULL,
     digest_key VARCHAR(255) NOT NULL,
-    items JSONB NOT NULL,
-    flush_at TIMESTAMP NOT NULL,
-    status VARCHAR(30) NOT NULL
+    items      JSONB        NOT NULL,
+    flush_at   TIMESTAMP    NOT NULL,
+    status     VARCHAR(30)  NOT NULL
 );
 ```
 
@@ -1983,19 +2005,21 @@ Monitoring
 
 ## 40. Podsumowanie decyzji architektonicznych
 
-| Obszar | Decyzja |
-|---|---|
-| Processing | asynchroniczny |
-| Queue | Kafka/SQS/RabbitMQ |
-| DB | PostgreSQL |
-| Cache | Redis |
-| Reliability | outbox + retry + DLQ |
-| Delivery semantics | at-least-once |
-| Duplicate prevention | idempotency key + dedupe |
-| Scaling | osobne workery per kanał i priorytet |
-| Provider integration | adapter layer |
-| Status tracking | osobna tabela jobs + events |
-| Compliance | preferences + unsubscribe + suppression |
-| Observability | metrics, logs, tracing, alerts |
+| Obszar               | Decyzja                                 |
+|----------------------|-----------------------------------------|
+| Processing           | asynchroniczny                          |
+| Queue                | Kafka/SQS/RabbitMQ                      |
+| DB                   | PostgreSQL                              |
+| Cache                | Redis                                   |
+| Reliability          | outbox + retry + DLQ                    |
+| Delivery semantics   | at-least-once                           |
+| Duplicate prevention | idempotency key + dedupe                |
+| Scaling              | osobne workery per kanał i priorytet    |
+| Provider integration | adapter layer                           |
+| Status tracking      | osobna tabela jobs + events             |
+| Compliance           | preferences + unsubscribe + suppression |
+| Observability        | metrics, logs, tracing, alerts          |
 
-Najważniejsza uwaga: **to nie powinien być prosty wrapper na SendGrid/Twilio**. Dobry Notification System to pipeline z kolejkami, idempotencją, preferencjami, retry, audytem i kontrolą kosztów. Bez tych elementów system może działać w demo, ale będzie sprawiał problemy produkcyjnie.
+Najważniejsza uwaga: **to nie powinien być prosty wrapper na SendGrid/Twilio**. Dobry Notification System to pipeline z
+kolejkami, idempotencją, preferencjami, retry, audytem i kontrolą kosztów. Bez tych elementów system może działać w
+demo, ale będzie sprawiał problemy produkcyjnie.
