@@ -11,6 +11,10 @@ import java.util.UUID;
 public interface ConversationMemberRepository extends JpaRepository<ConversationMember, UUID> {
     boolean existsByConversationIdAndUserId(UUID conversationId, UUID userId);
 
+    Optional<ConversationMember> findByConversationIdAndUserId(UUID conversationId, UUID userId);
+
+    long countByConversationId(UUID conversationId);
+
     @Query("""
             select cm.conversation
             from ConversationMember cm
@@ -31,6 +35,9 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
             """)
     Optional<Conversation> findDirectConversationBetween(@Param("userA") UUID userA, @Param("userB") UUID userB);
 
-    @Query("select cm from ConversationMember cm join fetch cm.user where cm.conversation.id = :conversationId")
+    @Query("select cm from ConversationMember cm join fetch cm.user where cm.conversation.id = :conversationId order by cm.joinedAt asc")
     List<ConversationMember> findMembersByConversationId(@Param("conversationId") UUID conversationId);
+
+    @Query("select cm from ConversationMember cm join fetch cm.conversation where cm.user.id = :userId")
+    List<ConversationMember> findMembershipsForUser(@Param("userId") UUID userId);
 }

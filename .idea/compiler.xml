@@ -24,17 +24,17 @@
         <module name="payment-system-stage-1" />
         <module name="news-feed-stage-1" />
         <module name="rate-limiter-stage1" />
-        <module name="chat-system-stage1" />
         <module name="ride-sharing-mvp" />
         <module name="notification-service" />
         <module name="video-streaming-mvp" />
         <module name="file-storage-stage1" />
         <module name="notification-system (1)" />
-        <module name="notification-system (2)" />
         <module name="ecommerce-java-mvp" />
         <module name="project-1" />
         <module name="common" />
         <module name="notification-system-stage-1" />
+        <module name="notification-system" />
+        <module name="chat-system" />
         <module name="reservation-service" />
         <module name="api-gateway" />
         <module name="search-autocomplete-stage-1" />
@@ -55,9 +55,11 @@
       <module name="api-gateway (1)" target="1.8" />
       <module name="api-gateway (2)" target="1.8" />
       <module name="catalog-service (1)" target="1.8" />
+      <module name="chat-system-stage1" target="21" />
+      <module name="chat-system-stage6" target="21" />
       <module name="common (1)" target="1.8" />
       <module name="notification-service (1)" target="1.8" />
-      <module name="notification-system" target="21" />
+      <module name="notification-system (2)" target="21" />
       <module name="order-service (1)" target="1.8" />
       <module name="payment-mock-service (1)" target="1.8" />
       <module name="reservation-service (1)" target="1.8" />
@@ -72,7 +74,9 @@
       <module name="booking-capacity-platform" options="-parameters" />
       <module name="catalog-service" options="-parameters" />
       <module name="catalog-service (1)" options="-parameters" />
+      <module name="chat-system" options="-parameters" />
       <module name="chat-system-stage1" options="-parameters" />
+      <module name="chat-system-stage6" options="-parameters" />
       <module name="common" options="-parameters" />
       <module name="common (1)" options="-parameters" />
       <module name="ecommerce-java-mvp" options="-parameters" />

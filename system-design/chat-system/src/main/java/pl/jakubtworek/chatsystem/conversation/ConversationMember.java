@@ -24,14 +24,26 @@ public class ConversationMember {
     @JoinColumn(name = "user_id", nullable = false)
     private AppUser user;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private ConversationRole role = ConversationRole.MEMBER;
+
     @Column(nullable = false, updatable = false)
     private Instant joinedAt;
+
+    @Column(name = "last_read_at")
+    private Instant lastReadAt;
 
     protected ConversationMember() {}
 
     public ConversationMember(Conversation conversation, AppUser user) {
+        this(conversation, user, ConversationRole.MEMBER);
+    }
+
+    public ConversationMember(Conversation conversation, AppUser user, ConversationRole role) {
         this.conversation = conversation;
         this.user = user;
+        this.role = role;
     }
 
     @PrePersist
@@ -39,8 +51,20 @@ public class ConversationMember {
         joinedAt = Instant.now();
     }
 
+    public void markRead(Instant at) {
+        if (lastReadAt == null || at.isAfter(lastReadAt)) {
+            lastReadAt = at;
+        }
+    }
+
+    public void changeRole(ConversationRole role) {
+        this.role = role;
+    }
+
     public UUID getId() { return id; }
     public Conversation getConversation() { return conversation; }
     public AppUser getUser() { return user; }
+    public ConversationRole getRole() { return role; }
     public Instant getJoinedAt() { return joinedAt; }
+    public Instant getLastReadAt() { return lastReadAt; }
 }

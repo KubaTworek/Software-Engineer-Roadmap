@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <title>Chat System Stage 4 — WebSocket test client</title>
+  <script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs@7.0.0/bundles/stomp.umd.min.js"></script>
+</head>
+<body>
+<h1>Chat System Stage 4 — WebSocket test client</h1>
+<p>Najpierw zarejestruj/zaloguj dwóch użytkowników przez REST, utwórz conversationId i wklej token użytkownika.</p>
+<label>JWT token: <input id="token" style="width: 700px"></label><br><br>
+<label>Conversation ID: <input id="conversationId" style="width: 350px"></label><br><br>
+<label>Message ID for delivered/read: <input id="messageId" style="width: 350px"></label><br><br>
+<label>Message: <input id="body" value="Hello realtime!" style="width: 350px"></label><br><br>
+<button onclick="connect()">Connect</button>
+<button onclick="sendMessage()">Send</button>
+<button onclick="markDelivered()">Delivered</button>
+<button onclick="markRead()">Read</button>
+<button onclick="typingStart()">Typing start</button>
+<button onclick="typingStop()">Typing stop</button>
+<pre id="log"></pre>
+<script>
+  let client;
+  const log = (msg) => document.getElementById('log').textContent += msg + '\n';
+
+  function connect() {
+    const token = document.getElementById('token').value.trim();
+    const conversationId = document.getElementById('conversationId').value.trim();
+
+    client = new StompJs.Client({
+      brokerURL: `ws://localhost:8080/ws?token=${encodeURIComponent(token)}`,
+      reconnectDelay: 3000,
+      onConnect: () => {
+        log('CONNECTED');
+        client.subscribe(`/topic/conversations/${conversationId}`, message => log('TOPIC: ' + message.body));
+        client.subscribe('/user/queue/messages', message => log('ACK: ' + message.body));
+        client.subscribe('/user/queue/errors', message => log('ERROR: ' + message.body));
+      },
+      onStompError: frame => log('STOMP ERROR: ' + frame.body),
+      onWebSocketClose: () => log('SOCKET CLOSED')
+    });
+
+    client.activate();
+  }
+
+  function sendMessage() {
+    const conversationId = document.getElementById('conversationId').value.trim();
+    const body = document.getElementById('body').value;
+    client.publish({
+      destination: '/app/messages.send',
+      body: JSON.stringify({
+        conversationId,
+        clientMessageId: crypto.randomUUID(),
+        body
+      })
+    });
+  }
+
+  function markDelivered() {
+    publishReceipt('/app/messages.delivered');
+  }
+
+  function markRead() {
+    publishReceipt('/app/messages.read');
+  }
+
+  function publishReceipt(destination) {
+    client.publish({
+      destination,
+      body: JSON.stringify({
+        conversationId: document.getElementById('conversationId').value.trim(),
+        messageId: document.getElementById('messageId').value.trim()
+      })
+    });
+  }
+
+  function typingStart() {
+    publishTyping('/app/typing.start');
+  }
+
+  function typingStop() {
+    publishTyping('/app/typing.stop');
+  }
+
+  function publishTyping(destination) {
+    client.publish({
+      destination,
+      body: JSON.stringify({
+        conversationId: document.getElementById('conversationId').value.trim()
+      })
+    });
+  }
+</script>
+</body>
+</html>

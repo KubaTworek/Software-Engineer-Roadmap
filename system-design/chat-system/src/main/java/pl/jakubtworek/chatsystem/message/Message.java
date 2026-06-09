@@ -2,9 +2,12 @@ package pl.jakubtworek.chatsystem.message;
 
 import jakarta.persistence.*;
 import pl.jakubtworek.chatsystem.conversation.Conversation;
+import pl.jakubtworek.chatsystem.media.Attachment;
 import pl.jakubtworek.chatsystem.user.AppUser;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -32,19 +35,34 @@ public class Message {
     @Column(name = "client_message_id", nullable = false)
     private UUID clientMessageId;
 
-    @Column(nullable = false, length = 4000)
+    @Column(length = 4000)
     private String body;
+
+    @ManyToMany
+    @JoinTable(
+            name = "message_attachments",
+            joinColumns = @JoinColumn(name = "message_id"),
+            inverseJoinColumns = @JoinColumn(name = "attachment_id")
+    )
+    private List<Attachment> attachments = new ArrayList<>();
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 32)
+    private MessageStatus status = MessageStatus.SENT;
 
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 
     protected Message() {}
 
-    public Message(Conversation conversation, AppUser sender, UUID clientMessageId, String body) {
+    public Message(Conversation conversation, AppUser sender, UUID clientMessageId, String body, List<Attachment> attachments) {
         this.conversation = conversation;
         this.sender = sender;
         this.clientMessageId = clientMessageId;
         this.body = body;
+        if (attachments != null) {
+            this.attachments.addAll(attachments);
+        }
     }
 
     @PrePersist
@@ -57,5 +75,7 @@ public class Message {
     public AppUser getSender() { return sender; }
     public UUID getClientMessageId() { return clientMessageId; }
     public String getBody() { return body; }
+    public List<Attachment> getAttachments() { return attachments; }
+    public MessageStatus getStatus() { return status; }
     public Instant getCreatedAt() { return createdAt; }
 }
