@@ -1,5 +1,5 @@
 ### Health
-GET http://localhost:8080/api/v1/health
+GET http://localhost:8080/actuator/health
 
 ### Register
 POST http://localhost:8080/api/v1/auth/register
@@ -21,28 +21,35 @@ Content-Type: application/json
   "password": "strong-password"
 }
 
-### Me
-GET http://localhost:8080/api/v1/users/me
-Authorization: Bearer {{token}}
-
-### Update me
-PATCH http://localhost:8080/api/v1/users/me
-Authorization: Bearer {{token}}
-Content-Type: application/json
-
-{
-  "displayName": "Anna",
-  "bio": "Software engineer"
-}
-
 ### Create post
 POST http://localhost:8080/api/v1/posts
 Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
-  "content": "Pierwszy post w News Feed!"
+  "content": "Stage 6: ML recommendations, moderation, experiments and search.",
+  "topics": ["java", "ml", "system-design"]
 }
 
-### Feed
+### Personalized feed
 GET http://localhost:8080/api/v1/feed?limit=20
+Authorization: Bearer {{token}}
+
+### Search posts
+GET http://localhost:8080/api/v1/search/posts?q=java&limit=20
+
+### Media upload
+POST http://localhost:8080/api/v1/media/uploads
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "filename": "photo.jpg",
+  "mediaType": "image/jpeg"
+}
+
+### Moderation queue
+GET http://localhost:8080/api/v1/moderation/queue
+
+### Region
+GET http://localhost:8080/api/v1/region

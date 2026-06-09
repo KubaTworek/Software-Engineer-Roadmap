@@ -11,6 +11,11 @@
     <file url="file://$PROJECT_DIR$/system-design/file-storage/src/main/resources/db/migration/V1__init.sql" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/system-design/metrics-logging-system/clickhouse/init/01_schema.sql" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/system-design/news-feed/src/main/resources/db/migration/V1__init.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/system-design/news-feed/src/main/resources/db/migration/V2__relations_likes_comments.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/system-design/news-feed/src/main/resources/db/migration/V3__precomputed_feed_outbox_stats.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/system-design/news-feed/src/main/resources/db/migration/V4__ranking_mixer_topics.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/system-design/news-feed/src/main/resources/db/migration/V5__production_scale_kafka_shards_dlq.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/system-design/news-feed/src/main/resources/db/migration/V6__ml_moderation_experiments_search_media_ads.sql" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/system-design/payment-system/src/main/resources/schema.sql" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/system-design/ride-sharing/src/main/resources/db/migration/V1__initial_schema.sql" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/system-design/url-shortener/src/main/resources/db/migration/V1__create_urls_table.sql" dialect="GenericSQL" />

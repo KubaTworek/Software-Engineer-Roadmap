@@ -10,10 +10,6 @@ public record PostAuthorResponse(
         String displayName
 ) {
     public static PostAuthorResponse from(User user) {
-        return new PostAuthorResponse(
-                user.getId(),
-                user.getUsername(),
-                user.getDisplayName()
-        );
+        return new PostAuthorResponse(user.getId(), user.getUsername(), user.getDisplayName());
     }
 }

@@ -14,9 +14,7 @@ public record FeedCursor(
 ) {
     public String encode() {
         String raw = createdAt.toString() + "|" + id;
-        return Base64.getUrlEncoder()
-                .withoutPadding()
-                .encodeToString(raw.getBytes(StandardCharsets.UTF_8));
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(raw.getBytes(StandardCharsets.UTF_8));
     }
 
     public static Optional<FeedCursor> decode(String cursor) {
@@ -28,15 +26,11 @@ public record FeedCursor(
             byte[] decoded = Base64.getUrlDecoder().decode(cursor);
             String raw = new String(decoded, StandardCharsets.UTF_8);
             String[] parts = raw.split("\\|", 2);
-
             if (parts.length != 2) {
                 throw new IllegalArgumentException("Invalid cursor format.");
             }
 
-            return Optional.of(new FeedCursor(
-                    Instant.parse(parts[0]),
-                    UUID.fromString(parts[1])
-            ));
+            return Optional.of(new FeedCursor(Instant.parse(parts[0]), UUID.fromString(parts[1])));
         } catch (Exception exception) {
             throw new ConflictException("Invalid feed cursor.");
         }

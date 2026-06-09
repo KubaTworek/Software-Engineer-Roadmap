@@ -3,13 +3,40 @@ server:
 
 spring:
   application:
-    name: news-feed-stage-1
+    name: news-feed-stage-6
 
   datasource:
     url: jdbc:postgresql://localhost:5432/news_feed
     username: news_feed
     password: news_feed
     driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 30
+      minimum-idle: 5
+      connection-timeout: 2000
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 2s
+
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: news-feed-stage-6
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      properties:
+        spring.json.trusted.packages: "com.example.newsfeed.events"
+    listener:
+      ack-mode: manual
+      concurrency: 3
+    producer:
+      acks: all
+      retries: 5
+      properties:
+        enable.idempotence: true
 
   jpa:
     open-in-view: false
@@ -19,7 +46,68 @@ spring:
       hibernate:
         jdbc:
           time_zone: UTC
-        format_sql: false
 
   flyway:
     enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,threaddump,loggers
+  endpoint:
+    health:
+      show-details: always
+  tracing:
+    sampling:
+      probability: 1.0
+  zipkin:
+    tracing:
+      endpoint: http://localhost:9411/api/v2/spans
+
+newsfeed:
+  region:
+    current: eu-central-1
+    write-owner: eu-central-1
+    read-replica: false
+  recommendation:
+    max-candidates: 150
+    embedding-dimensions: 16
+  experiment:
+    default-ranking-variant: ltr_v1
+  moderation:
+    auto-hide-threshold: 0.85
+    review-threshold: 0.60
+  search:
+    index: newsfeed_posts
+  opensearch:
+    url: http://localhost:9200
+    username:
+    password:
+  media:
+    bucket: news-feed-media
+    public-base-url: http://localhost:9000/news-feed-media
+  sponsored:
+    enabled: true
+    max-items-per-feed: 1
+  fanout:
+    celebrity-threshold: 100000
+    follower-shards: 32
+    batch-size: 500
+  feed:
+    session-ttl: 10m
+    redis-ttl: 30s
+    candidate-limit: 300
+
+   #storage: dynamodb
+    storage: postgres
+   #dynamodb:
+   #  region: eu-central-1
+   #  feed-inbox-table: feed_inbox
+#
+   #  # Dla LocalStack, opcjonalnie:
+   #  # endpoint: http://localhost:4566
+  rate-limit:
+    feed-per-minute: 120
+    post-create-per-minute: 20
+    write-per-minute: 100

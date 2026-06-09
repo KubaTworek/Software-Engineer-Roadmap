@@ -22,7 +22,6 @@
         <module name="rate-limiter" />
         <module name="catalog-service" />
         <module name="payment-system-stage-1" />
-        <module name="news-feed-stage-1" />
         <module name="rate-limiter-stage1" />
         <module name="ride-sharing-mvp" />
         <module name="notification-service" />
@@ -30,6 +29,7 @@
         <module name="file-storage-stage1" />
         <module name="notification-system (1)" />
         <module name="ecommerce-java-mvp" />
+        <module name="news-feed" />
         <module name="project-1" />
         <module name="common" />
         <module name="notification-system-stage-1" />
@@ -58,6 +58,7 @@
       <module name="chat-system-stage1" target="21" />
       <module name="chat-system-stage6" target="21" />
       <module name="common (1)" target="1.8" />
+      <module name="news-feed-stage-1" target="21" />
       <module name="notification-service (1)" target="1.8" />
       <module name="notification-system (2)" target="21" />
       <module name="order-service (1)" target="1.8" />
@@ -85,6 +86,7 @@
       <module name="marketplace-modular-monolith.integrationTest" options="-parameters" />
       <module name="marketplace-modular-monolith.main" options="-parameters" />
       <module name="marketplace-modular-monolith.test" options="-parameters" />
+      <module name="news-feed" options="-parameters" />
       <module name="news-feed-stage-1" options="-parameters" />
       <module name="notification-service" options="-parameters" />
       <module name="notification-service (1)" options="-parameters" />
