@@ -1,6 +1,6 @@
 spring:
   application:
-    name: file-storage-stage1
+    name: file-storage-stage6
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/filestorage}
     username: ${DB_USERNAME:filestorage}
@@ -15,9 +15,22 @@ spring:
           time_zone: UTC
   flyway:
     enabled: true
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
 
 server:
   port: ${SERVER_PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when_authorized
 
 app:
   jwt:
@@ -29,7 +42,34 @@ app:
     secret-key: ${MINIO_SECRET_KEY:minioadmin}
     bucket: ${MINIO_BUCKET:file-storage}
     public-endpoint: ${MINIO_PUBLIC_ENDPOINT:http://localhost:9000}
-
-spring.servlet.multipart:
-  max-file-size: 100MB
-  max-request-size: 100MB
+  upload:
+    cleanup-fixed-delay-ms: ${UPLOAD_CLEANUP_FIXED_DELAY_MS:900000}
+  sharing:
+    public-base-url: ${PUBLIC_BASE_URL:http://localhost:8080}
+  production:
+    rate-limit:
+      enabled: ${RATE_LIMIT_ENABLED:true}
+      requests-per-minute: ${RATE_LIMIT_REQUESTS_PER_MINUTE:120}
+    cdn:
+      enabled: ${CDN_ENABLED:false}
+      base-url: ${CDN_BASE_URL:}
+      signed-url-ttl-seconds: ${CDN_SIGNED_URL_TTL_SECONDS:300}
+    antivirus:
+      enabled: ${ANTIVIRUS_ENABLED:false}
+      mode: ${ANTIVIRUS_MODE:NOOP}
+      clamd-host: ${CLAMD_HOST:localhost}
+      clamd-port: ${CLAMD_PORT:3310}
+    thumbnails:
+      enabled: ${THUMBNAILS_ENABLED:true}
+      max-width: ${THUMBNAIL_MAX_WIDTH:320}
+      max-height: ${THUMBNAIL_MAX_HEIGHT:320}
+    outbox:
+      publish-fixed-delay-ms: ${OUTBOX_PUBLISH_FIXED_DELAY_MS:5000}
+      max-attempts: ${OUTBOX_MAX_ATTEMPTS:5}
+    workers:
+      processing-fixed-delay-ms: ${PROCESSING_WORKER_FIXED_DELAY_MS:10000}
+      gc-fixed-delay-ms: ${GC_WORKER_FIXED_DELAY_MS:300000}
+    backup:
+      local-dir: ${BACKUP_LOCAL_DIR:/tmp/file-storage-backups}
+    kms:
+      master-key: ${LOCAL_KMS_MASTER_KEY:change-this-local-dev-master-key-32}

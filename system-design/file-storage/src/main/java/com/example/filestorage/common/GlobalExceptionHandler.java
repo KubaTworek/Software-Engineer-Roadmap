@@ -2,6 +2,7 @@ package com.example.filestorage.common;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -21,14 +22,24 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.BAD_REQUEST, ex.getMessage(), request);
     }
 
+    @ExceptionHandler(IllegalStateException.class)
+    ResponseEntity<ApiError> handleConflict(IllegalStateException ex, HttpServletRequest request) {
+        return build(HttpStatus.CONFLICT, ex.getMessage(), request);
+    }
+
     @ExceptionHandler(NoSuchElementException.class)
     ResponseEntity<ApiError> handleNotFound(NoSuchElementException ex, HttpServletRequest request) {
         return build(HttpStatus.NOT_FOUND, ex.getMessage(), request);
     }
 
-    @ExceptionHandler(AccessDeniedException.class)
-    ResponseEntity<ApiError> handleAccessDenied(AccessDeniedException ex, HttpServletRequest request) {
-        return build(HttpStatus.FORBIDDEN, "Access denied", request);
+    @ExceptionHandler({AccessDeniedException.class, SecurityException.class})
+    ResponseEntity<ApiError> handleAccessDenied(Exception ex, HttpServletRequest request) {
+        return build(HttpStatus.FORBIDDEN, ex.getMessage() == null ? "Access denied" : ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    ResponseEntity<ApiError> handleDataIntegrity(DataIntegrityViolationException ex, HttpServletRequest request) {
+        return build(HttpStatus.BAD_REQUEST, "Resource with this name already exists or request violates database constraints", request);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

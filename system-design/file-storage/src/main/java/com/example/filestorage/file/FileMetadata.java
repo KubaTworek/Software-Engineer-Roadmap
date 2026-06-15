@@ -13,6 +13,12 @@ public class FileMetadata {
     @Column(name = "owner_id", nullable = false)
     private UUID ownerId;
 
+    @Column(name = "parent_folder_id")
+    private UUID parentFolderId;
+
+    @Column(nullable = false)
+    private String name;
+
     @Column(name = "original_filename", nullable = false)
     private String originalFilename;
 
@@ -27,6 +33,12 @@ public class FileMetadata {
 
     @Column(nullable = false)
     private String sha256;
+
+    @Column(name = "current_version_id")
+    private UUID currentVersionId;
+
+    @Column(name = "current_version_number", nullable = false)
+    private int currentVersionNumber;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -43,17 +55,50 @@ public class FileMetadata {
 
     protected FileMetadata() {}
 
-    public FileMetadata(UUID ownerId, String originalFilename, String contentType, long sizeBytes, String objectKey, String sha256) {
+    public FileMetadata(UUID ownerId, UUID parentFolderId, String name, String originalFilename, String contentType, long sizeBytes, String objectKey, String sha256) {
         this.id = UUID.randomUUID();
         this.ownerId = ownerId;
+        this.parentFolderId = parentFolderId;
+        this.name = name;
         this.originalFilename = originalFilename;
         this.contentType = contentType;
         this.sizeBytes = sizeBytes;
         this.objectKey = objectKey;
         this.sha256 = sha256;
+        this.currentVersionNumber = 1;
         this.status = FileStatus.ACTIVE;
         this.createdAt = Instant.now();
         this.updatedAt = this.createdAt;
+    }
+
+    public void rename(String newName) {
+        this.name = newName;
+        this.updatedAt = Instant.now();
+    }
+
+    public void moveTo(UUID newParentFolderId) {
+        this.parentFolderId = newParentFolderId;
+        this.updatedAt = Instant.now();
+    }
+
+    public void replaceContent(UUID versionId, int versionNumber, String contentType, long sizeBytes, String objectKey, String sha256) {
+        this.currentVersionId = versionId;
+        this.currentVersionNumber = versionNumber;
+        this.contentType = contentType;
+        this.sizeBytes = sizeBytes;
+        this.objectKey = objectKey;
+        this.sha256 = sha256;
+        this.updatedAt = Instant.now();
+    }
+
+    public void setInitialVersion(UUID versionId) {
+        this.currentVersionId = versionId;
+        this.currentVersionNumber = 1;
+        this.updatedAt = Instant.now();
+    }
+
+    public void restoreVersion(UUID versionId, int versionNumber, String contentType, long sizeBytes, String objectKey, String sha256) {
+        replaceContent(versionId, versionNumber, contentType, sizeBytes, objectKey, sha256);
     }
 
     public void softDelete() {
@@ -62,13 +107,24 @@ public class FileMetadata {
         this.updatedAt = this.deletedAt;
     }
 
+    public void restore(UUID parentFolderId) {
+        this.status = FileStatus.ACTIVE;
+        this.parentFolderId = parentFolderId;
+        this.deletedAt = null;
+        this.updatedAt = Instant.now();
+    }
+
     public UUID getId() { return id; }
     public UUID getOwnerId() { return ownerId; }
+    public UUID getParentFolderId() { return parentFolderId; }
+    public String getName() { return name; }
     public String getOriginalFilename() { return originalFilename; }
     public String getContentType() { return contentType; }
     public long getSizeBytes() { return sizeBytes; }
     public String getObjectKey() { return objectKey; }
     public String getSha256() { return sha256; }
+    public UUID getCurrentVersionId() { return currentVersionId; }
+    public int getCurrentVersionNumber() { return currentVersionNumber; }
     public FileStatus getStatus() { return status; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
