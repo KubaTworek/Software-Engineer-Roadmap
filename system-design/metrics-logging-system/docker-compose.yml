@@ -58,6 +58,12 @@ services:
       CLICKHOUSE_USER: default
       CLICKHOUSE_PASSWORD: ""
       TELEMETRY_RETENTION_DAYS: 30
+      TELEMETRY_OBJECT_STORAGE_ROOT: /data/object-storage
+      TELEMETRY_DEMO_ADMIN_KEY: demo-admin-key
+      TELEMETRY_DEMO_WRITER_KEY: demo-writer-key
+      TELEMETRY_DEMO_VIEWER_KEY: demo-viewer-key
+    volumes:
+      - object_storage:/data/object-storage
 
   telemetry-agent:
     build:
@@ -71,9 +77,11 @@ services:
       AGENT_TENANT_ID: demo
       AGENT_SERVICE_NAME: demo-agent
       AGENT_LOG_FILE: /var/log/demo/demo.log
+      AGENT_API_KEY: demo-writer-key
     volumes:
       - ./logs:/var/log/demo
     profiles: ["agent"]
 
 volumes:
   clickhouse_data:
+  object_storage:

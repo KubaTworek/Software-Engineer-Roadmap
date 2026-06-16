@@ -1,7 +1,8 @@
 package com.example.observability.server.util;
 
 public final class Validation {
-    private Validation() {}
+    private Validation() {
+    }
 
     public static String required(String value, String fallback) {
         if (value == null || value.isBlank()) return fallback;

@@ -30,9 +30,65 @@ telemetry:
   kafka:
     logs-topic: logs.raw
     metrics-topic: metrics.raw
+  retention:
+    hot-days: ${TELEMETRY_HOT_RETENTION_DAYS:30}
   retention-days: ${TELEMETRY_RETENTION_DAYS:30}
   query:
     default-limit: 100
     max-limit: 5000
   alerting:
     evaluation-interval-ms: 30000
+  auth:
+    enabled: ${TELEMETRY_AUTH_ENABLED:true}
+    api-keys:
+      - name: demo-admin
+        token: ${TELEMETRY_DEMO_ADMIN_KEY:demo-admin-key}
+        tenant-id: demo
+        roles: [ admin, writer, viewer ]
+      - name: demo-writer
+        token: ${TELEMETRY_DEMO_WRITER_KEY:demo-writer-key}
+        tenant-id: demo
+        roles: [ writer ]
+      - name: demo-viewer
+        token: ${TELEMETRY_DEMO_VIEWER_KEY:demo-viewer-key}
+        tenant-id: demo
+        roles: [ viewer ]
+  quotas:
+    defaults:
+      logs-per-minute: 100000
+      metric-samples-per-minute: 500000
+      query-requests-per-minute: 600
+      max-query-window-seconds: 2592000
+      max-log-limit: 5000
+    tenants:
+      demo:
+        logs-per-minute: 10000
+        metric-samples-per-minute: 100000
+        query-requests-per-minute: 300
+        max-query-window-seconds: 2592000
+        max-log-limit: 5000
+  object-storage:
+    local-root: ${TELEMETRY_OBJECT_STORAGE_ROOT:/data/object-storage}
+    export:
+      enabled: ${TELEMETRY_COLD_EXPORT_ENABLED:true}
+      after-days: ${TELEMETRY_COLD_EXPORT_AFTER_DAYS:7}
+      cron: ${TELEMETRY_COLD_EXPORT_CRON:0 15 * * * *}
+  downsampling:
+    cron: ${TELEMETRY_DOWNSAMPLING_CRON:0 */5 * * * *}
+  region:
+    current: ${TELEMETRY_REGION:local}
+    mode: ${TELEMETRY_REGION_MODE:single-region}
+    peers: ${TELEMETRY_REGION_PEERS:}
+    replication-enabled: ${TELEMETRY_REPLICATION_ENABLED:false}
+    max-healthy-lag-ms: ${TELEMETRY_MAX_HEALTHY_LAG_MS:300000}
+  cardinality:
+    max-labels-per-series: ${TELEMETRY_CARDINALITY_MAX_LABELS:20}
+    max-label-value-length: ${TELEMETRY_CARDINALITY_MAX_VALUE_LENGTH:128}
+    max-series-per-metric-per-hour: ${TELEMETRY_CARDINALITY_MAX_SERIES_PER_METRIC_HOUR:50000}
+    max-values-per-label-per-hour: ${TELEMETRY_CARDINALITY_MAX_VALUES_PER_LABEL_HOUR:10000}
+    reject-high-risk-labels: ${TELEMETRY_CARDINALITY_REJECT_HIGH_RISK:true}
+    blocked-label-keys: [ user_id, request_id, session_id, uuid, email, token ]
+  fulltext:
+    enabled: ${TELEMETRY_FULLTEXT_ENABLED:true}
+    max-terms-per-log: ${TELEMETRY_FULLTEXT_MAX_TERMS_PER_LOG:64}
+    min-term-length: ${TELEMETRY_FULLTEXT_MIN_TERM_LENGTH:3}

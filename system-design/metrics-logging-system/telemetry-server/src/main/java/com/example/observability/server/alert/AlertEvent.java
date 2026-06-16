@@ -11,4 +11,5 @@ public record AlertEvent(
         double observedValue,
         double threshold,
         String message
-) {}
+) {
+}

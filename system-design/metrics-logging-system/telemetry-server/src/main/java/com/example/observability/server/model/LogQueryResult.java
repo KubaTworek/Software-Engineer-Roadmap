@@ -12,4 +12,5 @@ public record LogQueryResult(
         String traceId,
         String message,
         Map<String, Object> attributes
-) {}
+) {
+}

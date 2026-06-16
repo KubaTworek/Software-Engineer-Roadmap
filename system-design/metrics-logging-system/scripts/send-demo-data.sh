@@ -3,10 +3,12 @@ set -euo pipefail
 BASE_URL="${BASE_URL:-http://localhost:8080}"
 TENANT="${TENANT:-demo}"
 SERVICE="${SERVICE:-payments}"
+API_KEY="${API_KEY:-demo-writer-key}"
 NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 curl -sS -X POST "$BASE_URL/api/v1/ingest/logs" \
   -H 'Content-Type: application/json' \
+  -H "X-API-Key: $API_KEY" \
   -d "{
     \"tenantId\":\"$TENANT\",
     \"logs\":[{
@@ -23,6 +25,7 @@ curl -sS -X POST "$BASE_URL/api/v1/ingest/logs" \
 echo
 curl -sS -X POST "$BASE_URL/api/v1/ingest/metrics" \
   -H 'Content-Type: application/json' \
+  -H "X-API-Key: $API_KEY" \
   -d "{
     \"tenantId\":\"$TENANT\",
     \"series\":[{

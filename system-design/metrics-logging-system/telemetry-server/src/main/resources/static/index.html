@@ -1,159 +1,182 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Telemetry Dashboard</title>
-  <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, sans-serif; margin: 0; background: #111827; color: #e5e7eb; }
-    header { padding: 20px 28px; background: #030712; border-bottom: 1px solid #374151; }
-    main { padding: 24px; display: grid; grid-template-columns: 1fr; gap: 20px; }
-    .card { background: #1f2937; border: 1px solid #374151; border-radius: 14px; padding: 18px; box-shadow: 0 8px 20px rgba(0,0,0,.25); }
-    label { display: block; font-size: 12px; color: #9ca3af; margin-bottom: 6px; }
-    input, select, button { padding: 10px; border-radius: 8px; border: 1px solid #4b5563; background: #111827; color: #e5e7eb; }
-    button { cursor: pointer; background: #2563eb; border-color: #2563eb; }
-    .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th, td { padding: 9px; border-bottom: 1px solid #374151; text-align: left; vertical-align: top; }
-    th { color: #93c5fd; font-weight: 600; }
-    pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
-    canvas { width: 100%; height: 260px; background: #111827; border-radius: 10px; }
-    .muted { color: #9ca3af; }
-  </style>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>Telemetry Dashboard</title>
+    <style>
+        body { font-family: system-ui, -apple-system, Segoe UI, sans-serif; margin: 0; background: #111827; color: #e5e7eb; }
+        header { padding: 20px 28px; background: #030712; border-bottom: 1px solid #374151; }
+        main { padding: 24px; display: grid; grid-template-columns: 1fr; gap: 20px; }
+        .card { background: #1f2937; border: 1px solid #374151; border-radius: 14px; padding: 18px; box-shadow: 0 8px 20px rgba(0,0,0,.25); }
+        label { display: block; font-size: 12px; color: #9ca3af; margin-bottom: 6px; }
+        input, select, button { padding: 10px; border-radius: 8px; border: 1px solid #4b5563; background: #111827; color: #e5e7eb; }
+        button { cursor: pointer; background: #2563eb; border-color: #2563eb; }
+        .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th, td { padding: 9px; border-bottom: 1px solid #374151; text-align: left; vertical-align: top; }
+        th { color: #93c5fd; font-weight: 600; }
+        pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
+        canvas { width: 100%; height: 260px; background: #111827; border-radius: 10px; }
+        .muted { color: #9ca3af; }
+    </style>
 </head>
 <body>
 <header>
-  <h1>Metrics / Logging System — Phase 1 Dashboard</h1>
-  <div class="muted">Prosty dashboard dla logów, metryk i alertów z backendu Java + Kafka + ClickHouse.</div>
+    <h1>Metrics / Logging System — Phase 2/3 Dashboard</h1>
+    <div class="muted">Dashboard dla logów, metryk, alertów, query plannera, RBAC i quota-aware API.</div>
 </header>
 <main>
-  <section class="card">
-    <h2>Query controls</h2>
-    <div class="row">
-      <div><label>Tenant</label><input id="tenant" value="demo"></div>
-      <div><label>Service</label><input id="service" value="payments"></div>
-      <div><label>Log level</label><select id="level"><option></option><option>INFO</option><option>WARN</option><option selected>ERROR</option></select></div>
-      <div><label>Contains</label><input id="contains" value="timeout"></div>
-      <div><label>Metric</label><input id="metric" value="http_requests_total"></div>
-      <div><label>Minutes</label><input id="minutes" type="number" value="60"></div>
-      <button onclick="refreshAll()">Refresh</button>
-      <button onclick="sendDemoData()">Send demo data</button>
-    </div>
-  </section>
+    <section class="card">
+        <h2>Query controls</h2>
+        <div class="row">
+            <div><label>Tenant</label><input id="tenant" value="demo"></div>
+            <div><label>API key</label><input id="apiKey" value="demo-admin-key"></div>
+            <div><label>Service</label><input id="service" value="payments"></div>
+            <div><label>Log level</label><select id="level">
+                <option></option>
+                <option>INFO</option>
+                <option>WARN</option>
+                <option selected>ERROR</option>
+            </select></div>
+            <div><label>Contains</label><input id="contains" value="timeout"></div>
+            <div><label>Metric</label><input id="metric" value="http_requests_total"></div>
+            <div><label>Minutes</label><input id="minutes" type="number" value="60"></div>
+            <button onclick="refreshAll()">Refresh</button>
+            <button onclick="sendDemoData()">Send demo data</button>
+        </div>
+    </section>
 
-  <section class="card">
-    <h2>Metric chart</h2>
-    <canvas id="metricChart" width="1200" height="260"></canvas>
-  </section>
+    <section class="card">
+        <h2>Metric chart</h2>
+        <canvas id="metricChart" width="1200" height="260"></canvas>
+    </section>
 
-  <section class="card">
-    <h2>Recent logs</h2>
-    <table>
-      <thead><tr><th>Time</th><th>Level</th><th>Service</th><th>Message</th><th>Trace</th></tr></thead>
-      <tbody id="logsBody"></tbody>
-    </table>
-  </section>
+    <section class="card">
+        <h2>Recent logs</h2>
+        <table>
+            <thead>
+            <tr>
+                <th>Time</th>
+                <th>Level</th>
+                <th>Service</th>
+                <th>Message</th>
+                <th>Trace</th>
+            </tr>
+            </thead>
+            <tbody id="logsBody"></tbody>
+        </table>
+    </section>
 
-  <section class="card">
-    <h2>Alert events</h2>
-    <table>
-      <thead><tr><th>Time</th><th>Rule</th><th>Status</th><th>Observed</th><th>Message</th></tr></thead>
-      <tbody id="alertsBody"></tbody>
-    </table>
-  </section>
+    <section class="card">
+        <h2>Alert events</h2>
+        <table>
+            <thead>
+            <tr>
+                <th>Time</th>
+                <th>Rule</th>
+                <th>Status</th>
+                <th>Observed</th>
+                <th>Message</th>
+            </tr>
+            </thead>
+            <tbody id="alertsBody"></tbody>
+        </table>
+    </section>
 </main>
 
 <script>
-const $ = id => document.getElementById(id);
+    const $ = id => document.getElementById(id);
+    const authHeaders = () => ({'X-API-Key': $('apiKey').value});
 
-async function refreshAll() {
-  await Promise.all([loadMetrics(), loadLogs(), loadAlerts()]);
-}
+    async function refreshAll() {
+      await Promise.all([loadMetrics(), loadLogs(), loadAlerts()]);
+    }
 
-async function loadLogs() {
-  const params = new URLSearchParams({
-    tenantId: $('tenant').value,
-    service: $('service').value,
-    level: $('level').value,
-    contains: $('contains').value,
-    limit: '100'
-  });
-  const res = await fetch(`/api/v1/query/logs?${params}`);
-  const rows = await res.json();
-  $('logsBody').innerHTML = rows.map(r => `<tr>
-    <td>${r.timestamp}</td><td>${r.level}</td><td>${r.service}</td>
-    <td><pre>${escapeHtml(r.message)}</pre></td><td>${r.traceId || ''}</td>
-  </tr>`).join('');
-}
+    async function loadLogs() {
+      const params = new URLSearchParams({
+        tenantId: $('tenant').value,
+        service: $('service').value,
+        level: $('level').value,
+        contains: $('contains').value,
+        limit: '100'
+      });
+      const res = await fetch(`/api/v1/query/logs?${params}`, {headers: authHeaders()});
+      const rows = await res.json();
+      $('logsBody').innerHTML = rows.map(r => `<tr>
+        <td>${r.timestamp}</td><td>${r.level}</td><td>${r.service}</td>
+        <td><pre>${escapeHtml(r.message)}</pre></td><td>${r.traceId || ''}</td>
+      </tr>`).join('');
+    }
 
-async function loadMetrics() {
-  const params = new URLSearchParams({
-    tenantId: $('tenant').value,
-    metricName: $('metric').value,
-    service: $('service').value,
-    minutes: $('minutes').value,
-    stepSeconds: '60'
-  });
-  const res = await fetch(`/api/v1/query/metrics?${params}`);
-  drawChart(await res.json());
-}
+    async function loadMetrics() {
+      const params = new URLSearchParams({
+        tenantId: $('tenant').value,
+        metricName: $('metric').value,
+        service: $('service').value,
+        minutes: $('minutes').value,
+        stepSeconds: '60'
+      });
+      const res = await fetch(`/api/v1/query/metrics?${params}`, {headers: authHeaders()});
+      drawChart(await res.json());
+    }
 
-async function loadAlerts() {
-  const params = new URLSearchParams({ tenantId: $('tenant').value, limit: '50' });
-  const res = await fetch(`/api/v1/alerts/events?${params}`);
-  const rows = await res.json();
-  $('alertsBody').innerHTML = rows.map(r => `<tr>
-    <td>${r.evaluatedAt}</td><td>${escapeHtml(r.ruleName)}</td><td>${r.status}</td>
-    <td>${Number(r.observedValue).toFixed(2)} / ${r.threshold}</td><td>${escapeHtml(r.message)}</td>
-  </tr>`).join('');
-}
+    async function loadAlerts() {
+      const params = new URLSearchParams({ tenantId: $('tenant').value, limit: '50' });
+      const res = await fetch(`/api/v1/alerts/events?${params}`, {headers: authHeaders()});
+      const rows = await res.json();
+      $('alertsBody').innerHTML = rows.map(r => `<tr>
+        <td>${r.evaluatedAt}</td><td>${escapeHtml(r.ruleName)}</td><td>${r.status}</td>
+        <td>${Number(r.observedValue).toFixed(2)} / ${r.threshold}</td><td>${escapeHtml(r.message)}</td>
+      </tr>`).join('');
+    }
 
-function drawChart(points) {
-  const canvas = $('metricChart');
-  const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.strokeStyle = '#60a5fa';
-  ctx.fillStyle = '#9ca3af';
-  ctx.lineWidth = 2;
-  ctx.font = '13px system-ui';
-  if (!points.length) { ctx.fillText('No metric data', 20, 40); return; }
-  const values = points.map(p => p.value);
-  const max = Math.max(...values, 1);
-  const min = Math.min(...values, 0);
-  const pad = 30;
-  ctx.beginPath();
-  points.forEach((p, i) => {
-    const x = pad + i * ((canvas.width - pad * 2) / Math.max(points.length - 1, 1));
-    const y = canvas.height - pad - ((p.value - min) / Math.max(max - min, 1)) * (canvas.height - pad * 2);
-    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-  });
-  ctx.stroke();
-  ctx.fillText(`min=${min.toFixed(2)} max=${max.toFixed(2)} points=${points.length}`, 20, 24);
-}
+    function drawChart(points) {
+      const canvas = $('metricChart');
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.strokeStyle = '#60a5fa';
+      ctx.fillStyle = '#9ca3af';
+      ctx.lineWidth = 2;
+      ctx.font = '13px system-ui';
+      if (!points.length) { ctx.fillText('No metric data', 20, 40); return; }
+      const values = points.map(p => p.value);
+      const max = Math.max(...values, 1);
+      const min = Math.min(...values, 0);
+      const pad = 30;
+      ctx.beginPath();
+      points.forEach((p, i) => {
+        const x = pad + i * ((canvas.width - pad * 2) / Math.max(points.length - 1, 1));
+        const y = canvas.height - pad - ((p.value - min) / Math.max(max - min, 1)) * (canvas.height - pad * 2);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+      ctx.fillText(`min=${min.toFixed(2)} max=${max.toFixed(2)} points=${points.length}`, 20, 24);
+    }
 
-async function sendDemoData() {
-  const now = new Date().toISOString();
-  await fetch('/api/v1/ingest/logs', {
-    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
-      tenantId: $('tenant').value,
-      logs: [{timestamp: now, level: 'ERROR', service: $('service').value, host: 'browser', traceId: crypto.randomUUID(), message: 'Demo payment provider timeout', attributes: {source: 'dashboard'}}]
-    })
-  });
-  await fetch('/api/v1/ingest/metrics', {
-    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
-      tenantId: $('tenant').value,
-      series: [{name: $('metric').value, labels: {service: $('service').value, status: '500'}, samples: [{timestamp: now, value: Math.floor(Math.random() * 20)}]}]
-    })
-  });
-  setTimeout(refreshAll, 1200);
-}
+    async function sendDemoData() {
+      const now = new Date().toISOString();
+      await fetch('/api/v1/ingest/logs', {
+        method: 'POST', headers: {'Content-Type': 'application/json', ...authHeaders()}, body: JSON.stringify({
+          tenantId: $('tenant').value,
+          logs: [{timestamp: now, level: 'ERROR', service: $('service').value, host: 'browser', traceId: crypto.randomUUID(), message: 'Demo payment provider timeout', attributes: {source: 'dashboard'}}]
+        })
+      });
+      await fetch('/api/v1/ingest/metrics', {
+        method: 'POST', headers: {'Content-Type': 'application/json', ...authHeaders()}, body: JSON.stringify({
+          tenantId: $('tenant').value,
+          series: [{name: $('metric').value, labels: {service: $('service').value, status: '500'}, samples: [{timestamp: now, value: Math.floor(Math.random() * 20)}]}]
+        })
+      });
+      setTimeout(refreshAll, 1200);
+    }
 
-function escapeHtml(s) {
-  return String(s || '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
-}
+    function escapeHtml(s) {
+      return String(s || '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+    }
 
-refreshAll();
-setInterval(refreshAll, 15000);
+    refreshAll();
+    setInterval(refreshAll, 15000);
 </script>
 </body>
 </html>

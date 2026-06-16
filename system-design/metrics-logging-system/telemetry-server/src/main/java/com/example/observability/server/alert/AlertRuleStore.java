@@ -19,7 +19,15 @@ public class AlertRuleStore {
         return rule;
     }
 
-    public List<AlertRule> all() { return new ArrayList<>(rules.values()); }
-    public Optional<AlertRule> find(String id) { return Optional.ofNullable(rules.get(id)); }
-    public void delete(String id) { rules.remove(id); }
+    public List<AlertRule> all() {
+        return new ArrayList<>(rules.values());
+    }
+
+    public Optional<AlertRule> find(String id) {
+        return Optional.ofNullable(rules.get(id));
+    }
+
+    public void delete(String id) {
+        rules.remove(id);
+    }
 }
