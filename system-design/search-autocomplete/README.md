@@ -51,17 +51,17 @@ System powinien:
 
 Najważniejsze:
 
-| Wymaganie | Cel |
-|---|---:|
-| Latency p95 | < 50 ms server-side |
-| Latency p99 | < 100 ms server-side |
-| Availability | 99.9% lub 99.99% |
-| Throughput | bardzo wysoki, bo request idzie przy każdym wpisanym znaku |
-| Consistency | eventual consistency wystarczy |
-| Freshness | od sekund do kilku minut, zależnie od domeny |
-| Personalizacja | najlepiej bez dużego kosztu latency |
-| Bezpieczeństwo | brak wycieków prywatnych sugestii |
-| Koszt | agresywne cache’owanie i prekomputacja |
+| Wymaganie      |                                                        Cel |
+|----------------|-----------------------------------------------------------:|
+| Latency p95    |                                        < 50 ms server-side |
+| Latency p99    |                                       < 100 ms server-side |
+| Availability   |                                           99.9% lub 99.99% |
+| Throughput     | bardzo wysoki, bo request idzie przy każdym wpisanym znaku |
+| Consistency    |                             eventual consistency wystarczy |
+| Freshness      |               od sekund do kilku minut, zależnie od domeny |
+| Personalizacja |                        najlepiej bez dużego kosztu latency |
+| Bezpieczeństwo |                          brak wycieków prywatnych sugestii |
+| Koszt          |                     agresywne cache’owanie i prekomputacja |
 
 ---
 
@@ -87,7 +87,8 @@ Peak QPS, np. 5–10x:
 50 000–100 000 QPS
 ```
 
-Autocomplete jest bardzo latency-sensitive, więc system powinien być zaprojektowany pod odczyty, cache i precomputed indexes.
+Autocomplete jest bardzo latency-sensitive, więc system powinien być zaprojektowany pod odczyty, cache i precomputed
+indexes.
 
 ---
 
@@ -127,18 +128,19 @@ Przykładowa odpowiedź:
 
 ### 5.2 Parametry
 
-| Parametr | Opis |
-|---|---|
-| `q` | aktualny tekst wpisany przez użytkownika |
-| `limit` | liczba sugestii |
-| `locale` | język użytkownika |
-| `country` | kraj |
-| `user_id` | opcjonalnie, zwykle z auth tokena |
-| `session_id` | do personalizacji krótkoterminowej |
-| `device` | web, iOS, Android |
-| `context` | np. kategoria, strona, workspace |
+| Parametr     | Opis                                     |
+|--------------|------------------------------------------|
+| `q`          | aktualny tekst wpisany przez użytkownika |
+| `limit`      | liczba sugestii                          |
+| `locale`     | język użytkownika                        |
+| `country`    | kraj                                     |
+| `user_id`    | opcjonalnie, zwykle z auth tokena        |
+| `session_id` | do personalizacji krótkoterminowej       |
+| `device`     | web, iOS, Android                        |
+| `context`    | np. kategoria, strona, workspace         |
 
-Nie pakowałbym zbyt dużo logiki do parametrów query. Lepiej część kontekstu przekazywać przez nagłówki lub auth/session metadata.
+Nie pakowałbym zbyt dużo logiki do parametrów query. Lepiej część kontekstu przekazywać przez nagłówki lub auth/session
+metadata.
 
 ---
 
@@ -222,7 +224,8 @@ Użytkownik wpisuje szybko:
 i -> ip -> iph -> ipho
 ```
 
-Request dla `iph` może wrócić po `ipho`. Klient musi ignorować starsze odpowiedzi, jeśli nie pasują do aktualnego inputu.
+Request dla `iph` może wrócić po `ipho`. Klient musi ignorować starsze odpowiedzi, jeśli nie pasują do aktualnego
+inputu.
 
 ---
 
@@ -443,18 +446,18 @@ final_score =
 
 Czynniki:
 
-| Feature | Znaczenie |
-|---|---|
-| Prefix match | jak dobrze sugestia pasuje do inputu |
-| Popularity | liczba wyszukiwań |
-| CTR | czy użytkownicy klikają po tej sugestii |
-| Conversion | czy prowadzi do wartościowej akcji |
-| Freshness | czy temat jest teraz popularny |
-| Personalization | zgodność z użytkownikiem |
-| Locale | język i kraj |
-| Availability | np. produkt dostępny w sklepie |
-| Safety | obniżenie lub usunięcie ryzykownych sugestii |
-| Business rules | kampanie, sezonowość, priorytety |
+| Feature         | Znaczenie                                    |
+|-----------------|----------------------------------------------|
+| Prefix match    | jak dobrze sugestia pasuje do inputu         |
+| Popularity      | liczba wyszukiwań                            |
+| CTR             | czy użytkownicy klikają po tej sugestii      |
+| Conversion      | czy prowadzi do wartościowej akcji           |
+| Freshness       | czy temat jest teraz popularny               |
+| Personalization | zgodność z użytkownikiem                     |
+| Locale          | język i kraj                                 |
+| Availability    | np. produkt dostępny w sklepie               |
+| Safety          | obniżenie lub usunięcie ryzykownych sugestii |
+| Business rules  | kampanie, sezonowość, priorytety             |
 
 ---
 
@@ -534,7 +537,8 @@ Autocomplete Service
   +--> Rerank
 ```
 
-Nie robiłbym ciężkiego model inference synchronicznie dla każdego requestu, chyba że infrastruktura jest do tego przygotowana. Lepiej użyć precomputed user features i prostego rerankingu.
+Nie robiłbym ciężkiego model inference synchronicznie dla każdego requestu, chyba że infrastruktura jest do tego
+przygotowana. Lepiej użyć precomputed user features i prostego rerankingu.
 
 ---
 
@@ -852,7 +856,8 @@ Offline filtering during index build
 + Human review for high-risk terms
 ```
 
-Ważne: nie wolno po prostu wrzucać surowych query logs do sugestii. To klasyczny błąd. Użytkownicy wpisują prywatne, wrażliwe i przypadkowe rzeczy.
+Ważne: nie wolno po prostu wrzucać surowych query logs do sugestii. To klasyczny błąd. Użytkownicy wpisują prywatne,
+wrażliwe i przypadkowe rzeczy.
 
 ---
 
@@ -887,27 +892,27 @@ Query can enter global suggestions only if:
 
 Metryki techniczne:
 
-| Metryka | Cel |
-|---|---|
-| p50/p95/p99 latency | kontrola UX |
-| QPS | capacity planning |
-| cache hit rate | koszt i latency |
-| error rate | stabilność |
-| timeout rate | degradacja |
-| index load time | deployability |
-| memory usage | koszt |
-| stale index age | świeżość |
+| Metryka             | Cel               |
+|---------------------|-------------------|
+| p50/p95/p99 latency | kontrola UX       |
+| QPS                 | capacity planning |
+| cache hit rate      | koszt i latency   |
+| error rate          | stabilność        |
+| timeout rate        | degradacja        |
+| index load time     | deployability     |
+| memory usage        | koszt             |
+| stale index age     | świeżość          |
 
 Metryki produktowe:
 
-| Metryka | Znaczenie |
-|---|---|
-| suggestion CTR | czy sugestie są klikane |
-| search completion rate | czy użytkownik kończy search |
-| zero-result rate | jakość sugestii |
-| reformulation rate | czy sugestia była zła |
-| conversion rate | jakość biznesowa |
-| abandonment rate | czy user rezygnuje |
+| Metryka                | Znaczenie                      |
+|------------------------|--------------------------------|
+| suggestion CTR         | czy sugestie są klikane        |
+| search completion rate | czy użytkownik kończy search   |
+| zero-result rate       | jakość sugestii                |
+| reformulation rate     | czy sugestia była zła          |
+| conversion rate        | jakość biznesowa               |
+| abandonment rate       | czy user rezygnuje             |
 | typed characters saved | klasyczna metryka autocomplete |
 
 ---
@@ -996,19 +1001,20 @@ Autocomplete powinien degradować się łagodnie. Lepiej zwrócić mniej sperson
 
 Przykładowy budżet server-side:
 
-| Krok | Budżet |
-|---|---:|
-| API Gateway | 2–5 ms |
-| Normalizacja | 1 ms |
-| Cache lookup | 1–3 ms |
-| Index lookup | 5–15 ms |
+| Krok                     |  Budżet |
+|--------------------------|--------:|
+| API Gateway              |  2–5 ms |
+| Normalizacja             |    1 ms |
+| Cache lookup             |  1–3 ms |
+| Index lookup             | 5–15 ms |
 | Personalization features | 5–10 ms |
-| Ranking | 3–10 ms |
-| Filtering | 1–3 ms |
-| Serialization | 1–2 ms |
-| Total p95 | < 50 ms |
+| Ranking                  | 3–10 ms |
+| Filtering                |  1–3 ms |
+| Serialization            |  1–2 ms |
+| Total p95                | < 50 ms |
 
-Jeżeli personalizacja wymaga zdalnych requestów do wielu usług, latency szybko się rozjedzie. Dlatego feature’y personalizacyjne powinny być lokalne, cache’owane albo precomputed.
+Jeżeli personalizacja wymaga zdalnych requestów do wielu usług, latency szybko się rozjedzie. Dlatego feature’y
+personalizacyjne powinny być lokalne, cache’owane albo precomputed.
 
 ---
 
@@ -1040,7 +1046,8 @@ Model:
 - LightGBM/XGBoost,
 - mały neural ranker — ostrożnie z latency.
 
-Nie zaczynałbym od ciężkiego modelu neural search dla autocomplete. Najpierw trzeba mieć dobre logi, metryki i eksperymenty A/B.
+Nie zaczynałbym od ciężkiego modelu neural search dla autocomplete. Najpierw trzeba mieć dobre logi, metryki i
+eksperymenty A/B.
 
 ---
 
@@ -1144,18 +1151,18 @@ rate limit logged-in: 20 req/sec/user
 
 ## 33. Storage choices
 
-| Dane | Storage |
-|---|---|
-| Query logs | Kafka + object storage |
-| Aggregated stats | BigQuery/Snowflake/ClickHouse |
-| Batch processing | Spark/Beam |
-| Stream processing | Flink/Kafka Streams |
-| Hot cache | Redis/Memcached |
-| Main index | FST/trie snapshots in object storage + memory |
-| Realtime overlay | Redis/RocksDB/OpenSearch |
-| User recent searches | KV store, np. DynamoDB/Cassandra/Redis |
-| Feature store | Feast/Redis/Cassandra/custom |
-| Abuse/blocklist | strongly consistent DB + cache |
+| Dane                 | Storage                                       |
+|----------------------|-----------------------------------------------|
+| Query logs           | Kafka + object storage                        |
+| Aggregated stats     | BigQuery/Snowflake/ClickHouse                 |
+| Batch processing     | Spark/Beam                                    |
+| Stream processing    | Flink/Kafka Streams                           |
+| Hot cache            | Redis/Memcached                               |
+| Main index           | FST/trie snapshots in object storage + memory |
+| Realtime overlay     | Redis/RocksDB/OpenSearch                      |
+| User recent searches | KV store, np. DynamoDB/Cassandra/Redis        |
+| Feature store        | Feast/Redis/Cassandra/custom                  |
+| Abuse/blocklist      | strongly consistent DB + cache                |
 
 ---
 
@@ -1163,13 +1170,13 @@ rate limit logged-in: 20 req/sec/user
 
 ### Trie vs FST vs Search Engine
 
-| Opcja | Plusy | Minusy |
-|---|---|---|
-| Trie | szybkie, proste | duża pamięć |
-| FST | szybkie, kompaktowe | trudniejszy build |
-| OpenSearch | gotowe funkcje | koszt, latency, operacyjność |
-| Redis only | prostota | słabe dla long tail |
-| ML-heavy | lepszy ranking | koszt i latency |
+| Opcja      | Plusy               | Minusy                       |
+|------------|---------------------|------------------------------|
+| Trie       | szybkie, proste     | duża pamięć                  |
+| FST        | szybkie, kompaktowe | trudniejszy build            |
+| OpenSearch | gotowe funkcje      | koszt, latency, operacyjność |
+| Redis only | prostota            | słabe dla long tail          |
+| ML-heavy   | lepszy ranking      | koszt i latency              |
 
 Moja rekomendacja dla dużego systemu:
 
@@ -1324,4 +1331,6 @@ Client debounce
 + A/B testing and observability
 ```
 
-Najważniejsza decyzja architektoniczna: **nie generować sugestii dynamicznie z głównej wyszukiwarki przy każdym keystroke’u**, tylko maksymalnie dużo prekomputować i serwować z pamięci/cache. Główna wyszukiwarka może być fallbackiem, ale nie powinna być jedynym mechanizmem dla dużej skali.
+Najważniejsza decyzja architektoniczna: **nie generować sugestii dynamicznie z głównej wyszukiwarki przy każdym
+keystroke’u**, tylko maksymalnie dużo prekomputować i serwować z pamięci/cache. Główna wyszukiwarka może być
+fallbackiem, ale nie powinna być jedynym mechanizmem dla dużej skali.

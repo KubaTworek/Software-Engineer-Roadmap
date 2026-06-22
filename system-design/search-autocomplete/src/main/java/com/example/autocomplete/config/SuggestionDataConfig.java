@@ -1,49 +1,315 @@
 package com.example.autocomplete.config;
 
-import com.example.autocomplete.model.Suggestion;
+import com.example.autocomplete.model.*;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import java.util.List;
+import java.util.*;
 
+/**
+ * Konfiguracja danych wejściowych dla autocomplete.
+ *
+ * Ta klasa tworzy listę sugestii, która później trafia do:
+ * - IndexBootstrapConfig,
+ * - SuggestionTrieIndex,
+ * - rankera,
+ * - safety filtera.
+ *
+ * W tym projekcie dane są zapisane statycznie w kodzie,
+ * żeby łatwo uruchomić aplikację bez bazy danych i pipeline'u.
+ *
+ * W produkcji sugestie byłyby ładowane np. z:
+ * - hurtowni danych,
+ * - batchowego index buildera,
+ * - pliku snapshotu,
+ * - OpenSearch/Elasticsearch,
+ * - event pipeline'u.
+ */
 @Configuration
 public class SuggestionDataConfig {
 
+    /**
+     * Bean z listą sugestii dostępnych w aplikacji.
+     *
+     * Spring wstrzykuje tę listę później tam, gdzie potrzebne są dane
+     * do budowy indeksu, np. w IndexBootstrapConfig.
+     */
     @Bean
     public List<Suggestion> suggestions() {
-        return List.of(
-                new Suggestion("iphone 15", "query", 1000),
-                new Suggestion("iphone 15 pro", "query", 950),
-                new Suggestion("iphone charger", "query", 820),
-                new Suggestion("iphone case", "query", 780),
-                new Suggestion("iphone 14", "query", 700),
-                new Suggestion("ipad pro", "query", 650),
-                new Suggestion("ipad air", "query", 620),
-                new Suggestion("imac", "query", 560),
-                new Suggestion("macbook pro", "query", 920),
-                new Suggestion("macbook air", "query", 890),
-                new Suggestion("magic keyboard", "query", 500),
-                new Suggestion("airpods pro", "query", 870),
-                new Suggestion("airpods max", "query", 610),
-                new Suggestion("apple watch", "query", 760),
-                new Suggestion("apple watch ultra", "query", 690),
-                new Suggestion("samsung galaxy s24", "query", 940),
-                new Suggestion("samsung galaxy watch", "query", 640),
-                new Suggestion("samsung charger", "query", 430),
-                new Suggestion("sony headphones", "query", 710),
-                new Suggestion("sony playstation 5", "query", 830),
-                new Suggestion("nintendo switch", "query", 790),
-                new Suggestion("java", "query", 880),
-                new Suggestion("javascript", "query", 860),
-                new Suggestion("java spring boot", "query", 720),
-                new Suggestion("java streams", "query", 540),
-                new Suggestion("docker", "query", 840),
-                new Suggestion("docker compose", "query", 730),
-                new Suggestion("kubernetes", "query", 810),
-                new Suggestion("postgresql", "query", 760),
-                new Suggestion("redis", "query", 700),
-                new Suggestion("elasticsearch", "query", 680),
-                new Suggestion("opensearch", "query", 520)
+        List<Suggestion> s = new ArrayList<>();
+
+        /*
+         * Sugestia produktowa dla iPhone 15.
+         *
+         * Zawiera:
+         * - wysoką popularność,
+         * - dobry CTR,
+         * - dobrą konwersję,
+         * - wysoką jakość,
+         * - kategorie electronics/apple,
+         * - locale PL i US,
+         * - aliasy wspierające różne zapisy query.
+         */
+        s.add(sug(
+                "q-iphone-15",
+                "iPhone 15",
+                1000,
+                .42,
+                .21,
+                .35,
+                .95,
+                Set.of("electronics", "apple"),
+                Set.of("en-US", "pl-PL"),
+                Set.of("US", "PL"),
+                false,
+                "iphone15",
+                "iphone-15",
+                "apple iphone 15"
+        ));
+
+        /*
+         * Bardziej szczegółowa sugestia dla iPhone 15 Pro.
+         *
+         * Ma bardzo dobre metryki jakościowe i sprzedażowe,
+         * więc ranker może ją często promować wysoko.
+         *
+         * Alias "iphon 15 pro" symuluje literówkę użytkownika.
+         */
+        s.add(sug(
+                "q-iphone-15-pro",
+                "iPhone 15 Pro",
+                950,
+                .48,
+                .27,
+                .45,
+                .97,
+                Set.of("electronics", "apple"),
+                Set.of("en-US", "pl-PL"),
+                Set.of("US", "PL"),
+                false,
+                "iphone15pro",
+                "iphon 15 pro",
+                "iphone-15-pro"
+        ));
+
+        /*
+         * Sugestia dla MacBook Pro.
+         *
+         * Dzięki kategorii i brandowi Apple może dostać boost
+         * u użytkowników z profilem "u-apple".
+         */
+        s.add(sug(
+                "q-macbook-pro",
+                "MacBook Pro",
+                920,
+                .44,
+                .29,
+                .30,
+                .96,
+                Set.of("electronics", "apple"),
+                Set.of("en-US", "pl-PL"),
+                Set.of("US", "PL"),
+                false,
+                "macbookpro",
+                "mac book pro"
+        ));
+
+        /*
+         * Sugestia gamingowa.
+         *
+         * Może być promowana użytkownikom o profilu "u-gaming"
+         * oraz w krajach, gdzie ma wysoki trending score.
+         */
+        s.add(sug(
+                "q-playstation-5",
+                "Sony PlayStation 5",
+                830,
+                .36,
+                .19,
+                .32,
+                .89,
+                Set.of("gaming", "electronics"),
+                Set.of("en-US", "pl-PL"),
+                Set.of("US", "PL"),
+                false,
+                "ps5",
+                "playstation five"
+        ));
+
+        /*
+         * Sugestia developerska.
+         *
+         * Dobrze pasuje do profilu "u-dev" oraz kategorii developer-tools.
+         */
+        s.add(sug(
+                "q-java-spring-boot",
+                "Java Spring Boot",
+                720,
+                .46,
+                .20,
+                .26,
+                .94,
+                Set.of("software", "developer-tools"),
+                Set.of("en-US", "pl-PL"),
+                Set.of("US", "PL"),
+                false,
+                "spring boot",
+                "springboot java"
+        ));
+
+        /*
+         * Sugestia związana z Dockerem.
+         *
+         * Alias "docker-compose" wspiera query wpisywane z myślnikiem.
+         * Normalizer zamieni myślnik na spację, więc dopasowanie będzie spójne.
+         */
+        s.add(sug(
+                "q-docker-compose",
+                "Docker Compose",
+                730,
+                .41,
+                .15,
+                .20,
+                .89,
+                Set.of("software", "developer-tools"),
+                Set.of("en-US", "pl-PL"),
+                Set.of("US", "PL"),
+                false,
+                "docker-compose"
+        ));
+
+        /*
+         * Sugestia techniczna dla Redis.
+         *
+         * Może być wysoko dla zapytań związanych z cache
+         * albo użytkowników developerskich.
+         */
+        s.add(sug(
+                "q-redis",
+                "Redis",
+                700,
+                .32,
+                .11,
+                .14,
+                .85,
+                Set.of("software", "developer-tools"),
+                Set.of("en-US", "pl-PL"),
+                Set.of("US", "PL"),
+                false,
+                "redis cache"
+        ));
+
+        /*
+         * Przykład sugestii spamowej / zablokowanej.
+         *
+         * Ma wysoką popularność, ale:
+         * - manuallyBlocked = true,
+         * - quality score = 0.12,
+         * - tekst zawiera "free free free".
+         *
+         * Dzięki temu można przetestować:
+         * - SafetyPolicyFilter,
+         * - filtrowanie w rankerze,
+         * - odporność systemu na złe dane wejściowe.
+         */
+        s.add(sug(
+                "q-spam",
+                "iPhone free free free",
+                990,
+                .02,
+                .0,
+                .6,
+                .12,
+                Set.of("spam"),
+                Set.of("en-US"),
+                Set.of("US"),
+                true,
+                "iphone spam"
+        ));
+
+        /*
+         * Generujemy większą liczbę sztucznych produktów.
+         *
+         * Cel:
+         * - zwiększyć rozmiar datasetu,
+         * - sprawdzić zachowanie Trie dla większej liczby sugestii,
+         * - przetestować candidate limit,
+         * - dać rankerowi więcej danych.
+         *
+         * To są dane testowe, nie realistyczny katalog produkcyjny.
+         */
+        for (int i = 1; i <= 500; i++) {
+            s.add(sug(
+                    "q-product-" + i,
+                    "Product " + i,
+                    500 - (i % 300),
+                    .05 + ((i % 30) / 100.0),
+                    .02 + ((i % 20) / 150.0),
+                    (i % 10) / 10.0,
+                    i % 17 == 0 ? .20 : .70,
+                    Set.of("general"),
+                    Set.of("en-US"),
+                    Set.of("US"),
+                    false,
+                    "product-" + i,
+                    "sku " + i
+            ));
+        }
+
+        /*
+         * Zwracamy niemodyfikowalną kopię listy.
+         *
+         * Dzięki temu inne komponenty nie powinny przypadkowo zmienić
+         * bazowego datasetu po starcie aplikacji.
+         */
+        return List.copyOf(s);
+    }
+
+    /**
+     * Pomocnicza metoda tworząca Suggestion.
+     *
+     * Dzięki niej definicje danych wyżej są krótsze i czytelniejsze.
+     *
+     * Parametry mapują się na:
+     * - id sugestii,
+     * - tekst wyświetlany użytkownikowi,
+     * - metryki rankingowe,
+     * - kategorie,
+     * - locale,
+     * - kraje,
+     * - status blokady,
+     * - aliasy.
+     */
+    private Suggestion sug(
+            String id,
+            String text,
+            int pop,
+            double ctr,
+            double conv,
+            double fresh,
+            double quality,
+            Set<String> cats,
+            Set<String> locales,
+            Set<String> countries,
+            boolean blocked,
+            String... aliases
+    ) {
+        return new Suggestion(
+                id,
+                text,
+                "query",
+                new SuggestionMetrics(
+                        pop,
+                        ctr,
+                        conv,
+                        fresh,
+                        quality
+                ),
+                List.of(aliases),
+                cats,
+                locales,
+                countries,
+                blocked
         );
     }
 }

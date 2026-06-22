@@ -1,0 +1,44 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <title>Search Autocomplete Stage 6</title>
+    <style>
+        body{font-family:system-ui,sans-serif;margin:40px;max-width:900px} input,select{font-size:18px;padding:10px;margin:6px 0} input{width:100%} li{padding:8px;border-bottom:1px solid #eee}.meta{font-size:13px;color:#666}
+    </style>
+</head>
+<body>
+<h1>Search Autocomplete — Stage 6</h1>
+<p>Production platform demo: A/B, policy, privacy, abuse protection, delta index, rollout/rollback, metrics.</p>
+<select id="userId">
+    <option>anonymous</option>
+    <option>u-apple</option>
+    <option>u-dev</option>
+    <option>u-gaming</option>
+</select>
+<select id="country">
+    <option>US</option>
+    <option>PL</option>
+</select>
+<input id="q" placeholder="Try: iph, java, ps, ai..." autocomplete="off"/>
+<div id="status"></div>
+<ul id="out"></ul>
+<script>
+    const q=document.getElementById('q'), out=document.getElementById('out'), status=document.getElementById('status');
+    const userId=document.getElementById('userId'), country=document.getElementById('country'); const sessionId=crypto.randomUUID();
+    let t=null, c=null, clientCache=new Map();
+    async function run(){
+      const value=q.value.trim(); if(value.length<2){out.innerHTML='';status.textContent='';return}
+      const key=value+userId.value+country.value; if(clientCache.has(key)){render({...clientCache.get(key),cacheStatus:'CLIENT_HIT'});return}
+      if(c)c.abort(); c=new AbortController();
+      const url=`/api/v1/autocomplete?q=${encodeURIComponent(value)}&userId=${userId.value}&sessionId=${sessionId}&country=${country.value}&locale=en-US`;
+      const r=await fetch(url,{signal:c.signal}); const data=await r.json(); clientCache.set(key,data); render(data);
+    }
+    function render(data){
+      status.textContent=`cache=${data.cacheStatus}, index=${data.indexVersion}, experiment=${data.experimentVariant}, latency=${data.latencyMs}ms`;
+      out.innerHTML=''; data.suggestions.forEach(s=>{const li=document.createElement('li'); li.innerHTML=`<b>${s.text}</b><div class="meta">score=${s.score}, trend=${s.trendingScore}, personalization=${s.personalizationScore}, experimentBoost=${s.experimentBoost}</div>`; out.appendChild(li);});
+    }
+    q.addEventListener('input',()=>{clearTimeout(t); t=setTimeout(()=>run().catch(()=>{}),120)});
+</script>
+</body>
+</html>
