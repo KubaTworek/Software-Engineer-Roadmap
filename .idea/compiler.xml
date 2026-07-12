@@ -18,6 +18,7 @@
         <sourceOutputDir name="target/generated-sources/annotations" />
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
+        <module name="video-streaming-platform" />
         <module name="telemetry-server" />
         <module name="rate-limiter" />
         <module name="catalog-service" />
@@ -25,7 +26,6 @@
         <module name="rate-limiter-stage1" />
         <module name="ride-sharing-mvp" />
         <module name="notification-service" />
-        <module name="video-streaming-mvp" />
         <module name="notification-system (1)" />
         <module name="ecommerce-java-mvp" />
         <module name="news-feed" />
@@ -35,6 +35,7 @@
         <module name="chat-system" />
         <module name="reservation-service" />
         <module name="api-gateway" />
+        <module name="search-autocomplete" />
         <module name="order-service" />
         <module name="url-shortener" />
         <module name="telemetry-agent" />
@@ -67,6 +68,7 @@
       <module name="payment-mock-service (1)" target="1.8" />
       <module name="reservation-service (1)" target="1.8" />
       <module name="search-autocomplete-stage-1" target="21" />
+      <module name="video-streaming-mvp" target="21" />
     </bytecodeTargetLevel>
   </component>
   <component name="JavacSettings">
@@ -112,6 +114,7 @@
       <module name="search-autocomplete-stage-1" options="-parameters" />
       <module name="url-shortener" options="-parameters" />
       <module name="video-streaming-mvp" options="-parameters" />
+      <module name="video-streaming-platform" options="-parameters" />
     </option>
   </component>
 </project>

@@ -6,6 +6,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record TranscodingProperties(
         String ffmpegPath,
         boolean enabled,
+        boolean workerEnabled,
         String workDir,
         int hlsSegmentSeconds,
         long pollIntervalMs

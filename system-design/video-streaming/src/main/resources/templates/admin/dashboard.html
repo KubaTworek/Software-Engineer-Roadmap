@@ -17,13 +17,16 @@
 
 <h2>Videos</h2>
 <table>
-    <thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Visibility</th><th>Published</th></tr></thead>
+    <thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Visibility</th><th>Plan</th><th>Countries</th><th>DRM</th><th>Published</th></tr></thead>
     <tbody>
     <tr th:each="video : ${videos}">
         <td><code th:text="${video.id}"></code></td>
         <td th:text="${video.title}"></td>
         <td th:text="${video.status}"></td>
         <td th:text="${video.visibility}"></td>
+        <td th:text="${video.minimumPlanCode}"></td>
+        <td th:text="${video.allowedCountries}"></td>
+        <td th:text="${video.drmProtected}"></td>
         <td th:text="${video.publishedAt}"></td>
     </tr>
     </tbody>
@@ -42,5 +45,24 @@
     </tr>
     </tbody>
 </table>
+
+
+<h2>Phase 3 Premium API examples</h2>
+<pre><code>PUT /api/videos/{videoId}/premium-policy
+{
+  "minimumPlanCode": "PREMIUM",
+  "allowedCountries": "PL,DE,US",
+  "drmProtected": true,
+  "licensePolicy": "STREAMING_ONLY"
+}
+
+POST /api/premium/admin/subscriptions
+{
+  "userId": "...",
+  "planCode": "PREMIUM",
+  "expiresAt": "2027-06-10T00:00:00Z"
+}
+
+GET /api/admin/audit</code></pre>
 </body>
 </html>

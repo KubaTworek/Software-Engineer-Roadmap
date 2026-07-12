@@ -56,9 +56,8 @@ public class SecurityConfig {
                 .httpBasic(basic -> {})
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/**", "/actuator/health", "/actuator/info", "/admin/login", "/css/**", "/js/**").permitAll()
+                        .requestMatchers("/api/auth/**", "/actuator/health", "/actuator/info", "/actuator/prometheus", "/actuator/metrics/**", "/admin/login", "/css/**", "/js/**").permitAll()
                         .requestMatchers("/admin/**").hasRole("ADMIN")
-                        .requestMatchers("/actuator/prometheus", "/actuator/metrics/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)

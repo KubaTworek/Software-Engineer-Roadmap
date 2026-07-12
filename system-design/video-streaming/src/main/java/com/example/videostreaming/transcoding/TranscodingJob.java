@@ -49,6 +49,8 @@ public class TranscodingJob {
 
     public void running() { this.status = TranscodingJobStatus.RUNNING; this.attempts++; touch(); }
     public void completed() { this.status = TranscodingJobStatus.COMPLETED; this.completedAt = Instant.now(); touch(); }
+    public void retrying(String message) { this.status = TranscodingJobStatus.RETRYING; this.errorMessage = message; touch(); }
     public void failed(String message) { this.status = TranscodingJobStatus.FAILED; this.errorMessage = message; touch(); }
+    public void deadLetter(String message) { this.status = TranscodingJobStatus.DEAD_LETTER; this.errorMessage = message; touch(); }
     private void touch() { this.updatedAt = Instant.now(); }
 }
