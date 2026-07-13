@@ -1,0 +1,11 @@
+package com.ridesharing.mleta;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class MlEtaServiceApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(MlEtaServiceApplication.class, args);
+    }
+}

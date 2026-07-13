@@ -27,6 +27,18 @@
     <file url="file://$PROJECT_DIR$/system-design/notification-system/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/system-design/rate-limiter/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/system-design/rate-limiter/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/system-design/ride-sharing/services/core-api/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/system-design/ride-sharing/services/data-warehouse-consumer/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/system-design/ride-sharing/services/demand-prediction-service/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/system-design/ride-sharing/services/driver-positioning-service/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/system-design/ride-sharing/services/dynamic-pricing-service/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/system-design/ride-sharing/services/fraud-service/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/system-design/ride-sharing/services/location-service/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/system-design/ride-sharing/services/ml-eta-service/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/system-design/ride-sharing/services/ml-matching-service/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/system-design/ride-sharing/services/pricing-service/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/system-design/ride-sharing/services/realtime-gateway/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/system-design/ride-sharing/services/region-control-plane/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/system-design/ride-sharing/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/system-design/search-autocomplete/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/system-design/url-shortener/src/main/java" charset="UTF-8" />

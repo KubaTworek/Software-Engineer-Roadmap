@@ -22,7 +22,10 @@
     <file url="file://$PROJECT_DIR$/system-design/news-feed/src/main/resources/db/migration/V5__production_scale_kafka_shards_dlq.sql" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/system-design/news-feed/src/main/resources/db/migration/V6__ml_moderation_experiments_search_media_ads.sql" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/system-design/payment-system/src/main/resources/schema.sql" dialect="GenericSQL" />
-    <file url="file://$PROJECT_DIR$/system-design/ride-sharing/src/main/resources/db/migration/V1__initial_schema.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/system-design/ride-sharing/services/core-api/src/main/resources/db/migration/V1__initial_schema.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/system-design/ride-sharing/services/core-api/src/main/resources/db/migration/V2__stabilization.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/system-design/ride-sharing/services/core-api/src/main/resources/db/migration/V3__scaling_stage.sql" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/system-design/ride-sharing/services/core-api/src/main/resources/db/migration/V4__optimization_stage.sql" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/system-design/url-shortener/src/main/resources/db/migration/V1__create_urls_table.sql" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/system-design/url-shortener/src/main/resources/db/migration/V2__stage2_alias_and_integrity.sql" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/system-design/url-shortener/src/main/resources/db/migration/V3__stage3_analytics_and_blocking.sql" dialect="GenericSQL" />

@@ -1,0 +1,96 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: core-api
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/ridesharing}
+    username: ${SPRING_DATASOURCE_USERNAME:rides}
+    password: ${SPRING_DATASOURCE_PASSWORD:rides}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      group-id: core-api
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: com.ridesharing.mvp.*,com.ridesharing.*
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,loggers
+  endpoint:
+    health:
+      show-details: when_authorized
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+resilience4j:
+  retry:
+    instances:
+      maps:
+        max-attempts: 3
+        wait-duration: 200ms
+      payments:
+        max-attempts: 3
+        wait-duration: 300ms
+  circuitbreaker:
+    instances:
+      maps:
+        sliding-window-size: 20
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+      payments:
+        sliding-window-size: 20
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 15s
+
+app:
+  jwt:
+    secret: ${APP_JWT_SECRET:change-me-change-me-change-me-change-me-change-me}
+    expiration-minutes: ${APP_JWT_EXPIRATION_MINUTES:1440}
+  matching:
+    initial-radius-km: 3
+    max-candidates: 10
+  outbox:
+    poll-delay-ms: ${APP_OUTBOX_POLL_DELAY_MS:1000}
+    batch-size: ${APP_OUTBOX_BATCH_SIZE:50}
+  kafka:
+    enabled: ${APP_KAFKA_ENABLED:true}
+    topics:
+      ride-events: ride.events
+      payment-events: payment.events
+      support-events: support.events
+  maps:
+    provider: ${MAPS_PROVIDER:mock}
+  payments:
+    provider: ${PAYMENTS_PROVIDER:mock}
+  sharding:
+    default-shard: ${APP_DEFAULT_SHARD:shard-eu-1}
+  services:
+    location-service-url: ${LOCATION_SERVICE_URL:http://localhost:8081}
+    realtime-gateway-url: ${REALTIME_GATEWAY_URL:http://localhost:8082}
+    pricing-service-url: ${PRICING_SERVICE_URL:http://localhost:8083}
+    fraud-service-url: ${FRAUD_SERVICE_URL:http://localhost:8084}

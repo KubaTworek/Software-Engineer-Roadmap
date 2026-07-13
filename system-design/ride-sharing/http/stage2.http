@@ -1,0 +1,57 @@
+### Register admin
+POST http://localhost:8080/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "email": "admin@example.com",
+  "phoneNumber": "+48000000001",
+  "password": "password123",
+  "fullName": "Admin User",
+  "role": "ADMIN"
+}
+
+### Register passenger
+POST http://localhost:8080/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "email": "passenger@example.com",
+  "phoneNumber": "+48000000002",
+  "password": "password123",
+  "fullName": "Passenger User",
+  "role": "PASSENGER"
+}
+
+### Idempotent ride request
+POST http://localhost:8080/api/v1/rides
+Authorization: Bearer {{passengerToken}}
+Idempotency-Key: demo-ride-001
+Content-Type: application/json
+
+{
+  "pickup": {"lat": 52.2297, "lng": 21.0122, "address": "Warszawa Centralna"},
+  "dropoff": {"lat": 52.2400, "lng": 21.0300, "address": "Centrum"},
+  "vehicleType": "standard",
+  "paymentMethodId": "pm_mock"
+}
+
+### Create support ticket
+POST http://localhost:8080/api/v1/support/tickets
+Authorization: Bearer {{passengerToken}}
+Content-Type: application/json
+
+{
+  "rideId": "{{rideId}}",
+  "category": "PAYMENT",
+  "priority": "NORMAL",
+  "title": "Problem with payment",
+  "description": "Passenger reports a wrong fare."
+}
+
+### Admin overview
+GET http://localhost:8080/api/v1/admin/overview
+Authorization: Bearer {{adminToken}}
+
+### Admin ride history
+GET http://localhost:8080/api/v1/admin/rides/{{rideId}}/history
+Authorization: Bearer {{adminToken}}

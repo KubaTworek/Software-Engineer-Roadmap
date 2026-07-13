@@ -19,28 +19,37 @@
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
         <module name="video-streaming-platform" />
-        <module name="telemetry-server" />
-        <module name="rate-limiter" />
         <module name="catalog-service" />
-        <module name="payment-system-stage-1" />
         <module name="rate-limiter-stage1" />
-        <module name="ride-sharing-mvp" />
         <module name="notification-service" />
-        <module name="notification-system (1)" />
-        <module name="ecommerce-java-mvp" />
-        <module name="news-feed" />
+        <module name="data-warehouse-consumer" />
+        <module name="fraud-service" />
+        <module name="demand-prediction-service" />
         <module name="project-1" />
         <module name="common" />
         <module name="notification-system-stage-1" />
+        <module name="realtime-gateway" />
         <module name="chat-system" />
+        <module name="ml-matching-service" />
+        <module name="pricing-service" />
+        <module name="region-control-plane" />
+        <module name="telemetry-server" />
+        <module name="rate-limiter" />
+        <module name="location-service" />
+        <module name="payment-system-stage-1" />
+        <module name="dynamic-pricing-service" />
+        <module name="notification-system (1)" />
+        <module name="driver-positioning-service" />
+        <module name="ecommerce-java-mvp" />
+        <module name="news-feed" />
+        <module name="ml-eta-service" />
         <module name="reservation-service" />
         <module name="api-gateway" />
-        <module name="search-autocomplete" />
+        <module name="core-api" />
         <module name="order-service" />
         <module name="url-shortener" />
         <module name="telemetry-agent" />
         <module name="payment-mock-service" />
-        <module name="file-storage" />
       </profile>
       <profile name="Gradle Imported" enabled="true">
         <outputRelativeToContentRoot value="true" />
@@ -57,6 +66,7 @@
       <module name="chat-system-stage1" target="21" />
       <module name="chat-system-stage6" target="21" />
       <module name="common (1)" target="1.8" />
+      <module name="file-storage" target="21" />
       <module name="file-storage (1)" target="1.8" />
       <module name="file-storage (2) (com.example)" target="21" />
       <module name="file-storage-stage1" target="21" />
@@ -67,6 +77,9 @@
       <module name="order-service (1)" target="1.8" />
       <module name="payment-mock-service (1)" target="1.8" />
       <module name="reservation-service (1)" target="1.8" />
+      <module name="ride-sharing (1)" target="1.8" />
+      <module name="ride-sharing-mvp" target="1.5" />
+      <module name="search-autocomplete" target="21" />
       <module name="search-autocomplete-stage-1" target="21" />
       <module name="video-streaming-mvp" target="21" />
     </bytecodeTargetLevel>
@@ -85,15 +98,24 @@
       <module name="chat-system-stage6" options="-parameters" />
       <module name="common" options="-parameters" />
       <module name="common (1)" options="-parameters" />
+      <module name="core-api" options="-parameters" />
+      <module name="data-warehouse-consumer" options="-parameters" />
+      <module name="demand-prediction-service" options="-parameters" />
+      <module name="driver-positioning-service" options="-parameters" />
+      <module name="dynamic-pricing-service" options="-parameters" />
       <module name="ecommerce-java-mvp" options="-parameters" />
       <module name="file-storage" options="-parameters" />
       <module name="file-storage (1)" options="-parameters" />
       <module name="file-storage (2) (com.example)" options="-parameters" />
       <module name="file-storage-stage1" options="-parameters" />
+      <module name="fraud-service" options="-parameters" />
+      <module name="location-service" options="-parameters" />
       <module name="marketplace-modular-monolith" options="-parameters" />
       <module name="marketplace-modular-monolith.integrationTest" options="-parameters" />
       <module name="marketplace-modular-monolith.main" options="-parameters" />
       <module name="marketplace-modular-monolith.test" options="-parameters" />
+      <module name="ml-eta-service" options="-parameters" />
+      <module name="ml-matching-service" options="-parameters" />
       <module name="news-feed" options="-parameters" />
       <module name="news-feed-stage-1" options="-parameters" />
       <module name="notification-service" options="-parameters" />
@@ -105,11 +127,16 @@
       <module name="order-service (1)" options="-parameters" />
       <module name="payment-mock-service" options="-parameters" />
       <module name="payment-mock-service (1)" options="-parameters" />
+      <module name="pricing-service" options="-parameters" />
       <module name="project-1" options="-parameters" />
       <module name="rate-limiter" options="-parameters" />
+      <module name="realtime-gateway" options="-parameters" />
+      <module name="region-control-plane" options="-parameters" />
       <module name="reservation-service" options="-parameters" />
       <module name="reservation-service (1)" options="-parameters" />
-      <module name="ride-sharing-mvp" options="-parameters" />
+      <module name="ride-sharing" options="" />
+      <module name="ride-sharing (1)" options="-parameters" />
+      <module name="ride-sharing-mvp" options="" />
       <module name="search-autocomplete" options="-parameters" />
       <module name="search-autocomplete-stage-1" options="-parameters" />
       <module name="url-shortener" options="-parameters" />
