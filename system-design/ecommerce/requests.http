@@ -1,4 +1,4 @@
-### Login as customer
+### Login customer
 POST http://localhost:8080/api/auth/login
 Content-Type: application/json
 
@@ -7,7 +7,7 @@ Content-Type: application/json
   "password": "customer123"
 }
 
-### Login as admin
+### Login admin
 POST http://localhost:8080/api/auth/login
 Content-Type: application/json
 
@@ -16,38 +16,72 @@ Content-Type: application/json
   "password": "admin123"
 }
 
-### List products
-GET http://localhost:8080/api/products
-
-### Add item to cart
-POST http://localhost:8080/api/cart/items
+### Dynamic price
+POST http://localhost:8080/api/pricing/dynamic
 Content-Type: application/json
-Authorization: Bearer {{token}}
 
 {
-  "productVariantId": 1,
-  "quantity": 2
+  "productId": 1,
+  "variantId": 1,
+  "categoryId": 1,
+  "basePrice": 399.99
 }
 
-### Get cart
-GET http://localhost:8080/api/cart
-Authorization: Bearer {{token}}
-
-### Checkout
-POST http://localhost:8080/api/checkout
+### Promotion price calculation
+POST http://localhost:8080/api/promotions/price
 Content-Type: application/json
-Authorization: Bearer {{token}}
 
 {
-  "shippingAddress": "ul. Testowa 1, Warszawa",
-  "billingAddress": "ul. Testowa 1, Warszawa",
-  "shippingMethod": "COURIER_STANDARD"
+  "lines": [
+    {
+      "productId": 1,
+      "productVariantId": 1,
+      "categoryId": 1,
+      "quantity": 2,
+      "unitPrice": 399.99
+    }
+  ],
+  "shippingAmount": 15.00
 }
 
-### Mock payment success
-POST http://localhost:8080/api/payments/1/mock-success
+### Create seller
+POST http://localhost:8080/api/marketplace/sellers
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "displayName": "Demo Seller",
+  "slug": "demo-seller"
+}
+
+### Get recommendations
+GET http://localhost:8080/api/recommendations/products/1
+
+### Get loyalty account
+GET http://localhost:8080/api/loyalty/me
 Authorization: Bearer {{token}}
 
-### List orders
-GET http://localhost:8080/api/orders
+### Create return
+POST http://localhost:8080/api/returns
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "orderId": 1,
+  "reason": "Product did not meet expectations",
+  "items": [
+    {
+      "orderItemId": 1,
+      "quantity": 1,
+      "refundAmount": 100.00
+    }
+  ]
+}
+
+### Issue invoice
+POST http://localhost:8080/api/invoices/orders/1
+Authorization: Bearer {{token}}
+
+### Invoice document
+GET http://localhost:8080/api/invoices/orders/1/document
 Authorization: Bearer {{token}}

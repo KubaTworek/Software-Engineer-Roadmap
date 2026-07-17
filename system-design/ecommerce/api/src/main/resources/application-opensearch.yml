@@ -1,0 +1,7 @@
+app:
+  opensearch:
+    enabled: true
+    base-url: http://localhost:9200
+    username: admin
+    password: admin
+    products-index: products

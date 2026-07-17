@@ -18,9 +18,11 @@
         <sourceOutputDir name="target/generated-sources/annotations" />
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
+        <module name="notification-service (1) (com.example)" />
         <module name="video-streaming-platform" />
         <module name="catalog-service" />
         <module name="rate-limiter-stage1" />
+        <module name="search-indexer" />
         <module name="notification-service" />
         <module name="data-warehouse-consumer" />
         <module name="fraud-service" />
@@ -35,12 +37,12 @@
         <module name="region-control-plane" />
         <module name="telemetry-server" />
         <module name="rate-limiter" />
+        <module name="ecommerce-api" />
         <module name="location-service" />
         <module name="payment-system-stage-1" />
         <module name="dynamic-pricing-service" />
         <module name="notification-system (1)" />
         <module name="driver-positioning-service" />
-        <module name="ecommerce-java-mvp" />
         <module name="news-feed" />
         <module name="ml-eta-service" />
         <module name="reservation-service" />
@@ -103,7 +105,8 @@
       <module name="demand-prediction-service" options="-parameters" />
       <module name="driver-positioning-service" options="-parameters" />
       <module name="dynamic-pricing-service" options="-parameters" />
-      <module name="ecommerce-java-mvp" options="-parameters" />
+      <module name="ecommerce-api" options="-parameters" />
+      <module name="ecommerce-java-mvp" options="" />
       <module name="file-storage" options="-parameters" />
       <module name="file-storage (1)" options="-parameters" />
       <module name="file-storage (2) (com.example)" options="-parameters" />
@@ -120,6 +123,7 @@
       <module name="news-feed-stage-1" options="-parameters" />
       <module name="notification-service" options="-parameters" />
       <module name="notification-service (1)" options="-parameters" />
+      <module name="notification-service (1) (com.example)" options="-parameters" />
       <module name="notification-system" options="-parameters" />
       <module name="notification-system (1)" options="-parameters" />
       <module name="notification-system (2)" options="-parameters" />
@@ -139,6 +143,7 @@
       <module name="ride-sharing-mvp" options="" />
       <module name="search-autocomplete" options="-parameters" />
       <module name="search-autocomplete-stage-1" options="-parameters" />
+      <module name="search-indexer" options="-parameters" />
       <module name="url-shortener" options="-parameters" />
       <module name="video-streaming-mvp" options="-parameters" />
       <module name="video-streaming-platform" options="-parameters" />

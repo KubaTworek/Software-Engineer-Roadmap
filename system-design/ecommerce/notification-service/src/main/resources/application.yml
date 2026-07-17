@@ -1,0 +1,34 @@
+spring:
+  application:
+    name: notification-service
+  datasource:
+    url: jdbc:h2:mem:ecommerce
+    username: sa
+    password: password
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+
+server:
+  port: 8082
+
+app:
+  worker:
+    fixed-delay-ms: 5000
+    batch-size: 100
+  integrations:
+    retry:
+      max-attempts: 3
+      initial-delay-ms: 500
+      multiplier: 2.0
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  metrics:
+    tags:
+      application: notification-service
