@@ -31,6 +31,7 @@
         <module name="common" />
         <module name="notification-system-stage-1" />
         <module name="realtime-gateway" />
+        <module name="payment-system" />
         <module name="chat-system" />
         <module name="ml-matching-service" />
         <module name="pricing-service" />
