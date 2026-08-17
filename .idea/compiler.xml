@@ -43,14 +43,17 @@
         <module name="payment-system-stage-1" />
         <module name="dynamic-pricing-service" />
         <module name="notification-system (1)" />
+        <module name="video-streaming" />
         <module name="driver-positioning-service" />
         <module name="news-feed" />
         <module name="ml-eta-service" />
+        <module name="notification-system" />
         <module name="reservation-service" />
         <module name="api-gateway" />
         <module name="core-api" />
         <module name="order-service" />
         <module name="url-shortener" />
+        <module name="payment-system-stage-6" />
         <module name="telemetry-agent" />
         <module name="payment-mock-service" />
       </profile>
@@ -69,22 +72,39 @@
       <module name="chat-system-stage1" target="21" />
       <module name="chat-system-stage6" target="21" />
       <module name="common (1)" target="1.8" />
+      <module name="core-api" target="21" />
+      <module name="data-warehouse-consumer" target="21" />
+      <module name="demand-prediction-service" target="21" />
+      <module name="driver-positioning-service" target="21" />
+      <module name="dynamic-pricing-service" target="21" />
+      <module name="ecommerce-java-mvp" target="1.5" />
       <module name="file-storage" target="21" />
       <module name="file-storage (1)" target="1.8" />
       <module name="file-storage (2) (com.example)" target="21" />
       <module name="file-storage-stage1" target="21" />
+      <module name="fraud-service" target="21" />
+      <module name="location-service" target="21" />
+      <module name="ml-eta-service" target="21" />
+      <module name="ml-matching-service" target="21" />
       <module name="news-feed-stage-1" target="21" />
       <module name="notification-service (1)" target="1.8" />
-      <module name="notification-system" target="21" />
+      <module name="notification-system (1)" target="21" />
       <module name="notification-system (2)" target="21" />
       <module name="order-service (1)" target="1.8" />
       <module name="payment-mock-service (1)" target="1.8" />
+      <module name="payment-system" target="21" />
+      <module name="payment-system-stage-1" target="21" />
+      <module name="pricing-service" target="21" />
+      <module name="realtime-gateway" target="21" />
+      <module name="region-control-plane" target="21" />
       <module name="reservation-service (1)" target="1.8" />
+      <module name="ride-sharing" target="1.5" />
       <module name="ride-sharing (1)" target="1.8" />
       <module name="ride-sharing-mvp" target="1.5" />
       <module name="search-autocomplete" target="21" />
       <module name="search-autocomplete-stage-1" target="21" />
       <module name="video-streaming-mvp" target="21" />
+      <module name="video-streaming-platform" target="21" />
     </bytecodeTargetLevel>
   </component>
   <component name="JavacSettings">
@@ -146,6 +166,7 @@
       <module name="search-autocomplete-stage-1" options="-parameters" />
       <module name="search-indexer" options="-parameters" />
       <module name="url-shortener" options="-parameters" />
+      <module name="video-streaming" options="-parameters" />
       <module name="video-streaming-mvp" options="-parameters" />
       <module name="video-streaming-platform" options="-parameters" />
     </option>

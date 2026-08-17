@@ -3,7 +3,6 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/modules/marketplace-modular-monolith.main.iml" filepath="$PROJECT_DIR$/.idea/modules/marketplace-modular-monolith.main.iml" />
-      <module fileurl="file://$PROJECT_DIR$/system-design/url-shortener/url-shortener.iml" filepath="$PROJECT_DIR$/system-design/url-shortener/url-shortener.iml" />
     </modules>
   </component>
 </project>
