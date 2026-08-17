@@ -1,8 +1,25 @@
 ### IntelliJ IDEA ###
+.idea/
+*.iml
 out/
 !**/src/main/**/out/
 !**/src/test/**/out/
 .kotlin
+
+### Maven / Gradle ###
+**/target/
+**/build/
+.gradle/
+
+### Runtime artifacts ###
+*.log
+uploads/
+test-uploads/
+
+### Local configuration and secrets ###
+.env
+.env.*
+!.env.example
 
 ### Eclipse ###
 .apt_generated
