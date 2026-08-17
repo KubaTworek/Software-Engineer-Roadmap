@@ -1,0 +1,26 @@
+app:
+  datasource:
+    routing:
+      enabled: true
+    writer:
+      jdbc-url: jdbc:postgresql://localhost:5432/ecommerce
+      username: ecommerce
+      password: ecommerce
+      driver-class-name: org.postgresql.Driver
+    replicas:
+      - name: replica-1
+        jdbc-url: jdbc:postgresql://localhost:5433/ecommerce
+        username: ecommerce
+        password: ecommerce
+        driver-class-name: org.postgresql.Driver
+      - name: replica-2
+        jdbc-url: jdbc:postgresql://localhost:5434/ecommerce
+        username: ecommerce
+        password: ecommerce
+        driver-class-name: org.postgresql.Driver
+
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false

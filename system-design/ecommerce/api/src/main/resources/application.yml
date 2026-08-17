@@ -1,0 +1,103 @@
+spring:
+  application:
+    name: ecommerce-api
+
+  datasource:
+    url: jdbc:h2:mem:ecommerce
+    username: sa
+    password: password
+    driver-class-name: org.h2.Driver
+
+  h2:
+    console:
+      enabled: true
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+
+  cache:
+    type: simple
+    cache-names:
+      - categories
+      - products
+      - productBySlug
+      - searchResults
+      - catalogHome
+      - productDetails
+      - categoryTree
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 2s
+
+server:
+  port: 8080
+
+app:
+  security:
+    token-ttl-hours: 24
+
+  opensearch:
+    enabled: false
+    base-url: http://localhost:9200
+    username: admin
+    password: admin
+    products-index: products
+
+  outbox:
+    publisher-enabled: false
+    fixed-delay-ms: 5000
+    batch-size: 50
+
+  integrations:
+    retry:
+      max-attempts: 3
+      initial-delay-ms: 500
+      multiplier: 2.0
+
+  inventory:
+    expiration-worker:
+      enabled: true
+      fixed-delay-ms: 30000
+      batch-size: 100
+
+  cdn:
+    enabled: false
+    base-url: https://cdn.example.com
+    origin-base-url: https://assets.example.com
+    version: v1
+
+  catalog-cache:
+    warmer-enabled: true
+    warmer-fixed-delay-ms: 60000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,caches
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      application: ecommerce-api
+
+  stage4:
+    erp:
+      enabled: true
+    wms:
+      enabled: true
+    dynamic-pricing:
+      enabled: true
+    loyalty:
+      points-per-pln: 1
+    marketplace:
+      enabled: true

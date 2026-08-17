@@ -1,0 +1,58 @@
+global:
+  scrape_interval: 15s
+scrape_configs:
+  - job_name: core-api
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['core-api:8080']
+  - job_name: location-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['location-service:8081']
+  - job_name: realtime-gateway
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['realtime-gateway-1:8082', 'realtime-gateway-2:8082']
+  - job_name: pricing-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['pricing-service:8083']
+  - job_name: fraud-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['fraud-service:8084']
+  - job_name: data-warehouse-consumer
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['data-warehouse-consumer:8085']
+
+
+  - job_name: 'ml-eta-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['ml-eta-service:8086']
+
+  - job_name: 'ml-matching-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['ml-matching-service:8087']
+
+  - job_name: 'demand-prediction-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['demand-prediction-service:8088']
+
+  - job_name: 'driver-positioning-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['driver-positioning-service:8089']
+
+  - job_name: 'dynamic-pricing-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['dynamic-pricing-service:8090']
+
+  - job_name: 'region-control-plane'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['region-control-plane:8091']

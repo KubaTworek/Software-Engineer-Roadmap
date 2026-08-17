@@ -1,0 +1,37 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:url_shortener;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+  main:
+    banner-mode: off
+
+app:
+  public-base-url: http://sho.rt
+  cache:
+    url-ttl: PT24H
+  rate-limit:
+    create:
+      requests: 1000
+      window: PT1M
+    redirect:
+      requests: 1000
+      window: PT1M
+  analytics:
+    enabled: true
+    ip-hash-salt: test-salt
+  queue:
+    enabled: false
+  abuse:
+    enabled: true
+    suspicious-clicks-per-ip-per-short-code: 1000
+    auto-block-suspicious-events: 10000
+  admin:
+    token: test-admin-token

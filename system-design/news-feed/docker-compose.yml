@@ -1,0 +1,75 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: news-feed-stage-6-postgres
+    environment:
+      POSTGRES_DB: news_feed
+      POSTGRES_USER: news_feed
+      POSTGRES_PASSWORD: news_feed
+    ports: ["5432:5432"]
+    volumes: [news_feed_pgdata:/var/lib/postgresql/data]
+
+  redis:
+    image: redis:7-alpine
+    container_name: news-feed-stage-6-redis
+    ports: ["6379:6379"]
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: [news_feed_redisdata:/data]
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.7.1
+    container_name: news-feed-stage-6-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+    ports: ["2181:2181"]
+
+  kafka:
+    image: confluentinc/cp-kafka:7.7.1
+    container_name: news-feed-stage-6-kafka
+    depends_on: [zookeeper]
+    ports: ["9092:9092"]
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,INTERNAL://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,INTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+  opensearch:
+    image: opensearchproject/opensearch:2.17.1
+    container_name: news-feed-stage-6-opensearch
+    environment:
+      discovery.type: single-node
+      plugins.security.disabled: "true"
+      OPENSEARCH_INITIAL_ADMIN_PASSWORD: "NewsFeedStage6!"
+      bootstrap.memory_lock: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports: ["9200:9200", "9600:9600"]
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    container_name: news-feed-stage-6-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: newsfeed
+      MINIO_ROOT_PASSWORD: newsfeed-password
+    ports: ["9000:9000", "9001:9001"]
+    volumes: [news_feed_minio:/data]
+
+  prometheus:
+    image: prom/prometheus:v2.55.0
+    container_name: news-feed-stage-6-prometheus
+    ports: ["9090:9090"]
+    volumes: ["./ops/prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
+
+  zipkin:
+    image: openzipkin/zipkin:3.4
+    container_name: news-feed-stage-6-zipkin
+    ports: ["9411:9411"]
+
+volumes:
+  news_feed_pgdata:
+  news_feed_redisdata:
+  news_feed_minio:

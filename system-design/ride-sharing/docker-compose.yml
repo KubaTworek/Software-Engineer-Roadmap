@@ -1,0 +1,216 @@
+services:
+  postgres-core:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ridesharing
+      POSTGRES_USER: rides
+      POSTGRES_PASSWORD: rides
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_core:/var/lib/postgresql/data
+
+  postgres-warehouse:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: rides_warehouse
+      POSTGRES_USER: warehouse
+      POSTGRES_PASSWORD: warehouse
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_warehouse:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+  core-api:
+    build: ./services/core-api
+    depends_on:
+      - postgres-core
+      - redis
+      - kafka
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-core:5432/ridesharing
+      SPRING_DATASOURCE_USERNAME: rides
+      SPRING_DATASOURCE_PASSWORD: rides
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      LOCATION_SERVICE_URL: http://location-service:8081
+      REALTIME_GATEWAY_URL: http://realtime-gateway:8082
+      PRICING_SERVICE_URL: http://pricing-service:8083
+      FRAUD_SERVICE_URL: http://fraud-service:8084
+      ML_ETA_SERVICE_URL: http://ml-eta-service:8086
+      ML_MATCHING_SERVICE_URL: http://ml-matching-service:8087
+      DYNAMIC_PRICING_SERVICE_URL: http://dynamic-pricing-service:8090
+      REGION_CONTROL_PLANE_URL: http://region-control-plane:8091
+      APP_JWT_SECRET: change-me-change-me-change-me-change-me-change-me
+
+  location-service:
+    build: ./services/location-service
+    depends_on:
+      - redis
+      - kafka
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+
+  realtime-gateway-1:
+    build: ./services/realtime-gateway
+    depends_on:
+      - redis
+      - kafka
+    ports:
+      - "8082:8082"
+    environment:
+      SERVER_PORT: 8082
+      REALTIME_NODE_ID: rt-gateway-1
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+
+  realtime-gateway-2:
+    build: ./services/realtime-gateway
+    depends_on:
+      - redis
+      - kafka
+    ports:
+      - "8092:8082"
+    environment:
+      SERVER_PORT: 8082
+      REALTIME_NODE_ID: rt-gateway-2
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+
+  pricing-service:
+    build: ./services/pricing-service
+    depends_on:
+      - kafka
+    ports:
+      - "8083:8083"
+    environment:
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+
+  fraud-service:
+    build: ./services/fraud-service
+    depends_on:
+      - kafka
+    ports:
+      - "8084:8084"
+    environment:
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+
+  data-warehouse-consumer:
+    build: ./services/data-warehouse-consumer
+    depends_on:
+      - kafka
+      - postgres-warehouse
+    ports:
+      - "8085:8085"
+    environment:
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      WAREHOUSE_DATASOURCE_URL: jdbc:postgresql://postgres-warehouse:5432/rides_warehouse
+      WAREHOUSE_DATASOURCE_USERNAME: warehouse
+      WAREHOUSE_DATASOURCE_PASSWORD: warehouse
+
+
+  ml-eta-service:
+    build: ./services/ml-eta-service
+    depends_on:
+      - kafka
+    ports:
+      - "8086:8086"
+    environment:
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      APP_REGION: eu-central
+
+  ml-matching-service:
+    build: ./services/ml-matching-service
+    depends_on:
+      - kafka
+    ports:
+      - "8087:8087"
+    environment:
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      APP_REGION: eu-central
+
+  demand-prediction-service:
+    build: ./services/demand-prediction-service
+    depends_on:
+      - kafka
+    ports:
+      - "8088:8088"
+    environment:
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      APP_REGION: eu-central
+
+  driver-positioning-service:
+    build: ./services/driver-positioning-service
+    depends_on:
+      - demand-prediction-service
+    ports:
+      - "8089:8089"
+    environment:
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      DEMAND_SERVICE_URL: http://demand-prediction-service:8088
+      APP_REGION: eu-central
+
+  dynamic-pricing-service:
+    build: ./services/dynamic-pricing-service
+    depends_on:
+      - demand-prediction-service
+    ports:
+      - "8090:8090"
+    environment:
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      DEMAND_SERVICE_URL: http://demand-prediction-service:8088
+      APP_REGION: eu-central
+
+  region-control-plane:
+    build: ./services/region-control-plane
+    depends_on:
+      - kafka
+    ports:
+      - "8091:8091"
+    environment:
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      APP_REGION: eu-central
+
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./ops/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+volumes:
+  postgres_core:
+  postgres_warehouse:

@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: url-shortener-us-east-1-read-region
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: url-shortener
+      region: us-east-1
+  template:
+    metadata:
+      labels:
+        app: url-shortener
+        region: us-east-1
+    spec:
+      containers:
+        - name: app
+          image: ghcr.io/example/url-shortener:stage5
+          ports:
+            - containerPort: 8080
+          env:
+            - name: APP_REGION_ID
+              value: us-east-1
+            - name: APP_PRIMARY_REGION
+              value: eu-central-1
+            - name: APP_ACTIVE_ACTIVE
+              value: "false"

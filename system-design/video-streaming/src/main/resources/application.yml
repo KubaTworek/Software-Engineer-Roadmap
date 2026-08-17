@@ -1,0 +1,131 @@
+spring:
+  application:
+    name: video-streaming-platform
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/video}
+    username: ${DATABASE_USERNAME:video}
+    password: ${DATABASE_PASSWORD:video}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc.time_zone: UTC
+  flyway:
+    enabled: true
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  cache:
+    type: redis
+
+server:
+  port: ${SERVER_PORT:8080}
+
+app:
+  jwt:
+    issuer: video-streaming-platform
+    secret: ${JWT_SECRET:dev-secret-dev-secret-dev-secret-dev-secret-dev-secret}
+    access-token-minutes: ${JWT_ACCESS_TOKEN_MINUTES:60}
+  storage:
+    endpoint: ${S3_ENDPOINT:http://localhost:9000}
+    public-endpoint: ${S3_PUBLIC_ENDPOINT:http://localhost:9000}
+    access-key: ${S3_ACCESS_KEY:minioadmin}
+    secret-key: ${S3_SECRET_KEY:minioadmin}
+    bucket: ${S3_BUCKET:video-streaming}
+    region: ${S3_REGION:us-east-1}
+    presigned-upload-expiry-minutes: ${S3_UPLOAD_EXPIRY_MINUTES:30}
+    cdn-base-url: ${CDN_BASE_URL:http://localhost:9000/video-streaming}
+  transcoding:
+    ffmpeg-path: ${FFMPEG_PATH:ffmpeg}
+    enabled: ${TRANSCODING_ENABLED:true}
+    worker-enabled: ${TRANSCODING_WORKER_ENABLED:true}
+    work-dir: ${TRANSCODING_WORK_DIR:./var/transcoding}
+    hls-segment-seconds: ${HLS_SEGMENT_SECONDS:6}
+    poll-interval-ms: ${TRANSCODING_POLL_INTERVAL_MS:10000}
+  messaging:
+    exchange: ${VIDEO_EXCHANGE:video.events}
+    transcoding-queue: ${TRANSCODING_QUEUE:video.transcoding.jobs}
+    transcoding-routing-key: ${TRANSCODING_ROUTING_KEY:transcoding.requested}
+    transcoding-dlq: ${TRANSCODING_DLQ:video.transcoding.dlq}
+    transcoding-dlq-routing-key: ${TRANSCODING_DLQ_ROUTING_KEY:transcoding.dlq}
+    qoe-queue: ${QOE_QUEUE:video.qoe.events}
+    qoe-routing-key: ${QOE_ROUTING_KEY:qoe.event}
+    qoe-dlq: ${QOE_DLQ:video.qoe.dlq}
+    qoe-dlq-routing-key: ${QOE_DLQ_ROUTING_KEY:qoe.dlq}
+    live-start-queue: ${LIVE_START_QUEUE:video.live.start}
+    live-start-routing-key: ${LIVE_START_ROUTING_KEY:live.start}
+    live-stop-queue: ${LIVE_STOP_QUEUE:video.live.stop}
+    live-stop-routing-key: ${LIVE_STOP_ROUTING_KEY:live.stop}
+    live-dlq: ${LIVE_DLQ:video.live.dlq}
+    live-dlq-routing-key: ${LIVE_DLQ_ROUTING_KEY:live.dlq}
+    max-attempts: ${WORKER_MAX_ATTEMPTS:3}
+    initial-retry-delay-ms: ${WORKER_INITIAL_RETRY_DELAY_MS:5000}
+  search:
+    endpoint: ${OPENSEARCH_ENDPOINT:http://localhost:9200}
+    index: ${OPENSEARCH_INDEX:videos}
+    enabled: ${SEARCH_ENABLED:true}
+  qoe:
+    enabled: ${QOE_ENABLED:true}
+  premium:
+    signed-cookie-secret: ${SIGNED_COOKIE_SECRET:dev-signed-cookie-secret-dev-signed-cookie-secret}
+    cookie-domain: ${SIGNED_COOKIE_DOMAIN:}
+    cookie-secure: ${SIGNED_COOKIE_SECURE:false}
+  drm:
+    mock-license-enabled: ${DRM_MOCK_LICENSE_ENABLED:true}
+
+  live:
+    enabled: ${LIVE_ENABLED:true}
+    worker-enabled: ${LIVE_WORKER_ENABLED:true}
+    ffmpeg-path: ${FFMPEG_PATH:ffmpeg}
+    public-ingest-base-url: ${LIVE_PUBLIC_INGEST_BASE_URL:rtmp://localhost:1935/live}
+    internal-ingest-base-url: ${LIVE_INTERNAL_INGEST_BASE_URL:rtmp://nginx-rtmp:1935/live}
+    work-dir: ${LIVE_WORK_DIR:./var/live}
+    standard-segment-seconds: ${LIVE_STANDARD_SEGMENT_SECONDS:4}
+    low-latency-segment-seconds: ${LIVE_LOW_LATENCY_SEGMENT_SECONDS:1}
+    default-dvr-window-seconds: ${LIVE_DEFAULT_DVR_WINDOW_SECONDS:7200}
+    max-dvr-window-seconds: ${LIVE_MAX_DVR_WINDOW_SECONDS:14400}
+    live-to-vod-enabled: ${LIVE_TO_VOD_ENABLED:true}
+
+  personalization:
+    enabled: ${PERSONALIZATION_ENABLED:true}
+    default-recommendation-limit: ${PERSONALIZATION_DEFAULT_LIMIT:20}
+    trending-window-hours: ${TRENDING_WINDOW_HOURS:24}
+    candidate-pool-size: ${RECOMMENDATION_CANDIDATE_POOL_SIZE:500}
+    trending-weight: ${RANKING_TRENDING_WEIGHT:0.55}
+    affinity-weight: ${RANKING_AFFINITY_WEIGHT:0.25}
+    freshness-weight: ${RANKING_FRESHNESS_WEIGHT:0.20}
+    recompute-interval-ms: ${PERSONALIZATION_RECOMPUTE_INTERVAL_MS:600000}
+    initial-delay-ms: ${PERSONALIZATION_INITIAL_DELAY_MS:60000}
+  cdn:
+    prewarm-enabled: ${CDN_PREWARM_ENABLED:true}
+    prewarm-max-objects: ${CDN_PREWARM_MAX_OBJECTS:100}
+    provider: ${CDN_PROVIDER:local-minio}
+    connect-timeout-ms: ${CDN_CONNECT_TIMEOUT_MS:1000}
+    popular-prewarm-interval-ms: ${CDN_POPULAR_PREWARM_INTERVAL_MS:300000}
+    popular-prewarm-limit: ${CDN_POPULAR_PREWARM_LIMIT:10}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+logging:
+  level:
+    root: INFO
+    com.example.videostreaming: DEBUG

@@ -1,0 +1,87 @@
+### Login customer
+POST http://localhost:8080/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "customer@example.com",
+  "password": "customer123"
+}
+
+### Login admin
+POST http://localhost:8080/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@example.com",
+  "password": "admin123"
+}
+
+### Dynamic price
+POST http://localhost:8080/api/pricing/dynamic
+Content-Type: application/json
+
+{
+  "productId": 1,
+  "variantId": 1,
+  "categoryId": 1,
+  "basePrice": 399.99
+}
+
+### Promotion price calculation
+POST http://localhost:8080/api/promotions/price
+Content-Type: application/json
+
+{
+  "lines": [
+    {
+      "productId": 1,
+      "productVariantId": 1,
+      "categoryId": 1,
+      "quantity": 2,
+      "unitPrice": 399.99
+    }
+  ],
+  "shippingAmount": 15.00
+}
+
+### Create seller
+POST http://localhost:8080/api/marketplace/sellers
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "displayName": "Demo Seller",
+  "slug": "demo-seller"
+}
+
+### Get recommendations
+GET http://localhost:8080/api/recommendations/products/1
+
+### Get loyalty account
+GET http://localhost:8080/api/loyalty/me
+Authorization: Bearer {{token}}
+
+### Create return
+POST http://localhost:8080/api/returns
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "orderId": 1,
+  "reason": "Product did not meet expectations",
+  "items": [
+    {
+      "orderItemId": 1,
+      "quantity": 1,
+      "refundAmount": 100.00
+    }
+  ]
+}
+
+### Issue invoice
+POST http://localhost:8080/api/invoices/orders/1
+Authorization: Bearer {{token}}
+
+### Invoice document
+GET http://localhost:8080/api/invoices/orders/1/document
+Authorization: Bearer {{token}}

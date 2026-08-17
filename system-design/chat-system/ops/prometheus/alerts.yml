@@ -1,0 +1,34 @@
+groups:
+  - name: chat-system-stage6
+    rules:
+      - alert: ChatApiHighErrorRate
+        expr: sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High 5xx rate in Chat API"
+
+      - alert: ChatOutboxFailures
+        expr: chat_outbox_failed_total > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Outbox contains failed events"
+
+      - alert: ChatLocalEventQueueBacklog
+        expr: chat_local_event_queue_size > 5000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Local event queue backlog is growing"
+
+      - alert: ChatHighLatencyP95
+        expr: histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket[5m])) by (le, uri)) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "HTTP p95 latency above 1s"

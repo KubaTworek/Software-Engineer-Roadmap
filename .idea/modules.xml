@@ -2,7 +2,6 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/Software-Engineer-Roadmap.iml" filepath="$PROJECT_DIR$/Software-Engineer-Roadmap.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/modules/marketplace-modular-monolith.main.iml" filepath="$PROJECT_DIR$/.idea/modules/marketplace-modular-monolith.main.iml" />
     </modules>
   </component>

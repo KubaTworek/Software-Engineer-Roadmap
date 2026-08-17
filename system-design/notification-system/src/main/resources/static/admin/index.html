@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Notification System Admin Dashboard</title>
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; margin: 32px; background: #f7f7f7; color: #222; }
+    .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin-top: 24px; }
+    .card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+    .value { font-size: 32px; font-weight: 700; margin-top: 8px; }
+    pre { background: #111; color: #eee; padding: 16px; border-radius: 12px; overflow: auto; }
+  </style>
+</head>
+<body>
+  <h1>Notification System Admin Dashboard</h1>
+  <p>Default tenant dashboard. API supports <code>X-Tenant-Id</code>.</p>
+  <div class="grid">
+    <div class="card"><div>Queue</div><div id="queueSize" class="value">-</div></div>
+    <div class="card"><div>Jobs</div><div id="jobs" class="value">-</div></div>
+    <div class="card"><div>DLQ</div><div id="dlq" class="value">-</div></div>
+    <div class="card"><div>Outbox</div><div id="outbox" class="value">-</div></div>
+    <div class="card"><div>Audit</div><div id="auditEvents" class="value">-</div></div>
+  </div>
+  <h2>Raw</h2>
+  <pre id="raw">Loading...</pre>
+  <script>
+    async function loadDashboard() {
+      const res = await fetch('/api/v1/admin/ops/dashboard', { headers: { 'X-Tenant-Id': 'default' }});
+      const data = await res.json();
+      for (const key of ['queueSize', 'jobs', 'dlq', 'outbox', 'auditEvents']) {
+        document.getElementById(key).textContent = data[key];
+      }
+      document.getElementById('raw').textContent = JSON.stringify(data, null, 2);
+    }
+    loadDashboard();
+    setInterval(loadDashboard, 3000);
+  </script>
+</body>
+</html>

@@ -1,0 +1,55 @@
+### ML ETA
+POST http://localhost:8086/api/v1/ml/eta/predict
+Content-Type: application/json
+
+{
+  "cityId": "warsaw",
+  "vehicleType": "standard",
+  "origin": {"lat": 52.2297, "lng": 21.0122},
+  "destination": {"lat": 52.2400, "lng": 21.0500},
+  "routeDistanceKm": 6.4,
+  "hourOfDay": 17,
+  "trafficIndex": 1.4,
+  "weatherPenalty": 1.1
+}
+
+### ML Matching
+POST http://localhost:8087/api/v1/ml/matching/rank
+Content-Type: application/json
+
+{
+  "rideId": "ride-123",
+  "cityId": "warsaw",
+  "vehicleType": "standard",
+  "surgeMultiplier": 1.3,
+  "candidates": [
+    {"driverId":"driver-a","distanceKm":1.2,"pickupEtaMinutes":4.0,"driverRating":4.8,"acceptanceProbability":0.91,"recentCancellationCount":0,"sameDirection":true},
+    {"driverId":"driver-b","distanceKm":0.8,"pickupEtaMinutes":3.0,"driverRating":4.5,"acceptanceProbability":0.62,"recentCancellationCount":2,"sameDirection":false}
+  ]
+}
+
+### Demand Prediction
+GET http://localhost:8088/api/v1/demand/forecast?cityId=warsaw&h3Cell=891e2040c37ffff&horizonMinutes=15
+
+### Driver Positioning
+GET http://localhost:8089/api/v1/positioning/recommendations?driverId=driver-a&cityId=warsaw&lat=52.2297&lng=21.0122
+
+### Dynamic Pricing
+POST http://localhost:8090/api/v1/dynamic-pricing/estimate
+Content-Type: application/json
+
+{
+  "cityId": "warsaw",
+  "h3Cell": "891e2040c37ffff",
+  "vehicleType": "standard",
+  "distanceKm": 7.2,
+  "durationMinutes": 24,
+  "activeRequests": 48,
+  "availableDrivers": 25
+}
+
+### Region Control Plane
+GET http://localhost:8091/api/v1/regions
+
+### Region Routing
+GET http://localhost:8091/api/v1/regions/route?aggregateId=ride-123&cityId=warsaw

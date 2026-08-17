@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: url-shortener-eu-central-1
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: url-shortener
+      region: eu-central-1
+  template:
+    metadata:
+      labels:
+        app: url-shortener
+        region: eu-central-1
+    spec:
+      containers:
+        - name: app
+          image: ghcr.io/example/url-shortener:stage5
+          ports:
+            - containerPort: 8080
+          env:
+            - name: APP_REGION_ID
+              value: eu-central-1
+            - name: APP_PRIMARY_REGION
+              value: eu-central-1
+            - name: APP_ACTIVE_ACTIVE
+              value: "false"
+            - name: EDGE_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: url-shortener-secrets
+                  key: edge-internal-token
+            - name: ENTERPRISE_API_KEY_HASH_SALT
+              valueFrom:
+                secretKeyRef:
+                  name: url-shortener-secrets
+                  key: enterprise-api-key-hash-salt

@@ -1,0 +1,168 @@
+spring:
+  application:
+    name: rate-limiter-platform-stage6
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 500ms
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      app: rate-limiter-platform-stage6
+      region: ${REGION:eu-central-1}
+
+rate-limiter:
+  region: ${REGION:eu-central-1}
+  default-failure-strategy: LOCAL_FALLBACK
+  local-fallback:
+    enabled: true
+    default-limit: 50
+    default-window-seconds: 60
+  security:
+    trusted-proxies:
+      - "127.0.0.1"
+      - "::1"
+      - "10.0.0.0/8"
+      - "172.16.0.0/12"
+      - "192.168.0.0/16"
+    api-key-header: X-Api-Key
+    user-header: X-User-Id
+    tenant-header: X-Tenant-Id
+    plan-header: X-Plan
+  usage-events:
+    enabled: true
+    kafka-topic: rate-limit-usage-events
+  quotas:
+    enabled: true
+    monthly-default-limit: 1000000
+  config-cache:
+    maximum-size: 10000
+    expire-after-write-seconds: 30
+  rules:
+    - id: global-api-limit
+      enabled: true
+      type: GLOBAL
+      priority: 1000
+      algorithm: TOKEN_BUCKET
+      capacity: 100000
+      refillTokensPerSecond: 1666.67
+      cost: 1
+      failureStrategy: LOCAL_FALLBACK
+      regionMode: REGIONAL
+
+    - id: free-plan-default
+      enabled: true
+      type: PLAN
+      plan: FREE
+      priority: 800
+      algorithm: TOKEN_BUCKET
+      capacity: 60
+      refillTokensPerSecond: 1
+      cost: 1
+      failureStrategy: LOCAL_FALLBACK
+      regionMode: REGIONAL
+
+    - id: pro-plan-default
+      enabled: true
+      type: PLAN
+      plan: PRO
+      priority: 800
+      algorithm: TOKEN_BUCKET
+      capacity: 1000
+      refillTokensPerSecond: 50
+      cost: 1
+      failureStrategy: LOCAL_FALLBACK
+      regionMode: REGIONAL
+
+    - id: enterprise-plan-default
+      enabled: true
+      type: PLAN
+      plan: ENTERPRISE
+      priority: 800
+      algorithm: TOKEN_BUCKET
+      capacity: 20000
+      refillTokensPerSecond: 1000
+      cost: 1
+      failureStrategy: FAIL_OPEN
+      regionMode: REGIONAL
+
+    - id: tenant-acme-override
+      enabled: true
+      type: TENANT
+      tenantId: acme
+      priority: 200
+      algorithm: TOKEN_BUCKET
+      capacity: 10000
+      refillTokensPerSecond: 200
+      cost: 1
+      failureStrategy: LOCAL_FALLBACK
+      regionMode: REGIONAL
+
+    - id: user-vip-override
+      enabled: true
+      type: USER
+      userId: vip-user
+      priority: 100
+      algorithm: TOKEN_BUCKET
+      capacity: 5000
+      refillTokensPerSecond: 200
+      cost: 1
+      failureStrategy: FAIL_OPEN
+      regionMode: REGIONAL
+
+    - id: users-read-endpoint
+      enabled: true
+      type: ENDPOINT
+      method: GET
+      pathPattern: /api/users
+      priority: 500
+      algorithm: TOKEN_BUCKET
+      capacity: 300
+      refillTokensPerSecond: 10
+      cost: 1
+      failureStrategy: LOCAL_FALLBACK
+      regionMode: REGIONAL
+
+    - id: payments-write-endpoint
+      enabled: true
+      type: ENDPOINT
+      method: POST
+      pathPattern: /api/payments
+      priority: 300
+      algorithm: TOKEN_BUCKET
+      capacity: 100
+      refillTokensPerSecond: 3
+      cost: 5
+      failureStrategy: FAIL_CLOSED
+      regionMode: REGIONAL
+
+    - id: exports-endpoint
+      enabled: true
+      type: ENDPOINT
+      method: POST
+      pathPattern: /api/exports
+      priority: 250
+      algorithm: TOKEN_BUCKET
+      capacity: 20
+      refillTokensPerSecond: 0.5
+      cost: 50
+      failureStrategy: FAIL_CLOSED
+      regionMode: REGIONAL

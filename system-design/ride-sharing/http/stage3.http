@@ -1,0 +1,53 @@
+### Location update
+POST http://localhost:8081/api/v1/locations/drivers
+Content-Type: application/json
+
+{
+  "driverId": "driver-1",
+  "cityId": "warsaw",
+  "lat": 52.2297,
+  "lng": 21.0122,
+  "heading": 90,
+  "speed": 35,
+  "accuracyMeters": 6
+}
+
+### Nearby drivers
+GET http://localhost:8081/api/v1/locations/nearby-drivers?cityId=warsaw&lat=52.2297&lng=21.0122&ringSize=2&limit=10
+
+### Pricing estimate
+POST http://localhost:8083/api/v1/pricing/estimate
+Content-Type: application/json
+
+{
+  "cityId": "warsaw",
+  "vehicleType": "standard",
+  "distanceKm": 8.4,
+  "durationMinutes": 22,
+  "activeRequests": 120,
+  "availableDrivers": 80
+}
+
+### Fraud assessment
+POST http://localhost:8084/api/v1/fraud/assess
+Content-Type: application/json
+
+{
+  "subjectId": "passenger-1",
+  "subjectType": "PASSENGER",
+  "cityId": "warsaw",
+  "cancellationCountLast24h": 1,
+  "paymentFailuresLast7d": 0,
+  "accountsOnDevice": 1,
+  "maxGpsJumpKmLast10m": 0.2,
+  "promoApplied": true
+}
+
+### Core API shard diagnostics
+GET http://localhost:8080/api/v1/scaling/shard?cityId=warsaw
+
+### Realtime node diagnostics
+GET http://localhost:8082/api/v1/realtime/node
+
+### Warehouse topic counts
+GET http://localhost:8085/api/v1/warehouse/events/count-by-topic

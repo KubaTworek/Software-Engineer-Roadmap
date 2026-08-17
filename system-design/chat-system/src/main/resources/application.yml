@@ -1,0 +1,87 @@
+spring:
+  application:
+    name: chat-system-stage6
+  datasource:
+    url: jdbc:h2:mem:chatdb;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc:
+          batch_size: 50
+        order_inserts: true
+        order_updates: true
+  jackson:
+    default-property-inclusion: non_null
+
+server:
+  port: 8080
+  tomcat:
+    threads:
+      max: 250
+      min-spare: 20
+    connection-timeout: 20s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,threaddump,loggers
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when_authorized
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
+app:
+  jwt:
+    secret: "local-dev-secret-must-be-at-least-32-characters-long-change-me"
+    expiration-minutes: 1440
+
+  media:
+    local-dir: ./data/uploads
+
+  outbox:
+    batch-size: 100
+    max-attempts: 5
+    publish-delay-ms: 500
+    consume-delay-ms: 100
+
+  websocket:
+    inbound-core-pool-size: 4
+    inbound-max-pool-size: 16
+    outbound-core-pool-size: 4
+    outbound-max-pool-size: 32
+
+---
+spring:
+  config:
+    activate:
+      on-profile: postgres
+  datasource:
+    url: jdbc:postgresql://localhost:5432/chat_stage6
+    username: chat
+    password: chat
+    driver-class-name: org.postgresql.Driver
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  jpa:
+    hibernate:
+      ddl-auto: validate

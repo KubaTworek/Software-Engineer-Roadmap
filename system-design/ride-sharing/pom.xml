@@ -1,0 +1,24 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>com.ridesharing</groupId>
+    <artifactId>ride-sharing</artifactId>
+    <version>0.4.0</version>
+    <packaging>pom</packaging>
+    <name>ride-sharing</name>
+    <description>Ride Sharing Stage 4: optimization architecture with ML ETA, ML matching, demand prediction, driver positioning, dynamic pricing and multi-region active-active control plane.</description>
+    <modules>
+        <module>services/core-api</module>
+        <module>services/location-service</module>
+        <module>services/realtime-gateway</module>
+        <module>services/pricing-service</module>
+        <module>services/fraud-service</module>
+        <module>services/data-warehouse-consumer</module>
+        <module>services/ml-eta-service</module>
+        <module>services/ml-matching-service</module>
+        <module>services/demand-prediction-service</module>
+        <module>services/driver-positioning-service</module>
+        <module>services/dynamic-pricing-service</module>
+        <module>services/region-control-plane</module>
+    </modules>
+</project>

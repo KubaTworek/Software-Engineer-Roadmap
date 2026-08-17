@@ -1,0 +1,255 @@
+# Konfiguracja Spring Boot oraz komponentów infrastrukturalnych aplikacji.
+spring:
+  application:
+    # Nazwa aplikacji widoczna m.in. w logach, metrykach, tracingu i Actuatorze.
+    name: url-shortener
+
+  datasource:
+    # Podstawowe źródło danych używane, gdy read replica jest wyłączona.
+    # W trybie lokalnym aplikacja łączy się z PostgreSQL uruchomionym na localhost:5432.
+    url: jdbc:postgresql://localhost:5432/url_shortener
+
+    # Użytkownik bazy danych PostgreSQL.
+    username: url_shortener
+
+    # Hasło użytkownika bazy danych.
+    # Dobre dla lokalnego developmentu, ale w produkcji powinno pochodzić z secreta.
+    password: url_shortener
+
+  rabbitmq:
+    # Host brokera RabbitMQ.
+    # Używany przez moduł queue do asynchronicznego przetwarzania kliknięć.
+    host: localhost
+
+    # Standardowy port AMQP RabbitMQ.
+    port: 5672
+
+    # Domyślny użytkownik lokalnego RabbitMQ.
+    username: guest
+
+    # Domyślne hasło lokalnego RabbitMQ.
+    password: guest
+
+    listener:
+      simple:
+        retry:
+          # Włącza retry dla listenerów RabbitMQ.
+          # Jeśli consumer nie przetworzy wiadomości, Spring spróbuje ponownie.
+          enabled: true
+
+          # Pierwsze opóźnienie przed retry.
+          initial-interval: 500ms
+
+          # Maksymalna liczba prób przetworzenia wiadomości.
+          max-attempts: 3
+
+          # Mnożnik backoffu.
+          # Przy 500ms i multiplier=2 kolejne opóźnienia będą rosnąć wykładniczo.
+          multiplier: 2
+
+  data:
+    redis:
+      # Host Redisa używanego m.in. do cache, rate limitingu i liczników.
+      host: localhost
+
+      # Standardowy port Redisa.
+      port: 6379
+
+      # Timeout operacji Redis.
+      # Krótki timeout jest sensowny, bo Redis jest optymalizacją, nie powinien długo blokować requestów.
+      timeout: 1s
+
+  jpa:
+    hibernate:
+      # Hibernate nie tworzy ani nie zmienia schematu bazy.
+      # Schemat jest zarządzany przez Flyway.
+      ddl-auto: validate
+
+    # Wyłącza Open Session in View.
+    # To dobra praktyka dla API, bo wymusza pobieranie danych w warstwie serwisowej.
+    open-in-view: false
+
+    properties:
+      hibernate:
+        jdbc:
+          # Wymusza pracę Hibernate/JDBC w UTC.
+          # Ważne przy eventach analytics, expiresAt i multi-region.
+          time_zone: UTC
+
+  flyway:
+    # Włącza migracje Flyway przy starcie aplikacji.
+    enabled: true
+
+server:
+  # Port HTTP aplikacji.
+  port: 8080
+
+app:
+  # Publiczny bazowy URL usługi.
+  # Używany do budowania krótkich linków zwracanych w odpowiedziach API.
+  public-base-url: http://localhost:8080
+
+  datasource:
+    # Czy włączyć routing read/write z read replica.
+    # false oznacza, że aplikacja używa standardowego spring.datasource.
+    read-replica-enabled: false
+
+    # Konfiguracja write datasource.
+    # Domyślnie odwołuje się do spring.datasource, czyli tej samej lokalnej bazy.
+    write-url: ${spring.datasource.url}
+    write-username: ${spring.datasource.username}
+    write-password: ${spring.datasource.password}
+
+    # Konfiguracja read datasource.
+    # Lokalnie wskazuje na tę samą bazę, ale w produkcji powinno wskazywać na read replica.
+    read-url: ${spring.datasource.url}
+    read-username: ${spring.datasource.username}
+    read-password: ${spring.datasource.password}
+
+  region:
+    # Identyfikator regionu, w którym działa ta instancja.
+    # Można nadpisać zmienną środowiskową APP_REGION_ID.
+    region-id: ${APP_REGION_ID:local}
+
+    # Primary region przyjmujący zapisy w trybie active-passive.
+    # Można nadpisać APP_PRIMARY_REGION.
+    primary-region: ${APP_PRIMARY_REGION:local}
+
+    # Czy aplikacja działa w trybie active-active.
+    # false oznacza, że zapisy powinny trafiać tylko do primary region.
+    active-active: ${APP_ACTIVE_ACTIVE:false}
+
+    # TTL pozytywnych lookupów edge.
+    # Dotyczy aktywnych linków, które edge/CDN może cache'ować.
+    edge-cache-ttl: PT10M
+
+    # TTL negatywnych lookupów edge.
+    # Dotyczy np. nieistniejących, wygasłych albo zablokowanych linków.
+    negative-cache-ttl: PT30S
+
+  edge:
+    # Włącza wewnętrzne endpointy edge lookup.
+    enabled: true
+
+    # Token używany przez edge worker/CDN do autoryzacji requestów do /internal/edge.
+    # Lokalna wartość jest OK do developmentu, ale produkcyjnie musi być secretem.
+    internal-token: ${EDGE_INTERNAL_TOKEN:local-edge-token}
+
+    # Nagłówek Cache-Control ustawiany na publicznych redirectach.
+    # public pozwala cache'ować odpowiedź przez CDN/proxy.
+    # max-age=60 oznacza cache po stronie klienta/proxy przez 60 sekund.
+    # stale-while-revalidate=300 pozwala używać starej odpowiedzi podczas odświeżania przez 300 sekund.
+    cache-control-for-redirects: public, max-age=60, stale-while-revalidate=300
+
+  cache:
+    # Domyślny TTL cache dla mapowania shortCode -> longUrl w Redisie.
+    # Jeżeli link ma expiresAt wcześniej niż 24h, cache powinien dostać krótszy TTL.
+    url-ttl: PT24H
+
+  queue:
+    # Włącza publikowanie i konsumowanie eventów kolejki.
+    enabled: true
+
+    # Exchange RabbitMQ dla eventów kliknięć.
+    click-exchange: url-shortener.clicks.exchange
+
+    # Routing key dla wiadomości click.created.
+    click-routing-key: click.created
+
+    # Główna kolejka z eventami kliknięć.
+    click-queue: url-shortener.clicks.queue
+
+    # Dead-letter exchange dla wiadomości, których nie udało się przetworzyć.
+    click-dead-letter-exchange: url-shortener.clicks.dlx
+
+    # Dead-letter queue dla trwale nieprzetworzonych eventów kliknięć.
+    click-dead-letter-queue: url-shortener.clicks.dlq
+
+  rate-limit:
+    create:
+      # Limit tworzenia krótkich linków.
+      # Chroni przed masowym generowaniem linków, spamem i phishingiem.
+      requests: 10
+
+      # Okno czasowe limitu.
+      # 10 requestów na 1 minutę.
+      window: PT1M
+
+    redirect:
+      # Limit redirectów.
+      # Celowo wyższy niż create, bo redirect jest główną, bardzo częstą operacją systemu.
+      requests: 600
+
+      # 600 redirectów na 1 minutę.
+      window: PT1M
+
+  analytics:
+    # Włącza przetwarzanie analytics kliknięć.
+    enabled: true
+
+    # Salt używany do hashowania adresów IP.
+    # W produkcji musi być zmieniony i przechowywany jako secret.
+    ip-hash-salt: change-me-in-production
+
+  abuse:
+    # Włącza mechanizmy wykrywania nadużyć.
+    enabled: true
+
+    # Próg kliknięć z jednego IP w ten sam short code.
+    # Po przekroczeniu tego progu event może zostać oznaczony jako podejrzany.
+    suspicious-clicks-per-ip-per-short-code: 120
+
+    # Okno czasowe dla liczenia kliknięć z jednego IP.
+    ip-window: PT5M
+
+    # Liczba podejrzanych eventów dla short code, po której może nastąpić auto-block.
+    auto-block-suspicious-events: 500
+
+    # Okno czasowe dla liczenia podejrzanych eventów short code.
+    short-code-window: PT15M
+
+    # Lista domen refererów traktowanych jako podejrzane/zablokowane.
+    # Pusta lista oznacza brak blokad po referrer domain.
+    blocked-referrer-domains: []
+
+    # Tokeny User-Agent charakterystyczne dla skanerów, botów lub automatycznych klientów.
+    suspicious-user-agent-tokens:
+      - sqlmap
+      - nikto
+      - masscan
+      - zgrab
+      - python-requests
+      - go-http-client
+
+  admin:
+    # Prosty token administracyjny używany przez endpointy admin.
+    # Lokalnie OK, ale produkcyjnie powinien być zastąpiony przez OAuth2/OIDC, mTLS albo IAM.
+    token: local-admin-token
+
+  enterprise:
+    # Włącza Enterprise API.
+    enabled: true
+
+    # Nazwa nagłówka z API key.
+    api-key-header: X-Api-Key
+
+    # Salt do hashowania API key.
+    # Produkcyjnie powinien pochodzić z secreta i nie powinien być commitowany do repo.
+    api-key-hash-salt: ${ENTERPRISE_API_KEY_HASH_SALT:change-me-enterprise-salt}
+
+    # Maksymalna liczba URL-i w jednym requestcie bulk create.
+    bulk-max-size: 100
+
+    # Domyślny limit requestów na minutę dla enterprise API key.
+    default-rate-limit-per-minute: 1000
+
+    # TTL dla idempotency keys, jeśli endpointy enterprise wspierają idempotencję.
+    idempotency-ttl: PT24H
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # Endpointy Actuator wystawione przez HTTP.
+        # health/info są diagnostyczne, metrics/prometheus do observability.
+        include: health,info,metrics,prometheus

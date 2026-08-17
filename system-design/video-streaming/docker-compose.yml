@@ -1,0 +1,185 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: video
+      POSTGRES_USER: video
+      POSTGRES_PASSWORD: video
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U video -d video"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: video
+      RABBITMQ_DEFAULT_PASS: video
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  opensearch:
+    image: opensearchproject/opensearch:2.15.0
+    environment:
+      discovery.type: single-node
+      plugins.security.disabled: "true"
+      OPENSEARCH_INITIAL_ADMIN_PASSWORD: "Admin123!"
+      bootstrap.memory_lock: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    ports:
+      - "9200:9200"
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200 >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  nginx-rtmp:
+    image: alfg/nginx-rtmp:latest
+    ports:
+      - "1935:1935"
+      - "8088:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost/stat >/dev/null 2>&1 || exit 0"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./ops/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - api
+      - worker
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    depends_on:
+      - prometheus
+
+  api:
+    build: .
+    environment: &app-env
+      DATABASE_URL: jdbc:postgresql://postgres:5432/video
+      DATABASE_USERNAME: video
+      DATABASE_PASSWORD: video
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: video
+      RABBITMQ_PASSWORD: video
+      OPENSEARCH_ENDPOINT: http://opensearch:9200
+      S3_ENDPOINT: http://host.docker.internal:9000
+      S3_PUBLIC_ENDPOINT: http://host.docker.internal:9000
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+      S3_BUCKET: video-streaming
+      CDN_BASE_URL: http://localhost:9000/video-streaming
+      PERSONALIZATION_ENABLED: "true"
+      PERSONALIZATION_RECOMPUTE_INTERVAL_MS: 600000
+      JWT_SECRET: dev-secret-dev-secret-dev-secret-dev-secret-dev-secret
+      FFMPEG_PATH: ffmpeg
+      TRANSCODING_WORKER_ENABLED: "false"
+      LIVE_WORKER_ENABLED: "false"
+      LIVE_PUBLIC_INGEST_BASE_URL: rtmp://localhost:1935/live
+      LIVE_INTERNAL_INGEST_BASE_URL: rtmp://nginx-rtmp:1935/live
+    ports:
+      - "8080:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      nginx-rtmp:
+        condition: service_started
+
+  worker:
+    build: .
+    environment:
+      <<: *app-env
+      SERVER_PORT: 8081
+      TRANSCODING_WORKER_ENABLED: "true"
+      LIVE_WORKER_ENABLED: "true"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      nginx-rtmp:
+        condition: service_started
+    deploy:
+      replicas: 1
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:
+  opensearch_data:
+  minio_data:

@@ -1,0 +1,31 @@
+server:
+  port: 8081
+spring:
+  application:
+    name: location-service
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  metrics:
+    tags:
+      application: ${spring.application.name}
+app:
+  geo:
+    h3-resolution: ${APP_H3_RESOLUTION:8}
+    nearby-ring-size: ${APP_H3_RING_SIZE:2}
+    stale-after-seconds: ${APP_LOCATION_STALE_AFTER_SECONDS:30}
+  kafka:
+    topics:
+      driver-location-updated: driver.location.updated
+      driver-availability-updated: driver.availability.updated

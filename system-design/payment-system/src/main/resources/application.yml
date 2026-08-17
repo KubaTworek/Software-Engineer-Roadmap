@@ -1,0 +1,40 @@
+spring:
+  application:
+    name: payment-system-stage-6
+  datasource:
+    url: jdbc:h2:mem:payments;MODE=PostgreSQL;DATABASE_TO_UPPER=false
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+
+payment-system:
+  webhooks:
+    mock-secret: stage-6-demo-secret
+  circuit-breaker:
+    failure-threshold: 3
+  risk:
+    high-risk-threshold: 80
+    review-threshold: 50
+  fx:
+    settlement-currency: PLN
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+server:
+  port: 8080
