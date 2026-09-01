@@ -8,6 +8,14 @@ public record PoolingConfig(
         int pauseBetweenScenariosMillis
 ) {
 
+    public PoolingConfig {
+        requirePositive(iterations, "iterations");
+        requirePositive(payloadSizeBytes, "payloadSizeBytes");
+        requireNonNegative(poolSize, "poolSize");
+        requirePositive(workerThreads, "workerThreads");
+        requireNonNegative(pauseBetweenScenariosMillis, "pauseBetweenScenariosMillis");
+    }
+
     public static PoolingConfig fromArgs(String[] args) {
         // Defaults are intentionally moderate.
         // They should make allocation and pooling behavior visible without requiring a huge heap.
@@ -32,6 +40,8 @@ public record PoolingConfig(
                 pauseBetweenScenariosMillis = Integer.parseInt(
                         arg.substring("--pauseBetweenScenariosMillis=".length())
                 );
+            } else {
+                throw new IllegalArgumentException("Unsupported argument: " + arg);
             }
         }
 
@@ -42,5 +52,17 @@ public record PoolingConfig(
                 workerThreads,
                 pauseBetweenScenariosMillis
         );
+    }
+
+    private static void requirePositive(int value, String name) {
+        if (value <= 0) {
+            throw new IllegalArgumentException(name + " must be greater than zero");
+        }
+    }
+
+    private static void requireNonNegative(int value, String name) {
+        if (value < 0) {
+            throw new IllegalArgumentException(name + " must not be negative");
+        }
     }
 }

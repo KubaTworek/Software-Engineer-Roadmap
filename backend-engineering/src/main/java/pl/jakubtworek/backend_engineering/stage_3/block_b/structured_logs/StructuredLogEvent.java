@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Represents a single structured observability event.
@@ -12,6 +13,13 @@ import java.util.Map;
  * often need dot-notated keys such as "service.name", "http.route", or "db.system.name".
  */
 public final class StructuredLogEvent {
+
+    private static final Set<String> RESERVED_FIELDS = Set.of(
+            "timestamp", "observed_timestamp", "severity_text", "severity_number",
+            "event.name", "body", "service.name", "service.version",
+            "service.instance.id", "deployment.environment.name",
+            "request_id", "trace_id", "span_id"
+    );
 
     private final Map<String, Object> fields;
 
@@ -43,8 +51,9 @@ public final class StructuredLogEvent {
                 throw new IllegalArgumentException("resource must not be null");
             }
 
-            fields.put("timestamp", Instant.now().toString());
-            fields.put("observed_timestamp", Instant.now().toString());
+            Instant now = Instant.now();
+            fields.put("timestamp", now.toString());
+            fields.put("observed_timestamp", now.toString());
             fields.putAll(resource.toLogFields());
         }
 
@@ -117,7 +126,11 @@ public final class StructuredLogEvent {
          * so prefer stable and bounded attributes whenever possible.
          */
         public Builder attribute(String key, Object value) {
-            fields.put(requireNonBlank(key, "key"), value);
+            String validatedKey = requireNonBlank(key, "key");
+            if (RESERVED_FIELDS.contains(validatedKey)) {
+                throw new IllegalArgumentException("custom attribute cannot overwrite reserved field: " + validatedKey);
+            }
+            fields.put(validatedKey, requireNonNull(value, "value"));
             return this;
         }
 

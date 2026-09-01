@@ -1,4 +1,19 @@
-# Case 10 — CPU hotspot vs I/O bottleneck: rozdziel CPU-bound od wait-bound
+# cpu vs io
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** cpu vs io.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „cpu vs io” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=WorkloadCorrectnessTest" test`
+> - **Role klas:** brak klasy-kontrprzykładu; pozostałe typy są minimalnymi modelami pojęć opisanych niżej.
+> - **Granica:** Wynik eksperymentu opisuje tę maszynę i workload; nie jest uniwersalną liczbą produkcyjną.
+<!-- material-card:end -->
+
+## Case 10 — CPU hotspot vs I/O bottleneck: rozdziel CPU-bound od wait-bound
+
+
 
 ## Wprowadzenie
 
@@ -24,7 +39,7 @@ jest jednym z fundamentów poprawnej interpretacji profilowania.
 
 ---
 
-# CPU-bound vs wait-bound
+## CPU-bound vs wait-bound
 
 To dwa zupełnie różne typy workloadów.
 
@@ -61,7 +76,7 @@ Typowe przykłady:
 
 ---
 
-# Dlaczego wall-clock time jest mylący
+## Dlaczego wall-clock time jest mylący
 
 To kluczowy problem.
 
@@ -87,7 +102,7 @@ Ale przyczyna problemu jest całkowicie inna.
 
 ---
 
-# CPU samples — co naprawdę mierzy profiler
+## CPU samples — co naprawdę mierzy profiler
 
 JFR i większość profilerów CPU używa:
 ## sampling profiler
@@ -104,7 +119,7 @@ To fundamentalna różnica.
 
 ---
 
-# Dlaczego wait-bound workload nie pojawia się jako hotspot CPU
+## Dlaczego wait-bound workload nie pojawia się jako hotspot CPU
 
 Jeżeli wątek wykonuje:
 
@@ -131,7 +146,7 @@ I właśnie dlatego:
 
 ---
 
-# Thread states — klucz do interpretacji
+## Thread states — klucz do interpretacji
 
 W JVM wątki mogą znajdować się w różnych stanach:
 - RUNNABLE,
@@ -164,7 +179,7 @@ Typowe przyczyny:
 
 ---
 
-# CPU hotspot
+## CPU hotspot
 
 Hotspot CPU to:
 > fragment kodu, który realnie konsumuje czas procesora.
@@ -184,7 +199,7 @@ To zwykle miejsca:
 
 ---
 
-# I/O bottleneck
+## I/O bottleneck
 
 I/O bottleneck wygląda zupełnie inaczej.
 
@@ -208,7 +223,7 @@ Typowe przykłady:
 
 ---
 
-# Dlaczego wysokie CPU nie zawsze oznacza problem
+## Dlaczego wysokie CPU nie zawsze oznacza problem
 
 To kolejna ważna intuicja.
 
@@ -231,7 +246,7 @@ Np.:
 
 ---
 
-# Dlaczego niski CPU też może być problemem
+## Dlaczego niski CPU też może być problemem
 
 To bardzo częsty przypadek produkcyjny.
 
@@ -252,7 +267,7 @@ Wtedy optymalizacja algorytmów CPU:
 
 ---
 
-# JFR — dlaczego jest idealny do tego case’u
+## JFR — dlaczego jest idealny do tego case’u
 
 JFR bardzo dobrze łączy:
 - profiling CPU,
@@ -269,7 +284,7 @@ To pozwala analizować:
 
 ---
 
-# JMC — interpretacja danych
+## JMC — interpretacja danych
 
 W JDK Mission Control najważniejsze widoki dla tego case’u to:
 - Hot Methods,
@@ -296,7 +311,7 @@ Natomiast:
 
 ---
 
-# Mixed workloads — najtrudniejszy przypadek
+## Mixed workloads — najtrudniejszy przypadek
 
 W praktyce większość systemów jest:
 ## mixed workload
@@ -313,7 +328,7 @@ To właśnie dlatego:
 
 ---
 
-# Dlaczego `Thread.sleep()` jest dobrym eksperymentem
+## Dlaczego `Thread.sleep()` jest dobrym eksperymentem
 
 `Thread.sleep()`:
 - bardzo dobrze symuluje wait-bound behavior,
@@ -327,7 +342,7 @@ To pozwala łatwo pokazać:
 
 ---
 
-# Najczęstszy błąd profilowania
+## Najczęstszy błąd profilowania
 
 Najczęstszy błąd wygląda tak:
 
@@ -348,7 +363,7 @@ To prowadzi do:
 
 ---
 
-# Najważniejsza intuicja praktyczna
+## Najważniejsza intuicja praktyczna
 
 Najbardziej praktyczny wniosek brzmi:
 
@@ -361,7 +376,7 @@ I właśnie dlatego:
 
 ---
 
-# Najważniejsze wnioski
+## Najważniejsze wnioski
 
 Najbardziej użyteczny model mentalny wygląda tak:
 

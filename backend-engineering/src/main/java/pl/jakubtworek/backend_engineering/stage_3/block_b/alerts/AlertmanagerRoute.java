@@ -16,6 +16,7 @@ public final class AlertmanagerRoute {
     public AlertmanagerRoute(String receiver, List<String> matchers) {
         this.receiver = requireNonBlank(receiver, "receiver");
         this.matchers = List.copyOf(Objects.requireNonNull(matchers, "matchers must not be null"));
+        if (this.matchers.isEmpty()) throw new IllegalArgumentException("matchers must not be empty");
     }
 
     public String receiver() {

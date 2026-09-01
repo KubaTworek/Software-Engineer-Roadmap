@@ -1,4 +1,19 @@
-# Konsument zdarzeń: idempotencja, deduplikacja, retry i odtwarzanie
+# kafka
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `praktyka-produkcyjna`
+> - **Uczy:** kafka.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „kafka” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=KafkaConfigurationTest" test`
+> - **Role klas:** `SafeOffsetCommitCoordinator` = `correct`; `ConsumerConfiguration` = `production-boundary`, `EventPublisher` = `production-boundary`, `KafkaEventPublisher` = `production-boundary` (+2).
+> - **Granica:** Laboratorium pokazuje kontrakt i failure modes; nie zastępuje pełnego testu end-to-end ani operacyjnej konfiguracji środowiska.
+<!-- material-card:end -->
+
+## Apache Kafka: partycjonowanie, consumer groups, offsety i odporne przetwarzanie
+
+
 
 W architekturze event-driven konsument jest elementem, który reaguje na zdarzenia opublikowane przez inne części systemu. W przykładowym systemie e-commerce rolę konsumentów pełnią między innymi `Payment Service` oraz `Shipping Service`. Serwis płatności może reagować na zdarzenie `OrderPlaced`, aby rozpocząć autoryzację płatności, natomiast serwis wysyłki może reagować na `PaymentAuthorized`, aby rozpocząć proces realizacji zamówienia. Na poziomie biznesowym wygląda to jak prosty przepływ, ale technicznie wymaga bardzo ostrożnego projektowania, ponieważ komunikacja przez broker wiadomości nie daje takich samych gwarancji jak lokalne wywołanie metody czy pojedyncza transakcja bazodanowa.
 
@@ -41,3 +56,24 @@ Dobrze zaprojektowany konsument powinien być także obserwowalny. Same logi bł
 W logowaniu należy konsekwentnie używać `correlationId`, `eventId`, typu zdarzenia, partycji i offsetu. `correlationId` pozwala połączyć wiele zdarzeń należących do tego samego przepływu biznesowego, na przykład całej sagi zamówienia. `eventId` pozwala jednoznacznie zidentyfikować konkretną wiadomość i sprawdzić, czy była przetwarzana wielokrotnie. Partycja i offset umożliwiają odnalezienie zdarzenia w Kafce oraz analizę problemów operacyjnych. Bez tych danych diagnozowanie błędów w systemie rozproszonym staje się znacznie trudniejsze.
 
 Podsumowując, konsument w architekturze event-driven powinien być projektowany z założeniem awarii, duplikatów i opóźnień. Model `at-least-once` jest praktyczny i odporny, ale przenosi część odpowiedzialności na aplikację. Konsument musi umieć rozpoznać, że zdarzenie było już przetworzone, wykonać efekty uboczne atomowo, zatwierdzić offset dopiero po zakończeniu pracy, ponawiać operacje przy błędach przejściowych, izolować wiadomości trujące w DLQ i umożliwiać kontrolowany replay. Właśnie te mechanizmy sprawiają, że system event-driven może działać niezawodnie mimo braku globalnych transakcji i mimo tego, że poszczególne serwisy są od siebie luźno powiązane.
+
+## Laboratorium z prawdziwą infrastrukturą
+
+Opisane gwarancje są wykonywalnie sprawdzane w
+`testing/integration/KafkaPostgresSemanticsTest.java`. Test korzysta bezpośrednio
+z Kafka Client API i JDBC, dzięki czemu pokazuje partycję, bieżący offset,
+zatwierdzony offset oraz commit i rollback PostgreSQL. Nie używa Springowego
+listenera, ponieważ celem laboratorium jest odsłonięcie mechaniki brokera.
+
+Suite rozdziela trzy różne pojęcia:
+
+- kolejność jest gwarantowana w partycji, a stabilny klucz wybiera partycję,
+- commit offsetu opisuje postęp grupy, nie atomowość efektu biznesowego,
+- unikalny marker w tej samej transakcji SQL zapewnia idempotentny efekt po
+  redelivery.
+
+Pokazany przepływ retry/DLQ to celowo jawne `publish → commit`. Nie jest to
+transakcja atomowa: crash pomiędzy krokami może wyprodukować duplikat w retry lub
+DLQ. Gdy wymagana jest atomowość Kafka→Kafka, należy użyć transakcyjnego
+producenta i `sendOffsetsToTransaction`; gdy w przepływie uczestniczy baza,
+potrzebny jest trwały zapis pośredni lub idempotencja odbiorcy.

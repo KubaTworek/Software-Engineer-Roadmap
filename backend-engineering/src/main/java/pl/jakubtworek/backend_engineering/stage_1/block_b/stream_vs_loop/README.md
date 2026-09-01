@@ -1,4 +1,19 @@
-# Case 4 — Stream vs for-loop
+# stream vs loop
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** stream vs loop.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „stream vs loop” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=StreamBenchmarkCorrectnessTest" test`
+> - **Role klas:** brak klasy-kontrprzykładu; pozostałe typy są minimalnymi modelami pojęć opisanych niżej.
+> - **Granica:** Wynik eksperymentu opisuje tę maszynę i workload; nie jest uniwersalną liczbą produkcyjną.
+<!-- material-card:end -->
+
+## Case 4 — Stream vs for-loop
+
+
 
 ## Wprowadzenie
 
@@ -31,7 +46,7 @@ Najważniejsza intuicja brzmi:
 
 ---
 
-# Dlaczego klasyczny for-loop jest tak szybki
+## Dlaczego klasyczny for-loop jest tak szybki
 
 Klasyczna pętla:
 
@@ -64,7 +79,7 @@ for-loop często jest praktycznie idealnym przypadkiem dla CPU i JIT.
 
 ---
 
-# Co dodaje Stream API
+## Co dodaje Stream API
 
 Stream API wprowadza dodatkową warstwę abstrakcji.
 
@@ -96,7 +111,7 @@ koszt abstrakcji może stać się zauważalny.
 
 ---
 
-# Primitive streams vs boxed streams
+## Primitive streams vs boxed streams
 
 To jedno z najważniejszych rozróżnień.
 
@@ -138,7 +153,7 @@ szczególnie w hot path.
 
 ---
 
-# Boxing — ukryty koszt
+## Boxing — ukryty koszt
 
 Boxing jest często niedoceniany.
 
@@ -168,7 +183,7 @@ W nowoczesnych CPU locality pamięci bywa ważniejsza niż sama liczba instrukcj
 
 ---
 
-# Allocation overhead
+## Allocation overhead
 
 Stream sam w sobie nie zawsze oznacza ogromne alokacje.
 
@@ -201,7 +216,7 @@ W hot path może to oznaczać:
 
 ---
 
-# Dispatch i branch prediction
+## Dispatch i branch prediction
 
 For-loop daje CPU bardzo przewidywalny przepływ wykonania.
 
@@ -219,7 +234,7 @@ Przy dużych wolumenach danych te efekty zaczynają być mierzalne.
 
 ---
 
-# JIT i inlining
+## JIT i inlining
 
 Nowoczesny HotSpot jest bardzo agresywny.
 
@@ -245,7 +260,7 @@ W praktyce:
 
 ---
 
-# Parallel Stream — częsty overengineering
+## Parallel Stream — częsty overengineering
 
 `parallelStream()` wygląda atrakcyjnie:
 
@@ -274,7 +289,7 @@ parallel stream bardzo często jest wolniejszy.
 
 ---
 
-# Dlaczego potrzebny jest JMH
+## Dlaczego potrzebny jest JMH
 
 Porównania:
 - Stream vs for-loop
@@ -307,7 +322,7 @@ który:
 
 ---
 
-# Najważniejsza praktyczna intuicja
+## Najważniejsza praktyczna intuicja
 
 Najważniejszy wniosek nie brzmi:
 
@@ -333,7 +348,7 @@ Dlatego decyzja powinna zależeć od:
 
 ---
 
-# Najważniejsze wnioski
+## Najważniejsze wnioski
 
 Najbardziej użyteczny model mentalny wygląda tak:
 
@@ -347,3 +362,17 @@ Najbardziej użyteczny model mentalny wygląda tak:
 - JIT potrafi zoptymalizować część pipeline streamowego, ale nie wszystko,
 - benchmarki wymagają JMH,
 - wybór między streamem a pętlą powinien wynikać z charakterystyki hot path.
+
+## Kontrakt porównania i alokacji
+
+`StreamVsLoopBenchmark` oraz `ParallelStreamBenchmark` porównują warianty zwracające
+tę samą sumę. `StreamAllocationBenchmark` wymusza także ten sam wynik materializacji
+po obu stronach, dzięki czemu `-prof gc` nie mierzy przypadkiem dwóch różnych zadań.
+
+```powershell
+java -jar target\benchmarks.jar '.*StreamAllocationBenchmark.*' -prof gc
+```
+
+Interpretuj przede wszystkim `gc.alloc.rate.norm` (`B/op`). Alokacja w MB/s zależy
+również od throughputu, więc szybszy wariant może alokować więcej na sekundę, mimo
+że zużywa mniej bajtów na operację.

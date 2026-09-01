@@ -1,25 +1,61 @@
-# Walidacja i obsługa błędów w aplikacjach REST w Spring
+# exception
 
-W aplikacjach REST bardzo istotne jest zapewnienie spójnej obsługi błędów oraz poprawnej walidacji danych wejściowych. Klient API powinien zawsze otrzymywać przewidywalną odpowiedź zawierającą odpowiedni kod HTTP, czytelny komunikat oraz — w przypadku błędów walidacji — szczegóły dotyczące niepoprawnych pól. Jednocześnie aplikacja nie powinna ujawniać informacji wewnętrznych, takich jak stack trace, komunikaty SQL czy szczegóły implementacyjne backendu. Takie podejście określa się często jako „higienę błędów”.
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** exception.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „exception” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=ExceptionApiContractTest" test`
+> - **Role klas:** `UserController` = `production-boundary`.
+> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+<!-- material-card:end -->
 
-W Springu centralnym mechanizmem obsługi wyjątków jest `@RestControllerAdvice`. Jest to rozszerzenie `@ControllerAdvice`, które automatycznie serializuje odpowiedzi do formatu JSON. Dzięki temu możliwe jest globalne przechwytywanie wyjątków rzucanych przez kontrolery REST oraz mapowanie ich na odpowiednie odpowiedzi HTTP. Zamiast obsługiwać wyjątki w każdym kontrolerze osobno, cała logika obsługi błędów znajduje się w jednym miejscu.
+## Walidacja i jeden kontrakt błędów REST
 
-Najczęściej tworzy się własny model odpowiedzi błędu, np. `ApiError`. Taki obiekt zazwyczaj zawiera kod błędu, komunikat, status HTTP, timestamp oraz opcjonalnie listę błędów walidacyjnych. Pozwala to utrzymać jednolity format odpowiedzi w całym API. Kluczowe jest jednak, aby komunikaty zwracane klientowi były bezpieczne i nie ujawniały szczegółów działania systemu. Szczegółowe informacje powinny trafiać wyłącznie do logów serwera.
 
-Obsługa wyjątków w `@RestControllerAdvice` opiera się o adnotację `@ExceptionHandler`. Możliwe jest definiowanie osobnych metod obsługujących różne typy wyjątków, np. `ResourceNotFoundException`, `BadRequestException` czy `BusinessRuleViolationException`. Dzięki temu można precyzyjnie mapować wyjątki domenowe na odpowiednie kody HTTP, takie jak `404 NOT_FOUND`, `400 BAD_REQUEST` lub `409 CONFLICT`.
 
-Bardzo ważnym aspektem aplikacji REST jest walidacja danych wejściowych. W Springu najczęściej wykorzystuje się Bean Validation oparty o adnotacje takie jak `@NotBlank`, `@Size`, `@Email` czy `@Min`. Reguły walidacji definiuje się bezpośrednio w klasach DTO. Walidacja uruchamiana jest poprzez użycie `@Valid` przy parametrze `@RequestBody` w kontrolerze. Jeśli dane nie spełniają wymagań, Spring automatycznie rzuca `MethodArgumentNotValidException`.
+Klient powinien móc obsłużyć błąd na podstawie stabilnego statusu HTTP i maszynowego `code`, bez parsowania tekstu przeznaczonego dla człowieka. Laboratorium używa wyłącznie `ProblemDetail`, zgodnego z aktualnym standardem Problem Details (RFC 9457), zamiast mieszać własny `ApiError` z drugim formatem.
 
-Najczęściej wyjątek ten jest obsługiwany globalnie w `@RestControllerAdvice`. Na podstawie `BindingResult` można odczytać listę błędnych pól i przygotować szczegółową odpowiedź zawierającą informacje o każdym błędzie walidacji. Dzięki temu klient API dokładnie wie, które pola są niepoprawne i dlaczego.
+## Kształt odpowiedzi
 
-Spring pozwala również na ręczną obsługę walidacji przy użyciu `BindingResult`. W takim podejściu kontroler sam sprawdza, czy wystąpiły błędy walidacji. Rozwiązanie to daje większą kontrolę, ale zwykle prowadzi do powielania kodu i mniej spójnej obsługi błędów. W praktyce globalna obsługa wyjątków jest znacznie bardziej przejrzysta i łatwiejsza w utrzymaniu.
+```json
+{
+  "type": "https://api.example.com/problems/validation_failed",
+  "title": "Bad Request",
+  "status": 400,
+  "detail": "Request body validation failed",
+  "code": "VALIDATION_FAILED",
+  "fields": {
+    "email": "Email must be valid"
+  }
+}
+```
 
-Walidacja może dotyczyć nie tylko `RequestBody`, ale również parametrów metod, `@PathVariable` czy `@RequestParam`. W takich przypadkach Spring rzuca zwykle `ConstraintViolationException`. Aby aktywować walidację na poziomie metod serwisowych lub komponentów, stosuje się adnotację `@Validated`.
+`type` identyfikuje klasę problemu, `code` jest stabilnym kodem aplikacyjnym, a `detail` może zostać zmieniony lub zlokalizowany. Nie zwracamy stack trace, SQL, nazw klas ani sekretów. Pełny wyjątek trafia do logu wraz z correlation ID.
 
-Od Spring Framework 6 dostępny jest również mechanizm `ProblemDetail`, oparty o standard RFC-7807. `ProblemDetail` reprezentuje standardowy format odpowiedzi błędu HTTP i zawiera pola takie jak `type`, `title`, `status` oraz `detail`. Spring automatycznie serializuje taki obiekt do `application/problem+json`. Jest to bardziej standaryzowane podejście niż własny model `ApiError`, jednak w praktyce należy konsekwentnie wybrać jeden format odpowiedzi błędów dla całego API.
+## Mapowanie znaczeń
 
-W aplikacjach zabezpieczonych Spring Security część błędów obsługiwana jest automatycznie przez framework. Brak uwierzytelnienia skutkuje kodem `401 Unauthorized`, natomiast brak uprawnień powoduje `403 Forbidden`. Własne `@ExceptionHandler` mogą jednak przechwytywać niektóre wyjątki bezpieczeństwa, np. `AccessDeniedException`, aby zachować spójny format odpowiedzi.
+| Sytuacja | Status | Uzasadnienie |
+|---|---:|---|
+| niepoprawny request lub parametr | 400 | klient nie spełnił składni kontraktu |
+| brak uwierzytelnienia | 401 | nie ustalono tożsamości |
+| brak uprawnienia | 403 | tożsamość jest znana, ale operacja zabroniona |
+| brak zasobu | 404 | wskazany zasób nie istnieje lub nie może być ujawniony |
+| konflikt z aktualnym stanem | 409 | request jest poprawny, lecz koliduje ze stanem domeny |
+| stary `If-Match` | 412 | warunek zapisany przez klienta nie jest już prawdziwy |
+| brak wymaganego `If-Match` | 428 | serwer wymaga operacji warunkowej |
+| limit ruchu | 429 | klient powinien respektować `Retry-After` |
+| nieoczekiwany błąd | 500 | szczegóły pozostają po stronie serwera |
 
-Jednym z najważniejszych elementów dobrej architektury REST jest oddzielenie wyjątków domenowych od technicznych. Wyjątki biznesowe powinny być zrozumiałe dla klienta API i mapowane na odpowiednie statusy HTTP, natomiast wyjątki techniczne powinny być logowane po stronie serwera i ukrywane przed klientem. Klient nie powinien otrzymywać stack trace ani szczegółów błędów SQL, ponieważ może to prowadzić do wycieków informacji i problemów bezpieczeństwa.
+Nie każdy wyjątek biznesowy jest `400`. Próba utworzenia duplikatu może być `409`, a brak precondition ma własną semantykę. Status jest częścią kontraktu i powinien pomagać klientowi zdecydować: popraw dane, uwierzytelnij się, ponów później czy odśwież zasób.
 
-Globalna obsługa błędów oraz poprawna walidacja znacząco poprawiają jakość API. Dzięki nim aplikacja staje się bardziej przewidywalna, bezpieczna oraz łatwiejsza do integracji dla frontendów i innych systemów korzystających z REST API.
+## Dwie ścieżki walidacji
+
+`@Valid @RequestBody` prowadzi do `MethodArgumentNotValidException`; błędy mają nazwę pola i komunikat. Walidacja `@PathVariable` oraz `@RequestParam` działa na metodzie kontrolera i prowadzi do błędu constraintu. Obie ścieżki muszą ostatecznie zwrócić ten sam format Problem Details.
+
+Metoda `manual-validation` pozostaje celowym przykładem alternatywy z `BindingResult`. Pokazuje dodatkowy boilerplate; standardowa ścieżka z globalnym handlerem jest preferowana.
+
+## Zakres advice
+
+`GlobalExceptionHandler` jest przypisany do kontrolera tego laboratorium. Repozytorium zawiera niezależne przykłady z podobnymi wyjątkami, dlatego globalny catch-all dla całej aplikacji zacierałby ich granice i mógłby przechwytywać błędy obcego modułu. W jednej rzeczywistej aplikacji zwykle istnieje jeden świadomie zaprojektowany kontrakt błędów.

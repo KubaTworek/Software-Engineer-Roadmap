@@ -1,6 +1,21 @@
-# Blokady optymistyczne i pesymistyczne — szczegółowe podsumowanie
+# lock
 
-# Wprowadzenie
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** lock.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „lock” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Role klas:** brak klasy-kontrprzykładu; pozostałe typy są minimalnymi modelami pojęć opisanych niżej.
+> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+<!-- material-card:end -->
+
+## Blokady optymistyczne i pesymistyczne — szczegółowe podsumowanie
+
+
+
+## Wprowadzenie
 
 Jednym z najważniejszych problemów w systemach współbieżnych jest kontrola równoczesnych modyfikacji danych. Gdy wiele transakcji próbuje jednocześnie zmieniać te same rekordy, bardzo łatwo doprowadzić do:
 - utraty danych,
@@ -20,7 +35,7 @@ Oba rozwiązują ten sam problem, ale robią to w zupełnie inny sposób i mają
 
 ---
 
-# Pessimistic Locking — blokowanie z góry
+## Pessimistic Locking — blokowanie z góry
 
 Pessimistic locking zakłada:
 
@@ -35,7 +50,7 @@ SELECT ... FOR UPDATE
 
 ---
 
-# Jak działa FOR UPDATE
+## Jak działa FOR UPDATE
 
 Przykład:
 
@@ -67,7 +82,7 @@ PostgreSQL:
 
 ---
 
-# Co dzieje się w innych transakcjach
+## Co dzieje się w innych transakcjach
 
 Jeżeli druga transakcja spróbuje:
 
@@ -87,7 +102,7 @@ To bardzo ważna właściwość:
 
 ---
 
-# Zalety pessimistic locking
+## Zalety pessimistic locking
 
 Największą zaletą jest:
 - prostota modelu mentalnego.
@@ -109,7 +124,7 @@ Pessimistic locking:
 
 ---
 
-# Wady pessimistic locking
+## Wady pessimistic locking
 
 Problemem jest concurrency.
 
@@ -131,7 +146,7 @@ system zaczyna:
 
 ---
 
-# Lock Contention
+## Lock Contention
 
 Jednym z najważniejszych problemów pessimistic locking jest:
 
@@ -154,7 +169,7 @@ To bardzo częsty problem dużych systemów OLTP.
 
 ---
 
-# Deadlock
+## Deadlock
 
 Pessimistic locking wprowadza również ryzyko:
 
@@ -181,7 +196,7 @@ PostgreSQL:
 
 ---
 
-# Jak ograniczać deadlocki
+## Jak ograniczać deadlocki
 
 Najczęstsza strategia:
 - zawsze lockować rekordy w tej samej kolejności.
@@ -195,7 +210,7 @@ To bardzo ważna praktyka produkcyjna.
 
 ---
 
-# NOWAIT i SKIP LOCKED
+## NOWAIT i SKIP LOCKED
 
 PostgreSQL oferuje dodatkowe mechanizmy:
 - NOWAIT,
@@ -203,7 +218,7 @@ PostgreSQL oferuje dodatkowe mechanizmy:
 
 ---
 
-# FOR UPDATE NOWAIT
+## FOR UPDATE NOWAIT
 
 ```sql
 SELECT *
@@ -224,7 +239,7 @@ Przydaje się gdy:
 
 ---
 
-# FOR UPDATE SKIP LOCKED
+## FOR UPDATE SKIP LOCKED
 
 ```sql
 FOR UPDATE SKIP LOCKED
@@ -244,7 +259,7 @@ Dzięki temu:
 
 ---
 
-# Optimistic Locking — zakładamy brak konfliktu
+## Optimistic Locking — zakładamy brak konfliktu
 
 Optimistic locking działa odwrotnie.
 
@@ -258,7 +273,7 @@ Zamiast locków stosuje się:
 
 ---
 
-# Mechanizm version column
+## Mechanizm version column
 
 Najczęściej używa się:
 
@@ -282,7 +297,7 @@ WHERE
 
 ---
 
-# Jak działa optimistic locking
+## Jak działa optimistic locking
 
 Aplikacja:
 1. odczytuje rekord,
@@ -303,7 +318,7 @@ To oznacza konflikt.
 
 ---
 
-# Conflict Detection
+## Conflict Detection
 
 Kluczowa różnica:
 
@@ -315,7 +330,7 @@ Optimistic locking:
 
 ---
 
-# Retry Logic
+## Retry Logic
 
 W optimistic locking aplikacja musi obsługiwać retry.
 
@@ -331,7 +346,7 @@ To fundamentalna część optimistic concurrency control.
 
 ---
 
-# Dlaczego optimistic locking dobrze się skaluje
+## Dlaczego optimistic locking dobrze się skaluje
 
 Największą zaletą optimistic locking jest brak blokowania.
 
@@ -347,7 +362,7 @@ Transakcje:
 
 ---
 
-# Kiedy optimistic locking działa najlepiej
+## Kiedy optimistic locking działa najlepiej
 
 Najlepiej sprawdza się gdy:
 - konflikty są rzadkie,
@@ -363,7 +378,7 @@ To bardzo częsty przypadek dla:
 
 ---
 
-# Wady optimistic locking
+## Wady optimistic locking
 
 Problem pojawia się przy:
 - wysokim contention,
@@ -387,7 +402,7 @@ czyli sytuacja, w której:
 
 ---
 
-# Pessimistic vs Optimistic — różnica filozofii
+## Pessimistic vs Optimistic — różnica filozofii
 
 Pessimistic locking:
 ```text
@@ -403,7 +418,7 @@ i wykrywamy problem później
 
 ---
 
-# Kiedy używać pessimistic locking
+## Kiedy używać pessimistic locking
 
 Najlepiej sprawdza się dla:
 - finansów,
@@ -419,7 +434,7 @@ Szczególnie gdy:
 
 ---
 
-# Kiedy używać optimistic locking
+## Kiedy używać optimistic locking
 
 Najlepiej sprawdza się dla:
 - systemów webowych,
@@ -434,7 +449,7 @@ Bardzo często:
 
 ---
 
-# Throughput vs Correctness
+## Throughput vs Correctness
 
 To fundamentalny trade-off.
 
@@ -456,7 +471,7 @@ Wybór zależy od:
 
 ---
 
-# Najważniejsza praktyczna zasada
+## Najważniejsza praktyczna zasada
 
 Największym błędem projektowym jest:
 - ignorowanie współbieżności,
@@ -475,3 +490,19 @@ Dlatego:
 - contention management
 
 są fundamentalną częścią projektowania backendów i systemów bazodanowych.
+
+## Niezmiennik wykonywalnego laboratorium
+
+Optymistyczny zapis wykonuje warunkowe `UPDATE ... WHERE version = ?`. Pierwszy
+writer zwiększa wersję, a wynik `0` dla drugiego jest jawnym konfliktem — nie
+cichym sukcesem. Pesymistyczna blokada i `SKIP LOCKED` są sprawdzane na PostgreSQL,
+ponieważ H2 nie dowodzi ich semantyki.
+
+```powershell
+.\mvnw.cmd --batch-mode --no-transfer-progress -Pinfrastructure-tests "-Dtest=PostgresLockingContainerTest,PostgresSkipLockedContainerTest" test
+```
+
+Lock chroni wyłącznie transakcje używające tego samego protokołu. W systemie
+rozproszonym lease nie zastępuje blokady danych, a sam lease nie chroni przed
+spóźnionym właścicielem — kolejny poziom pokazują
+[fencing tokens](../../../../stage_3/block_a/concepts/coordination/README.md).

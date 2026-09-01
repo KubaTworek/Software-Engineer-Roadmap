@@ -54,6 +54,9 @@ public class FailingPaymentConsumer {
 
         if (failBeforeBusinessWrite) {
             failBeforeBusinessWrite = false;
+            // In production the idempotency marker and business write belong to
+            // one transaction. Simulate rollback of the marker on failure.
+            processedEventStore.unmarkProcessed(event.metadata().eventId());
             throw new SimulatedConsumerCrashException("Crash before business write.");
         }
 

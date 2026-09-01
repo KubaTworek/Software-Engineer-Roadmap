@@ -1,6 +1,7 @@
 package pl.jakubtworek.backend_engineering.stage_1.block_c.transactional;
 
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -11,9 +12,11 @@ import java.math.BigDecimal;
  * It shows how different transactional scenarios behave.
  */
 @Component
+@Profile("demo")
 public class TransactionDemoRunner implements CommandLineRunner {
 
     private final PaymentService paymentService;
+    private final AccountRepository accountRepository;
     private final OrderService orderService;
     private final RollbackService rollbackService;
     private final SelfInvocationService selfInvocationService;
@@ -21,12 +24,14 @@ public class TransactionDemoRunner implements CommandLineRunner {
 
     public TransactionDemoRunner(
             PaymentService paymentService,
+            AccountRepository accountRepository,
             OrderService orderService,
             RollbackService rollbackService,
             SelfInvocationService selfInvocationService,
             CorrectSelfInvocationSolutionService correctSolutionService
     ) {
         this.paymentService = paymentService;
+        this.accountRepository = accountRepository;
         this.orderService = orderService;
         this.rollbackService = rollbackService;
         this.selfInvocationService = selfInvocationService;
@@ -36,6 +41,9 @@ public class TransactionDemoRunner implements CommandLineRunner {
     @Override
     public void run(String... args) {
 
+        Account source = accountRepository.save(new Account(new BigDecimal("100.00")));
+        Account destination = accountRepository.save(new Account(new BigDecimal("40.00")));
+
         /**
          * REQUIRED + REQUIRES_NEW example.
          *
@@ -43,7 +51,8 @@ public class TransactionDemoRunner implements CommandLineRunner {
          * but audit log can still be committed.
          */
         try {
-            paymentService.transfer(1L, 2L, BigDecimal.TEN);
+            paymentService.transferThenFailAfterIndependentAudit(
+                    source.getId(), destination.getId(), BigDecimal.TEN);
         } catch (RuntimeException exception) {
             System.out.println("Transfer failed as expected");
         }
@@ -60,7 +69,7 @@ public class TransactionDemoRunner implements CommandLineRunner {
          * RuntimeException rollback example.
          */
         try {
-            rollbackService.rollbackOnRuntimeException();
+            rollbackService.writeThenRollbackOnRuntimeException("runtime failure");
         } catch (RuntimeException exception) {
             System.out.println("RuntimeException caused rollback");
         }
@@ -69,9 +78,15 @@ public class TransactionDemoRunner implements CommandLineRunner {
          * Checked exception with rollbackFor example.
          */
         try {
-            rollbackService.rollbackOnCheckedException();
+            rollbackService.writeThenRollbackOnCheckedException("checked failure with rollbackFor");
         } catch (BusinessException exception) {
             System.out.println("Checked exception caused rollback because rollbackFor was used");
+        }
+
+        try {
+            rollbackService.writeThenCommitOnCheckedException("checked failure without rollbackFor");
+        } catch (BusinessException exception) {
+            System.out.println("Checked exception did not trigger rollback by default");
         }
 
         /**

@@ -1,31 +1,154 @@
-# Spring Data JPA
+# jpa
 
-Spring Data JPA jest warstwą abstrakcji nad JPA i Hibernate, której celem jest uproszczenie dostępu do bazy danych. Framework eliminuje konieczność pisania dużej ilości boilerplate code odpowiedzialnego za obsługę `EntityManager`, transakcji czy podstawowych operacji CRUD. Dzięki repozytoriom Spring automatycznie generuje implementacje metod dostępu do danych na podstawie samych interfejsów.
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** jpa.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „jpa” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=JpaQueryBehaviorTest" test`
+> - **Role klas:** `UserController` = `production-boundary`.
+> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+<!-- material-card:end -->
 
-Centralnym elementem Spring Data JPA są repozytoria. Najczęściej wykorzystuje się `JpaRepository`, które rozszerza `PagingAndSortingRepository` oraz `CrudRepository`. Dzięki temu repozytorium automatycznie udostępnia operacje takie jak `save`, `findById`, `findAll`, `delete`, a także mechanizmy paginacji i sortowania. Programista definiuje jedynie interfejs, natomiast Spring generuje implementację w czasie działania aplikacji.
+## JPA i Hibernate jako świadoma warstwa dostępu do danych
 
-Jedną z najważniejszych funkcjonalności Spring Data JPA jest query derivation, czyli automatyczne generowanie zapytań na podstawie nazw metod. Metody takie jak `findByLastName`, `findByAgeGreaterThan` czy `findByActiveTrue` są analizowane przez Spring, który generuje odpowiednie zapytania SQL lub JPQL. Pozwala to szybko budować proste zapytania bez konieczności ręcznego pisania SQL.
 
-W bardziej zaawansowanych przypadkach można korzystać z adnotacji `@Query`, która pozwala definiować własne zapytania JPQL lub natywne SQL. JPQL operuje na encjach i polach klas, a nie bezpośrednio na tabelach bazodanowych. Spring wspiera również natywne SQL, co jest przydatne przy korzystaniu z funkcji specyficznych dla konkretnej bazy danych.
 
-Repozytoria Spring Data JPA współpracują bezpośrednio z Hibernate, który pełni rolę implementacji ORM. Encje oznaczone `@Entity` są mapowane na tabele bazodanowe. Relacje pomiędzy encjami definiuje się za pomocą adnotacji takich jak `@OneToMany`, `@ManyToOne`, `@OneToOne` czy `@ManyToMany`.
+## Cel laboratorium
 
-Bardzo istotnym zagadnieniem w JPA jest strategia ładowania relacji, czyli fetch type. Domyślnie relacje `@ManyToOne` oraz `@OneToOne` są eager, co oznacza, że powiązane encje są pobierane od razu razem z główną encją. Natomiast `@OneToMany` oraz `@ManyToMany` domyślnie działają jako lazy loading. Oznacza to, że dane powiązane są pobierane dopiero w momencie pierwszego dostępu do relacji.
+JPA mapuje model obiektowy na relacyjny, ale nie usuwa kosztu SQL, sieci ani ograniczeń bazy. Kod powinien być oceniany jednocześnie na trzech poziomach:
 
-Mechanizm lazy loading jest wygodny, ale może prowadzić do jednego z najczęstszych problemów w Hibernate, czyli problemu N+1. Sytuacja pojawia się wtedy, gdy aplikacja pobiera listę encji głównych jednym zapytaniem, a następnie dla każdej encji wykonywane jest dodatkowe zapytanie do pobrania relacji lazy. W praktyce oznacza to jedno zapytanie główne oraz N dodatkowych zapytań, gdzie N jest liczbą rekordów. Problem ten bardzo negatywnie wpływa na wydajność aplikacji.
+1. invariant domenowy,
+2. zachowanie persistence contextu,
+3. wygenerowany SQL i jego plan wykonania.
 
-Najczęściej problem N+1 rozwiązuje się przy pomocy `JOIN FETCH` lub `@EntityGraph`. `JOIN FETCH` pozwala pobrać encję wraz z relacjami w jednym zapytaniu SQL. `@EntityGraph` działa podobnie, ale jest bardziej deklaratywnym mechanizmem definiowania relacji, które mają zostać pobrane eagerly dla konkretnego zapytania. Alternatywnie można używać projekcji DTO lub projekcji interfejsowych, aby pobierać wyłącznie potrzebne dane.
+Laboratorium używa osobnych tabel `jpa_users` i `jpa_orders`. Nie współdzieli ich z encjami innych ćwiczeń tylko dlatego, że klasy mają podobne nazwy. Własność schematu i znaczenie danych muszą być jawne.
 
-Spring Data JPA bardzo dobrze wspiera paginację i sortowanie. Mechanizm opiera się o interfejs `Pageable`, który zawiera informacje o numerze strony, rozmiarze strony oraz sortowaniu. Metody repozytoriów mogą przyjmować `Pageable` jako argument, a Spring automatycznie generuje odpowiednie zapytania SQL wraz z limitami i offsetami. Wynik zwracany jest jako obiekt `Page`, który oprócz danych zawiera również informacje o całkowitej liczbie rekordów, liczbie stron oraz aktualnej stronie.
+## Mapa kodu
 
-`PagingAndSortingRepository` dostarcza podstawową obsługę paginacji i sortowania, natomiast `JpaRepository` rozszerza tę funkcjonalność o dodatkowe możliwości JPA, takie jak `flush()` czy batch operations. W praktyce `JpaRepository` jest najczęściej używanym typem repozytorium w aplikacjach Spring Boot.
+| Element | Zagadnienie |
+|---|---|
+| `User` | agregat, walidacja, relacja lazy i dwustronne utrzymanie powiązania |
+| `Order` | encja zależna i jawne `ManyToOne(fetch = LAZY)` |
+| `UserRepository.findAllWithOrders` | usunięcie N+1 przez fetch join dla małego, niepaginowanego zbioru |
+| `UserRepository.findNextSlice` | keyset pagination po stabilnej parze `(lastName, id)` |
+| `UserService` | granica transakcji i mapowanie encji na DTO wewnątrz persistence contextu |
+| `GET /users/cursor` | kontrakt kolejnej strony z dwuczęściowym cursorem |
+| `UserJdbcRepository` | jawny SQL jako alternatywa dla zapytania, do którego ORM nie pasuje |
 
-Ważnym aspektem pracy z JPA są transakcje. Repozytoria Spring Data posiadają domyślne wsparcie dla transakcji, jednak najlepszą praktyką jest definiowanie granic transakcji na poziomie warstwy serwisowej. Dzięki temu logika biznesowa kontroluje cały przebieg operacji bazodanowych. Metody odczytowe często oznacza się jako `@Transactional(readOnly = true)`, co pozwala Hibernate zoptymalizować działanie poprzez pominięcie mechanizmu dirty checking.
+## Persistence context
 
-Hibernate wykorzystuje mechanizm persistence context, który przechowuje zarządzane encje w ramach aktywnej sesji. Dzięki temu modyfikacja pól encji może zostać automatycznie wykryta i zsynchronizowana z bazą danych podczas commitowania transakcji. Mechanizm ten nazywa się dirty checking i jest jedną z najważniejszych funkcji ORM.
+W ramach jednej sesji Hibernate utrzymuje identity map: jeden rekord odpowiada jednej zarządzanej instancji encji. Zmiana tej instancji jest wykrywana przez dirty checking i wysyłana podczas flush. `save()` nie jest więc potrzebne po każdej zmianie zarządzanej encji.
 
-W większych projektach często stosuje się DTO projections lub interface-based projections. Zamiast pobierać pełne encje wraz z relacjami, aplikacja pobiera wyłącznie potrzebne pola. Pozwala to ograniczyć liczbę joinów, zmniejszyć ilość przesyłanych danych oraz poprawić wydajność aplikacji.
+Flush synchronizuje SQL z bazą, lecz nie jest commitem. Constraint, konflikt wersji albo błąd commitu nadal może wycofać transakcję. `readOnly = true` jest wskazówką optymalizacyjną, a nie uniwersalnym zabezpieczeniem przed zapisem.
 
-Mimo że Spring Data JPA znacząco upraszcza pracę z bazą danych, nie zawsze jest najlepszym rozwiązaniem. W przypadku bardzo złożonych zapytań lub krytycznych problemów wydajnościowych często stosuje się `JdbcTemplate`, natywny SQL lub rozwiązania takie jak MyBatis. ORM daje dużą wygodę, ale wymaga również świadomości tego, jakie zapytania faktycznie wykonuje Hibernate.
+Encja po wyjściu z transakcji staje się detached. Zwracanie encji bezpośrednio z kontrolera utrudnia kontrolę lazy loadingu, kontraktu API i liczby zapytań. Serwis zwraca DTO zawierające dokładnie dane potrzebne danemu use case'owi.
 
-Spring Data JPA jest jednym z najważniejszych elementów ekosystemu Spring Boot. Umożliwia szybkie budowanie warstwy dostępu do danych, integrację z transakcjami oraz wygodne zarządzanie encjami i relacjami. Jednocześnie wymaga zrozumienia mechanizmów takich jak lazy loading, persistence context, dirty checking czy problem N+1, ponieważ większość problemów wydajnościowych w aplikacjach Springowych wynika właśnie z nieświadomego używania ORM.
+## N+1 nie jest problemem adnotacji
+
+N+1 powstaje, gdy najpierw pobieramy N encji, a później uruchamiamy osobne zapytanie przy dostępie do relacji każdej z nich. Problemem jest liczba round-tripów i niejawny koszt, a nie samo `LAZY`.
+
+Warianty rozwiązania:
+
+| Technika | Dobra dla | Ryzyko |
+|---|---|---|
+| fetch join | jeden mały graf bez paginacji kolekcji | mnożenie wierszy i duży koszt hydracji |
+| `@EntityGraph` | różne plany pobierania dla prostych zapytań | nadal może tworzyć duży join |
+| batch fetching | wiele relacji ładowanych porcjami | kilka zapytań i potrzeba strojenia batch size |
+| projekcja DTO | endpoint o znanym kształcie odczytu | osobny model odczytowy i brak pełnej encji |
+| dwa zapytania: IDs + relacje | paginacja rodziców z kolekcją | większa złożoność repozytorium |
+
+Nie paginuj kolekcji przez jeden `join fetch`. `LIMIT` działa na fizycznych wierszach wyniku SQL, nie na logicznych encjach nadrzędnych. Najpierw wybierz stronę identyfikatorów rodziców, a następnie pobierz relacje dla tego ograniczonego zbioru.
+
+Test N+1 powinien mierzyć liczbę przygotowanych statementów po wyczyszczeniu persistence contextu. Sam poprawny wynik funkcjonalny nie wykrywa regresji zapytań.
+
+## Offset i keyset pagination
+
+`Pageable` zwykle generuje `OFFSET`. Jest wygodne dla płytkich, numerowanych stron, ale koszt głębokiej strony rośnie wraz z liczbą pomijanych rekordów. `Page` uruchamia też zapytanie `COUNT`, które dla złożonego filtra może być droższe niż pobranie danych.
+
+Keyset pagination nie pyta „pomiń N”, lecz „pobierz rekordy po ostatnim widzianym kluczu”. Laboratorium sortuje po `(lastName ASC, id ASC)` i używa tego samego układu w kursorze oraz indeksie. `id` jest tie-breakerem, dzięki któremu osoby o tym samym nazwisku nie znikają między stronami.
+
+Warunek następnej strony:
+
+```sql
+WHERE last_name > :last_name
+   OR (last_name = :last_name AND id > :id)
+ORDER BY last_name, id
+LIMIT :page_size_plus_one;
+```
+
+Kursor powinien być nieprzezroczysty dla klienta, wersjonowany i podpisany, jeśli zawiera dane, których klient nie może zmieniać. `Slice` pozwala ustalić `hasNext` bez pełnego `COUNT`.
+
+Keyset zapewnia stabilne przechodzenie względem klucza, ale nie tworzy snapshotu całego przeglądania. Aktualizacja kolumn sortowania pomiędzy requestami może przesunąć rekord. Jeśli wymagany jest historyczny snapshot, trzeba dodać granicę czasu, wersję zbioru albo wykonać eksport poza zwykłym API stronicowanym.
+
+## Constrainty są częścią modelu
+
+Walidacja w Javie daje szybki, czytelny błąd, ale może zostać ominięta przez inny proces, skrypt lub wyścig requestów. Baza powinna chronić reguły, które potrafi wyrazić:
+
+- `NOT NULL` dla danych wymaganych,
+- `UNIQUE` dla kluczy naturalnych i idempotency keys,
+- `FOREIGN KEY` dla relacji będących w tej samej granicy własności,
+- `CHECK` dla prostych zakresów i zamkniętych zbiorów statusów,
+- właściwy typ i precyzję dla pieniędzy oraz czasu.
+
+Sprawdzenie „czy istnieje?” w aplikacji nie zastępuje `UNIQUE`, bo dwa requesty mogą przejść check równocześnie. Kod powinien przechwycić naruszenie constraintu i przetłumaczyć je na błąd domenowy lub konflikt API.
+
+## Indeksy wynikają z zapytań
+
+Indeks jest kopią wybranych danych utrzymywaną przy każdym zapisie. Projektuj go od konkretnego filtra, joinu i sortowania. Dla keysetu `(last_name, id)` potrzebny jest indeks w tej samej kolejności. Indeks na samym `last_name` nie obsługuje całego porządku równie dobrze.
+
+Przy planie wykonania sprawdzaj:
+
+- `actual rows` względem estymacji,
+- liczbę pętli operatora,
+- `rows removed by filter`,
+- `Buffers` i odczyty z dysku,
+- sortowanie oraz jego pamięć/dysk,
+- algorytm joinu,
+- czas planowania i wykonania.
+
+`Seq Scan` na małej tabeli lub zapytaniu zwracającym większość danych może być najlepszym planem. Celem nie jest wymuszenie indeksu, lecz minimalny koszt dla realnego workloadu.
+
+## Batch processing
+
+`saveAll` nie gwarantuje jednego batcha SQL. Wpływają na to strategia generowania ID, ustawienia `hibernate.jdbc.batch_size`, kolejność statementów i moment flush. Przy dużym imporcie przetwarzaj porcjami oraz okresowo wykonuj `flush()` i `clear()`, aby persistence context nie zatrzymał wszystkich encji w pamięci.
+
+Batch ma ograniczony rozmiar, timeout i sposób wznowienia. Jedna transakcja na milion rekordów długo trzyma zasoby, powiększa rollback i utrudnia odzyskanie po błędzie. Wiele małych transakcji wymaga natomiast idempotentnego checkpointu.
+
+## Connection pool
+
+Pool nie zwiększa pojemności bazy. Zbyt duży pool mnoży konkurujące zapytania, pamięć bazy i context switching. Budżet połączeń musi uwzględniać wszystkie instancje aplikacji, migracje, zadania administracyjne i rezerwę operacyjną.
+
+Rozmiar poola dobieraj na podstawie limitu bazy oraz pomiarów czasu oczekiwania na połączenie, czasu zapytania i liczby aktywnych połączeń. Długi czas oczekiwania nie zawsze oznacza „dodaj połączeń” — może wskazywać wolne SQL, lock contention lub zbyt długą transakcję.
+
+Praktyczny kalkulator i ograniczenia modelu znajdują się w `stage_1/block_d/sql/connection_pool`.
+
+## Migracje bez przestoju
+
+Dla wdrożeń, w których stara i nowa wersja aplikacji działają równocześnie, używaj sekwencji expand–migrate–contract:
+
+1. **expand** — dodaj kompatybilną strukturę, np. nullable column lub nową tabelę,
+2. **migrate** — wdroż dual read/write i wykonaj backfill małymi porcjami,
+3. **contract** — dopiero po wyłączeniu starego kodu dodaj `NOT NULL`, usuń starą kolumnę lub indeks.
+
+`ALTER TABLE` może blokować ruch albo przepisać tabelę. Przed migracją sprawdź zachowanie konkretnej wersji PostgreSQL, ustaw `lock_timeout`, oszacuj czas i przygotuj sposób przerwania. Rollback aplikacji po migracji destrukcyjnej może być niemożliwy, dlatego kompatybilność wstecz jest częścią strategii wdrożenia.
+
+Przykładowe kroki znajdują się w `stage_1/block_d/sql/migration`.
+
+## Granice laboratorium
+
+- H2 w testach potwierdza mapowanie i zachowanie JPA, lecz nie plan PostgreSQL.
+- Pliki SQL dla `EXPLAIN (ANALYZE, BUFFERS)` należy uruchamiać na PostgreSQL z reprezentatywną ilością danych.
+- Liczby z lokalnego benchmarku nie są SLO produkcyjnym.
+- Model NoSQL zaczyna się od access patternu; nie jest automatycznym lekarstwem na wolny SQL.
+
+## Pytania kontrolne
+
+1. Jaki invariant chroni Java, a jaki constraint bazy?
+2. Ile statementów wykonuje endpoint dla 1, 20 i 100 rekordów?
+3. Czy indeks odpowiada filtrowaniu i kolejności sortowania?
+4. Czy paginacja wymaga numeru strony, czy wystarczy next/previous?
+5. Czy migracja działa przy równoległej starej i nowej wersji aplikacji?
+6. Czy pool respektuje globalny limit połączeń po autoskalowaniu?
+7. Czy dodatkowy magazyn danych ma jawnego właściciela i sposób odbudowy?

@@ -10,7 +10,7 @@ test:
 .PHONY: build
 build:
 	# Build a local Docker image for kind or minikube workflow.
-	docker build -t $(IMAGE_NAME):$(IMAGE_TAG) .
+	docker build -f ../docker/Dockerfile -t $(IMAGE_NAME):$(IMAGE_TAG) .
 
 .PHONY: kind-create
 kind-create:
@@ -24,8 +24,9 @@ kind-load:
 
 .PHONY: deploy
 deploy:
-	# Apply Kubernetes manifests to the current kubectl context.
-	kubectl apply -f k8s/
+	# Apply runtime configuration first, then workload manifests.
+	kubectl apply -f ../configuration/k8s/
+	kubectl apply -f ../kubernetes/k8s/
 
 .PHONY: rollout
 rollout:
@@ -59,5 +60,6 @@ debug-previous-logs:
 
 .PHONY: delete
 delete:
-	# Delete local Kubernetes resources.
-	kubectl delete -f k8s/ --ignore-not-found=true
+	# Remove workload before its runtime configuration.
+	kubectl delete -f ../kubernetes/k8s/ --ignore-not-found=true
+	kubectl delete -f ../configuration/k8s/ --ignore-not-found=true

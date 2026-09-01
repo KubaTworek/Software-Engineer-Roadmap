@@ -1,4 +1,19 @@
-# Testowanie w DDD, Clean Architecture i architekturze event-driven
+# test
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `praktyka-produkcyjna`
+> - **Uczy:** test.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „test” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=PlaceOrderApplicationServiceMockTest,PlaceOrderApplicationServiceTest,Stage2ArchitectureTest" test`
+> - **Role klas:** `IdempotentEventConsumerTest` = `correct`; `FakeDomainEventPublisher` = `simulation`, `FakeOrderRepository` = `simulation`, `FakeTransactionManager` = `simulation` (+1); `FakeDomainEventPublisher` = `production-boundary`.
+> - **Granica:** Laboratorium pokazuje kontrakt i failure modes; nie zastępuje pełnego testu end-to-end ani operacyjnej konfiguracji środowiska.
+<!-- material-card:end -->
+
+## Testowanie w DDD, Clean Architecture i architekturze event-driven
+
+
 
 ## Wprowadzenie
 
@@ -98,6 +113,12 @@ Transactional Outbox jest mechanizmem infrastrukturalnym, ale jego poprawność 
 
 Testy outboxa mogą mieć różne poziomy. Na poziomie jednostkowym można sprawdzić, czy publisher tworzy poprawny rekord outbox. Na poziomie integracyjnym można sprawdzić transakcyjność z bazą danych. Na poziomie systemowym można sprawdzić, czy wiadomość faktycznie trafia do brokera.
 
+`PostgreSqlConcurrencyContainerTest` realizuje środkowy poziom na prawdziwym
+PostgreSQL: zapisuje zamówienie i rekord outbox w jednym połączeniu i jednej
+transakcji. Po rollbacku obie tabele pozostają puste, a po commicie oba rekordy
+są widoczne. Test świadomie nie uruchamia brokera — potwierdza lokalną atomowość,
+nie dostarczenie wiadomości end-to-end.
+
 Ważne jest również testowanie scenariuszy błędów. Jeżeli publikacja do brokera się nie uda, wiadomość nie powinna zostać oznaczona jako opublikowana. Jeżeli publikacja się uda, ale proces padnie przed oznaczeniem rekordu, system powinien bezpiecznie ponowić wysłanie, a konsument powinien obsłużyć potencjalny duplikat.
 
 
@@ -129,6 +150,18 @@ Nie warto testować implementacyjnych detali, które mogą się zmienić przy re
 
 
 ## Testowanie a architektura
+
+`Stage2ArchitectureTest` jest wyjątkiem od zasady „testujemy zachowanie, nie
+strukturę”, ponieważ kierunek zależności jest tutaj jawnym kontraktem systemu.
+ArchUnit chroni niezależność domeny od frameworków oraz dependency rule dla
+`clean_architecture` i kanonicznego `use_case`. Taki test ma wartość wtedy, gdy
+reguła jest mała, uzasadniona i wskazuje konkretną niedozwoloną zależność.
+
+`DomainToIntegrationEventMappingTest` chroni opublikowany schemat komunikatu,
+a `PlaceOrderBoundaryFlowTest` łączy poziomy bez uruchamiania frameworka:
+HTTP DTO → port wejściowy → serwis aplikacyjny → agregat → wersjonowany event
+integracyjny → outbox. Scenariusz błędu potwierdza, że awaria outboxa wycofuje
+także zapis agregatu w testowym unit of work.
 
 Testowalność jest jednym z najlepszych wskaźników jakości architektury. Jeżeli domeny nie da się przetestować bez bazy danych, oznacza to, że domena zależy od infrastruktury. Jeżeli use case’a nie da się przetestować bez HTTP, oznacza to, że application layer zna adapter wejściowy. Jeżeli test wymaga uruchomienia całego systemu dla prostej reguły biznesowej, granice warstw są najprawdopodobniej naruszone.
 

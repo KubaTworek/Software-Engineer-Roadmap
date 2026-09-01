@@ -9,11 +9,18 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class RollbackService {
 
+    private final AuditLogRepository auditLogRepository;
+
+    public RollbackService(AuditLogRepository auditLogRepository) {
+        this.auditLogRepository = auditLogRepository;
+    }
+
     /**
      * RuntimeException triggers rollback by default.
      */
     @Transactional
-    public void rollbackOnRuntimeException() {
+    public void writeThenRollbackOnRuntimeException(String message) {
+        auditLogRepository.save(new AuditLog(message));
         throw new RuntimeException("Rollback will happen");
     }
 
@@ -24,7 +31,8 @@ public class RollbackService {
      * when BusinessException is thrown.
      */
     @Transactional(rollbackFor = BusinessException.class)
-    public void rollbackOnCheckedException() throws BusinessException {
+    public void writeThenRollbackOnCheckedException(String message) throws BusinessException {
+        auditLogRepository.save(new AuditLog(message));
         throw new BusinessException("Rollback will happen because rollbackFor is used");
     }
 
@@ -33,7 +41,8 @@ public class RollbackService {
      * the transaction by default.
      */
     @Transactional
-    public void noRollbackForCheckedException() throws BusinessException {
+    public void writeThenCommitOnCheckedException(String message) throws BusinessException {
+        auditLogRepository.save(new AuditLog(message));
         throw new BusinessException("Rollback will NOT happen by default");
     }
 }

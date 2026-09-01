@@ -47,6 +47,10 @@ public final class Order extends EventSourcedAggregate<OrderId> {
     public void addLine(ProductId productId, Quantity quantity, Money unitPrice) {
         ensureDraft();
 
+        if (!totalPrice.currency().equals(unitPrice.currency())) {
+            throw new IllegalArgumentException("Order line currency must match order currency");
+        }
+
         OrderLine line = new OrderLine(
                 UUID.randomUUID().toString(),
                 productId,
@@ -83,6 +87,9 @@ public final class Order extends EventSourcedAggregate<OrderId> {
     public void markAsPaid(String paymentId) {
         if (status != OrderStatus.PLACED) {
             throw new IllegalStateException("Only placed order can be paid");
+        }
+        if (paymentId == null || paymentId.isBlank()) {
+            throw new IllegalArgumentException("Payment id cannot be empty");
         }
 
         this.status = OrderStatus.PAID;

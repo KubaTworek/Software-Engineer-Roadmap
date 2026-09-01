@@ -30,6 +30,8 @@ public class KafkaDeadLetterPublisher<T extends ConsumedEvent>
                 + " to DLQ topic "
                 + deadLetterTopic
                 + " because: "
-                + reason.message());
+                + reason.message()
+                + " (code=" + reason.errorCode()
+                + ", attempts=" + reason.attempts() + ")");
     }
 }

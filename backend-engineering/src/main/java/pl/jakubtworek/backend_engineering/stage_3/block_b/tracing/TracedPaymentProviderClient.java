@@ -5,6 +5,7 @@ import io.opentelemetry.api.trace.StatusCode;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Example traced client for an external payment provider.
@@ -22,9 +23,15 @@ public final class TracedPaymentProviderClient {
             TraceHeaderPropagator traceHeaderPropagator,
             PaymentProviderGateway paymentProviderGateway
     ) {
-        this.spanFactory = spanFactory;
-        this.traceHeaderPropagator = traceHeaderPropagator;
-        this.paymentProviderGateway = paymentProviderGateway;
+        this.spanFactory = Objects.requireNonNull(spanFactory, "spanFactory must not be null");
+        this.traceHeaderPropagator = Objects.requireNonNull(
+                traceHeaderPropagator,
+                "traceHeaderPropagator must not be null"
+        );
+        this.paymentProviderGateway = Objects.requireNonNull(
+                paymentProviderGateway,
+                "paymentProviderGateway must not be null"
+        );
     }
 
     public PaymentProviderResponse charge(
@@ -34,31 +41,50 @@ public final class TracedPaymentProviderClient {
             String currency
     ) {
         try (SpanScope spanScope = spanFactory.startPaymentProviderSpan("POST")) {
-            Map<String, String> outboundHeaders =
-                    traceHeaderPropagator.injectCurrentContextWithRequestId(
-                            new HashMap<>(),
-                            requestCorrelation
-                    );
+            try {
+                Objects.requireNonNull(requestCorrelation, "requestCorrelation must not be null");
+                String validatedOrderId = requireNonBlank(orderId, "orderId");
+                String validatedCurrency = requireNonBlank(currency, "currency");
+                if (amountCents < 0) {
+                    throw new IllegalArgumentException("amountCents must not be negative");
+                }
 
-            PaymentProviderResponse response = paymentProviderGateway.charge(
-                    outboundHeaders,
-                    orderId,
-                    amountCents,
-                    currency
-            );
+                Map<String, String> outboundHeaders =
+                        traceHeaderPropagator.injectCurrentContextWithRequestId(
+                                new HashMap<>(),
+                                requestCorrelation
+                        );
 
-            Span span = spanScope.span();
-            span.setAttribute(TracingAttributes.HTTP_RESPONSE_STATUS_CODE, response.statusCode());
+                PaymentProviderResponse response = Objects.requireNonNull(
+                        paymentProviderGateway.charge(
+                                outboundHeaders,
+                                validatedOrderId,
+                                amountCents,
+                                validatedCurrency
+                        ),
+                        "paymentProviderGateway response must not be null"
+                );
 
-            if (response.statusCode() >= 500) {
-                span.setStatus(StatusCode.ERROR, "payment provider server error");
+                Span span = spanScope.span();
+                span.setAttribute(TracingAttributes.HTTP_RESPONSE_STATUS_CODE, response.statusCode());
+
+                if (response.statusCode() >= 500) {
+                    span.setStatus(StatusCode.ERROR, "payment provider server error");
+                }
+
+                return response;
+            } catch (RuntimeException exception) {
+                SpanErrorHandler.recordException(spanScope.span(), exception);
+                throw exception;
             }
-
-            return response;
-        } catch (RuntimeException exception) {
-            SpanErrorHandler.recordException(Span.current(), exception);
-            throw exception;
         }
+    }
+
+    private static String requireNonBlank(String value, String fieldName) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(fieldName + " must not be blank");
+        }
+        return value;
     }
 
     /**
@@ -77,5 +103,10 @@ public final class TracedPaymentProviderClient {
             int statusCode,
             String body
     ) {
+        public PaymentProviderResponse {
+            if (statusCode < 100 || statusCode > 599) {
+                throw new IllegalArgumentException("statusCode must be between 100 and 599");
+            }
+        }
     }
 }

@@ -1,9 +1,12 @@
 package pl.jakubtworek.backend_engineering.stage_1.block_b.false_sharing;
 
 import org.openjdk.jmh.annotations.*;
+import pl.jakubtworek.backend_engineering.stage_1.block_b.benchmarking.BenchmarkDimension;
+import pl.jakubtworek.backend_engineering.stage_1.block_b.benchmarking.Measures;
 
 import java.util.concurrent.TimeUnit;
 
+@Measures(BenchmarkDimension.THROUGHPUT)
 @BenchmarkMode(Mode.Throughput)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 @Warmup(iterations = 5, time = 1)

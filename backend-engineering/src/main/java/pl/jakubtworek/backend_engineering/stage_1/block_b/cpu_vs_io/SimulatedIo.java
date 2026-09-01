@@ -6,6 +6,9 @@ public final class SimulatedIo {
     }
 
     public static void callExternalService(int latencyMillis) {
+        if (latencyMillis < 0) {
+            throw new IllegalArgumentException("latencyMillis must not be negative");
+        }
         // This method simulates a blocking I/O call.
         //
         // It consumes wall-clock time but almost no CPU.

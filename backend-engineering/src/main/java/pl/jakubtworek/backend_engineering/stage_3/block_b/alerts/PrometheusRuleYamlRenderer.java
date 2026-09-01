@@ -14,17 +14,17 @@ public final class PrometheusRuleYamlRenderer {
         StringBuilder yaml = new StringBuilder();
 
         yaml.append("groups:\n");
-        yaml.append("- name: ").append(group.name()).append("\n");
+        yaml.append("- name: ").append(quote(group.name())).append("\n");
         yaml.append("  rules:\n");
 
         for (PrometheusAlertRule rule : group.rules()) {
-            yaml.append("  - alert: ").append(rule.alertName()).append("\n");
+            yaml.append("  - alert: ").append(quote(rule.alertName())).append("\n");
             yaml.append("    expr: |\n");
             indentBlock(yaml, rule.expression(), 6);
-            yaml.append("    for: ").append(rule.forDuration()).append("\n");
+            yaml.append("    for: ").append(quote(rule.forDuration())).append("\n");
 
             if (rule.keepFiringFor() != null && !rule.keepFiringFor().isBlank()) {
-                yaml.append("    keep_firing_for: ").append(rule.keepFiringFor()).append("\n");
+                yaml.append("    keep_firing_for: ").append(quote(rule.keepFiringFor())).append("\n");
             }
 
             yaml.append("    labels:\n");
@@ -42,7 +42,7 @@ public final class PrometheusRuleYamlRenderer {
 
         for (Map.Entry<String, String> entry : values.entrySet()) {
             yaml.append(indent)
-                    .append(entry.getKey())
+                    .append(quote(entry.getKey()))
                     .append(": ")
                     .append(quote(entry.getValue()))
                     .append("\n");
@@ -58,6 +58,11 @@ public final class PrometheusRuleYamlRenderer {
     }
 
     private static String quote(String value) {
-        return "\"" + value.replace("\"", "\\\"") + "\"";
+        return "\"" + value
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\r", "\\r")
+                .replace("\n", "\\n")
+                .replace("\t", "\\t") + "\"";
     }
 }

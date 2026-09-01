@@ -1,10 +1,13 @@
 package pl.jakubtworek.backend_engineering.stage_1.block_b.array_vs_linked;
 
 import org.openjdk.jmh.annotations.*;
+import pl.jakubtworek.backend_engineering.stage_1.block_b.benchmarking.BenchmarkDimension;
+import pl.jakubtworek.backend_engineering.stage_1.block_b.benchmarking.Measures;
 
 import java.util.ArrayList;
 import java.util.concurrent.TimeUnit;
 
+@Measures(BenchmarkDimension.THROUGHPUT)
 @BenchmarkMode(Mode.Throughput)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 @Warmup(iterations = 5, time = 1)
@@ -14,7 +17,7 @@ import java.util.concurrent.TimeUnit;
 public class PrimitiveArrayBaselineBenchmark {
 
     @Param({"1000", "10000", "100000"})
-    private int size;
+    int size;
 
     private int[] primitiveArray;
     private ArrayList<Integer> arrayList;

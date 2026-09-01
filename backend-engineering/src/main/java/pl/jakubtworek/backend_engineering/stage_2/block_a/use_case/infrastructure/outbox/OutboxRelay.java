@@ -36,7 +36,7 @@ public final class OutboxRelay {
 
     private String topicFor(String eventType) {
         return switch (eventType) {
-            case "OrderPlaced" -> "sales.order-events";
+            case "sales.order-placed.v1" -> "sales.order-events";
             default -> throw new IllegalArgumentException("Unknown event type: " + eventType);
         };
     }

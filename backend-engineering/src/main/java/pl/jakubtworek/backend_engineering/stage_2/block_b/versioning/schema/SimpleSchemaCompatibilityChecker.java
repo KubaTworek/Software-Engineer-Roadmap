@@ -35,9 +35,12 @@ public class SimpleSchemaCompatibilityChecker implements SchemaCompatibilityChec
             );
         }
 
-        return SchemaCompatibilityResult.success(
+        // Do not manufacture a positive guarantee. Compatibility depends on
+        // the serialization format and on reader/writer schema resolution.
+        // A real Avro/Protobuf checker or Schema Registry must decide this.
+        return SchemaCompatibilityResult.failure(
                 mode,
-                "Schema compatibility should be verified by Avro, Protobuf, or Schema Registry."
+                "Compatibility was not verified: delegate to an Avro/Protobuf checker or Schema Registry."
         );
     }
 }

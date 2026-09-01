@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.*;
  * REST controller demonstrating validation flow.
  */
 @RestController("UserExceptionController")
-@RequestMapping("/users")
+@RequestMapping("/exception-demo/users")
 public class UserController {
 
     private final UserService userService;
@@ -49,7 +49,7 @@ public class UserController {
              * In real code, convert errors to ApiError.
              * This example keeps it simple.
              */
-            throw new IllegalArgumentException("Manual validation failed");
+            throw new BadRequestException("Manual validation failed");
         }
 
         return userService.createUser(request);

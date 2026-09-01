@@ -14,7 +14,7 @@ public class OrderIdPartitioningStrategy implements PartitioningStrategy {
      */
     @Override
     public MessageKey resolveKey(PartitionedEvent event) {
-        if (event.orderId() == null || event.orderId().isBlank()) {
+        if (event == null || event.orderId() == null || event.orderId().isBlank()) {
             throw new IllegalArgumentException("orderId must not be empty.");
         }
 

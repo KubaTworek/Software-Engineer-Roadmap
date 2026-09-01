@@ -1,31 +1,95 @@
-# Spring MVC Pipeline
+# mvc
 
-Spring MVC jest oparty o wzorzec Front Controller, którego centralnym elementem jest `DispatcherServlet`. Każde żądanie HTTP trafiające do aplikacji przechodzi przez ten komponent, a następnie wykonywany jest cały pipeline odpowiedzialny za odnalezienie odpowiedniego kontrolera, przygotowanie argumentów metody, walidację danych, wykonanie logiki biznesowej oraz przygotowanie odpowiedzi HTTP.
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** mvc.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „mvc” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=UserApiContractTest,UserServiceContractTest" test`
+> - **Role klas:** `PageController` = `production-boundary`, `ReportController` = `production-boundary`, `UserRestController` = `production-boundary`.
+> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+<!-- material-card:end -->
 
-Proces rozpoczyna się w momencie otrzymania żądania HTTP przez serwer servletów, np. Tomcat. Żądanie trafia najpierw do filtrów servletowych (`Filter`), które działają jeszcze przed Spring MVC. Filtry są częścią standardu Servlet API i służą do niskopoziomowego przetwarzania requestów, np. logowania, obsługi CORS, dodawania correlation id czy preprocessing bezpieczeństwa. Dopiero po przejściu przez filtry żądanie trafia do `DispatcherServlet`.
+## Projektowanie kontraktu HTTP i pipeline Spring MVC
 
-`DispatcherServlet` pełni rolę centralnego koordynatora całego Spring MVC. Jego pierwszym zadaniem jest odnalezienie odpowiedniego handlera dla żądania HTTP. Wykorzystywany jest do tego mechanizm `HandlerMapping`, który analizuje ścieżkę URL, metodę HTTP oraz adnotacje takie jak `@RequestMapping`, `@GetMapping`, `@PostMapping` itd. Na tej podstawie Spring wybiera odpowiednią metodę kontrolera.
 
-Po odnalezieniu handlera Spring korzysta z `HandlerAdapter`, którego zadaniem jest faktyczne wywołanie metody kontrolera. Zanim jednak metoda zostanie wykonana, Spring musi przygotować jej argumenty. Odpowiadają za to `HandlerMethodArgumentResolver`.
 
-Mechanizm argument resolverów jest jednym z najważniejszych elementów Spring MVC. Każdy resolver odpowiada za konkretny typ argumentu lub konkretną adnotację. `PathVariableMethodArgumentResolver` odczytuje wartości z URL, `RequestParamMethodArgumentResolver` pobiera parametry query string, natomiast `RequestResponseBodyMethodProcessor` odpowiada za obsługę `@RequestBody`. Jeśli metoda kontrolera przyjmuje obiekt DTO oznaczony `@RequestBody`, Spring używa `HttpMessageConverter` do deserializacji JSON-a na obiekt Java.
+Spring MVC dostarcza mechanikę obsługi requestu, lecz nie zaprojektuje za nas semantyki API. Poprawny kontroler musi jednocześnie rozumieć pipeline frameworka, znaczenie metod i statusów HTTP, retry klienta, współbieżne aktualizacje oraz stabilność publicznego kontraktu.
 
-Domyślnie Spring Boot wykorzystuje `MappingJackson2HttpMessageConverter`, który używa biblioteki Jackson do konwersji JSON ↔ Java Object. Dla zwykłego tekstu wykorzystywany jest np. `StringHttpMessageConverter`. Mechanizm converterów jest rozszerzalny — można definiować własne formaty danych i własne konwertery.
+## Mapa laboratorium
 
-Po utworzeniu argumentów Spring wykonuje walidację danych. Jeśli parametr oznaczony jest `@Valid`, uruchamiany jest Bean Validation. Reguły walidacji definiowane są za pomocą adnotacji takich jak `@NotBlank`, `@Email`, `@Min` czy `@Size`. Jeśli walidacja nie powiedzie się, Spring rzuca `MethodArgumentNotValidException`, które może zostać przechwycone globalnie przez `@RestControllerAdvice`.
+| Element | Zagadnienie |
+|---|---|
+| `CorrelationIdFilter` | granica servletowa, propagacja identyfikatora i cleanup MDC |
+| `RequestLoggingInterceptor` | czas obsługi oraz końcowy status po wykonaniu kontrolera |
+| `AuthUserArgumentResolver` | rozszerzenie mechanizmu argument resolution |
+| `UserRestController` | statusy, `Location`, ETag, `If-Match` i `Idempotency-Key` |
+| `UserService` | atomowa idempotencja oraz optimistic concurrency bez logiki w kontrolerze |
+| `MvcExceptionHandler` | jeden format Problem Details dla błędów protokołu i domeny |
 
-Po przygotowaniu argumentów i zakończeniu walidacji wykonywana jest metoda kontrolera. Kontroler powinien być cienką warstwą odpowiedzialną jedynie za obsługę HTTP oraz delegowanie logiki do serwisów biznesowych. Po wykonaniu metody Spring przechodzi do etapu tworzenia odpowiedzi HTTP.
+## Pipeline requestu
 
-W przypadku `@RestController` zwracany obiekt nie jest traktowany jako nazwa widoku, lecz jako body odpowiedzi HTTP. Spring ponownie wykorzystuje `HttpMessageConverter`, tym razem do serializacji obiektu Java do JSON. Ostatecznie wygenerowana odpowiedź trafia z powrotem do klienta.
+```text
+Filter
+  -> DispatcherServlet
+    -> HandlerMapping
+      -> HandlerInterceptor.preHandle
+        -> argument resolvers
+          -> HttpMessageConverter
+            -> Bean Validation
+              -> controller
+            <- HttpMessageConverter
+      <- HandlerInterceptor.afterCompletion
+<- Filter
+```
 
-W klasycznym Spring MVC opartym o `@Controller` sytuacja wygląda inaczej. Metoda kontrolera zwykle zwraca logical view name, np. `"home"`. Wtedy `DispatcherServlet` używa `ViewResolver`, aby zamapować nazwę widoku na konkretny szablon HTML, np. Thymeleaf lub JSP. Następnie generowany jest widok HTML zwracany do przeglądarki.
+Filtr działa przed `DispatcherServlet`, dlatego nadaje się do correlation ID, CORS i elementów bezpieczeństwa na poziomie protokołu. Interceptor zna już wybrany handler i może mierzyć wykonanie MVC. Argument resolver buduje niestandardowy parametr kontrolera. Converter odpowiada za reprezentację, a nie za reguły biznesowe. `@RestControllerAdvice` przechwytuje błędy powstałe w MVC, lecz wyjątki z filtrów bezpieczeństwa mogą wymagać `AuthenticationEntryPoint` lub `AccessDeniedHandler`.
 
-Ważnym elementem pipeline są również `HandlerInterceptor`. Interceptory działają już wewnątrz Spring MVC, po wybraniu handlera przez `DispatcherServlet`. Mogą wykonywać logikę przed wywołaniem kontrolera (`preHandle`), po wykonaniu kontrolera (`postHandle`) oraz po zakończeniu całego requestu (`afterCompletion`). W praktyce używa się ich do logowania, monitoringu, audytu lub dodatkowej autoryzacji.
+## Semantyka endpointów przykładu
 
-Spring MVC pozwala również definiować własne `HandlerMethodArgumentResolver`. Dzięki temu można automatycznie wstrzykiwać własne obiekty do metod kontrolera. Typowym przykładem jest wstrzykiwanie aktualnie zalogowanego użytkownika. Resolver pobiera dane np. z `SecurityContextHolder`, a następnie przekazuje gotowy obiekt jako parametr metody kontrolera. Dzięki temu kod kontrolera staje się znacznie czystszy.
+| Operacja | Odpowiedź | Istotne nagłówki |
+|---|---|---|
+| `POST /api/users` | `201 Created` | request: `Idempotency-Key`; response: `Location`, `ETag` |
+| ponowienie tego samego `POST` | ponownie ten sam rezultat | `Idempotency-Replayed: true` |
+| ten sam klucz, inny payload | `409 Conflict` | kod `IDEMPOTENCY_KEY_REUSED` |
+| `GET /api/users/{id}` | `200 OK` | aktualny `ETag` |
+| `PUT /api/users/{id}` | `200 OK` | wymagany `If-Match`; zwracany nowy `ETag` |
+| zapis ze starą wersją | `412 Precondition Failed` | kod `STALE_RESOURCE_VERSION` |
+| zapis bez warunku | `428 Precondition Required` | kod `IF_MATCH_REQUIRED` |
 
-Bardzo ważnym elementem pipeline jest także globalna obsługa wyjątków przez `@ControllerAdvice` lub `@RestControllerAdvice`. Jeśli podczas wykonywania requestu zostanie rzucony wyjątek, Spring może przechwycić go globalnie i zamapować na odpowiedni kod HTTP oraz ustandaryzowaną odpowiedź błędu. Dzięki temu aplikacja REST zachowuje spójność odpowiedzi niezależnie od miejsca wystąpienia błędu.
+`POST` tworzący zasób nie powinien zwracać przypadkowego `200`. `Location` wskazuje utworzony zasób. Laboratorium wymaga klucza idempotencji, ponieważ tworzenie użytkownika jest traktowane jak operacja, którą klient może ponowić po utracie odpowiedzi.
 
-Spring MVC jest bardzo modularny i rozszerzalny. Framework pozwala dodawać własne filtry, interceptory, argument resolvery, message convertery czy bindery danych. Dzięki temu można dostosować pipeline HTTP praktycznie do dowolnych wymagań aplikacji.
+## Idempotencja to stan, nie adnotacja
 
-Cały mechanizm Spring MVC opiera się na współpracy wielu wyspecjalizowanych komponentów, które razem tworzą kompletny pipeline obsługi requestów HTTP. Zrozumienie tego przepływu jest kluczowe podczas debugowania problemów związanych z walidacją, serializacją JSON, bezpieczeństwem, routingiem czy obsługą wyjątków w aplikacjach Spring Boot.
+Serwer wiąże `Idempotency-Key` z treścią operacji i jej wynikiem. Powtórzenie tego samego klucza oraz payloadu zwraca zapisany rezultat bez ponownego efektu ubocznego. Ten sam klucz z innym payloadem jest konfliktem — ciche zwrócenie starej odpowiedzi ukrywałoby błąd klienta.
+
+Implementacja in-memory używa atomowego `ConcurrentHashMap.compute`, aby dwa równoległe requesty z tym samym kluczem nie utworzyły dwóch użytkowników. W systemie wieloinstancyjnym potrzebny jest współdzielony, trwały zapis z unikalnym constraintem, statusem `IN_PROGRESS/COMPLETED`, fingerprintem requestu i polityką TTL. Pamięć pojedynczej JVM pokazuje semantykę, ale nie jest produkcyjnym magazynem idempotencji.
+
+## ETag i utracona aktualizacja
+
+ETag `"0"` reprezentuje wersję zasobu. Klient odczytuje zasób, a przy `PUT` wysyła `If-Match: "0"`. Aktualizacja powiedzie się tylko wtedy, gdy bieżąca wersja nadal wynosi zero. Po zapisie serwer zwraca ETag `"1"`. Drugi klient pracujący na starej reprezentacji otrzymuje `412`, zamiast nadpisać cudzą zmianę.
+
+Laboratorium obsługuje pojedynczy, silny, numeryczny ETag. Pełna składnia HTTP dopuszcza listę tagów i `*`; uproszczenie jest jawne. W aplikacji z bazą atomowość powinien zapewnić warunek `UPDATE ... WHERE id = ? AND version = ?` albo `@Version`, a nie sekwencja „odczytaj, potem zapisz”.
+
+## Walidacja na właściwej granicy
+
+- składnia JSON i typy należą do deserializacji;
+- rozmiary, format emaila oraz dodatnie ID należą do walidacji DTO/protokołu;
+- unikalność i reguły stanu należą do domeny oraz constraintów bazy;
+- autoryzacja odpowiada na pytanie, czy dany principal może wykonać przypadek użycia.
+
+Walidacja requestu nie zastępuje invariantów domenowych. Ten sam use case może zostać wywołany przez HTTP, konsumenta wiadomości lub scheduler.
+
+## Stabilność i ewolucja API
+
+Zmiana nazwy pola, znaczenia statusu, opcjonalności lub jednostki jest zmianą kontraktu nawet wtedy, gdy kod Java nadal się kompiluje. Preferuj zmiany addytywne, toleruj nieznane pola po stronie konsumenta i usuwaj stare pole dopiero po zmierzeniu użycia. Wersjonowanie URL nie naprawia złej kompatybilności; jest narzędziem dla rzeczywiście niekompatybilnych semantyk.
+
+Test kontraktowy powinien sprawdzać status, nagłówki, media type, stabilne pola błędu i zachowanie retry. Sam test metody kontrolera nie wykryje problemów z serializacją, walidacją ani advice.
+
+## Granice przykładu
+
+- magazyny użytkowników oraz idempotencji są lokalne dla jednej JVM;
+- ETag jest wersją, nie hashem całej reprezentacji;
+- endpoint wyszukiwania wykonuje liniowy scan, bo tematem jest HTTP, nie persistence;
+- uwierzytelnianie jest przedstawione w osobnym laboratorium `authorization`.

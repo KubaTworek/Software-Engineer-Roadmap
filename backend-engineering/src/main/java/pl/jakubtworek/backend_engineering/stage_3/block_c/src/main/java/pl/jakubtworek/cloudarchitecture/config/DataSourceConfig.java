@@ -1,4 +1,4 @@
-package pl.jakubtworek.backend_engineering.stage_3.block_c.src.main.java.pl.jakubtworek.cloudarchitecture.config;
+package pl.jakubtworek.cloudarchitecture.config;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
@@ -28,6 +28,18 @@ public class DataSourceConfig {
             @Value("${DB_PASSWORD}") String password,
             @Value("${DB_POOL_SIZE:5}") int maxPoolSize
     ) {
+        if (jdbcUrl == null || jdbcUrl.isBlank()) {
+            throw new IllegalArgumentException("DB_JDBC_URL must not be blank");
+        }
+        if (username == null || username.isBlank()) {
+            throw new IllegalArgumentException("DB_USER must not be blank");
+        }
+        if (password == null || password.isBlank()) {
+            throw new IllegalArgumentException("DB_PASSWORD must not be blank");
+        }
+        if (maxPoolSize < 1) {
+            throw new IllegalArgumentException("DB_POOL_SIZE must be positive");
+        }
         HikariConfig config = new HikariConfig();
         config.setJdbcUrl(jdbcUrl);
         config.setUsername(username);

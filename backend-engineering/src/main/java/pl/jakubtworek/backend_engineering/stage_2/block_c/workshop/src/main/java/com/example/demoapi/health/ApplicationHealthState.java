@@ -1,4 +1,4 @@
-package pl.jakubtworek.backend_engineering.stage_2.block_c.workshop.src.main.java.com.example.demoapi.health;
+package com.example.demoapi.health;
 
 import org.springframework.stereotype.Component;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -6,10 +6,15 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Component
 public class ApplicationHealthState {
 
+    private final DependencyHealth dependencyHealth;
     private final AtomicBoolean started = new AtomicBoolean(false);
     private final AtomicBoolean draining = new AtomicBoolean(false);
     private final AtomicBoolean deadlocked = new AtomicBoolean(false);
     private final AtomicBoolean readinessFailureSimulation = new AtomicBoolean(false);
+
+    public ApplicationHealthState(DependencyHealth dependencyHealth) {
+        this.dependencyHealth = dependencyHealth;
+    }
 
     public void markStarted() {
         started.set(true);
@@ -38,7 +43,10 @@ public class ApplicationHealthState {
     public boolean isReady() {
         // Readiness controls whether this Pod should receive traffic through a Service.
         // This may fail while the process is still alive and should not necessarily trigger a restart.
-        return started.get() && !draining.get() && !readinessFailureSimulation.get();
+        return started.get()
+                && !draining.get()
+                && !readinessFailureSimulation.get()
+                && dependencyHealth.isHealthy();
     }
 
     public boolean isLive() {

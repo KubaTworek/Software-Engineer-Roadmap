@@ -1,27 +1,103 @@
-# Testy integracyjne i jednostkowe w architekturze event-driven
+# Deterministyczne testowanie współbieżności
 
-W systemach event-driven testowanie nie ogranicza się do sprawdzenia pojedynczych metod lub poprawności mapowania pól między klasami. Najważniejsze jest zweryfikowanie, czy cały system zachowuje się poprawnie w warunkach, które naturalnie występują w architekturze opartej na komunikatach: przy ponownej dostawie zdarzenia, chwilowej awarii konsumenta, niedostępności brokera, opóźnieniach, błędach części procesu oraz konieczności wykonania kompensacji. W praktyce oznacza to, że testy powinny potwierdzać nie tylko poprawność logiki biznesowej, ale również odporność mechanizmów technicznych, takich jak idempotencja, deduplikacja, manualny commit offsetów, outbox, retry oraz obsługa ścieżek awaryjnych.
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `praktyka-produkcyjna`
+> - **Uczy:** Deterministyczne testowanie współbieżności.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „Deterministyczne testowanie współbieżności” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=KafkaPostgresSemanticsTest,CompensationTest,ConsumerCrashTest" test`
+> - **Role klas:** `FakeKafkaBroker` = `simulation`, `InMemoryEventSink` = `simulation`, `InMemoryOutbox` = `simulation` (+2); `FailingPaymentConsumer` = `production-boundary`, `OutboxPublisher` = `production-boundary`, `TestablePaymentConsumer` = `production-boundary`.
+> - **Granica:** Laboratorium pokazuje kontrakt i failure modes; nie zastępuje pełnego testu end-to-end ani operacyjnej konfiguracji środowiska.
+<!-- material-card:end -->
 
-W architekturze opartej na Kafka należy przyjąć, że komunikat może zostać dostarczony więcej niż raz. Model „at-least-once delivery” jest bardzo użyteczny, ponieważ zmniejsza ryzyko utraty zdarzenia, ale przenosi odpowiedzialność za obsługę duplikatów na aplikację. Dlatego jednym z podstawowych scenariuszy testowych jest duplikacja zdarzenia. Test powinien wysłać dwukrotnie dokładnie to samo zdarzenie, z tym samym `eventId`, i sprawdzić, czy efekt biznesowy wystąpił tylko raz. Dla przykładu, jeżeli `Payment Service` otrzyma dwa razy to samo `OrderPlaced`, to w bazie powinna powstać tylko jedna płatność lub tylko jedna zmiana statusu. Taki test nie sprawdza wyłącznie działania jednej klasy konsumenta, ale weryfikuje fundamentalną gwarancję systemu: wielokrotna dostawa tego samego zdarzenia nie może prowadzić do wielokrotnego wykonania tego samego skutku biznesowego.
+## Testowanie architektury event-driven
 
-Drugim kluczowym scenariuszem jest awaria konsumenta w połowie przetwarzania. Jest to sytuacja szczególnie ważna, ponieważ konsument zwykle wykonuje kilka kroków: odbiera komunikat, deserializuje go, sprawdza deduplikację, zapisuje dane w bazie, ewentualnie publikuje kolejne zdarzenie, a dopiero potem zatwierdza offset. Jeżeli aplikacja ulegnie awarii przed commitem offsetu, Kafka dostarczy ten sam rekord ponownie po restarcie konsumenta. Test powinien więc zasymulować wyjątek w kontrolowanym miejscu, na przykład przed zapisem do bazy albo przed commitem offsetu. Poprawne zachowanie polega na tym, że offset nie zostaje zatwierdzony, komunikat wraca do przetworzenia, a po ponownym uruchomieniu system potrafi dokończyć operację bez zdublowania efektów. Ten scenariusz pokazuje, dlaczego commit offsetu powinien następować dopiero po zakończeniu efektów ubocznych, a logika biznesowa musi być idempotentna.
 
-Ważnym elementem testów integracyjnych jest również sprawdzenie zachowania systemu przy problemach z brokerem. Wzorzec outbox zakłada, że zmiana biznesowa i zapis zdarzenia do tabeli outbox odbywają się w jednej lokalnej transakcji bazodanowej. Dopiero osobny proces publikuje zdarzenia z outboxa do Kafka. Jeżeli broker jest chwilowo niedostępny, zdarzenie nie powinno zniknąć ani zostać uznane za opublikowane. Powinno pozostać w outboxie i zostać wysłane dopiero po przywróceniu połączenia z brokerem. Test integracyjny powinien więc zasymulować niedostępność Kafka w momencie publikacji, a następnie sprawdzić, czy po ponownym uruchomieniu brokera zapisane zdarzenie zostanie ostatecznie opublikowane. Taki test potwierdza, że system nie opiera się na kruchym założeniu natychmiastowej dostępności infrastruktury.
 
-Kolejnym scenariuszem są kompensacje, czyli działania naprawcze wykonywane wtedy, gdy proces biznesowy nie może zostać zakończony zgodnie z główną ścieżką. W systemie e-commerce typowym przykładem jest odrzucona płatność. Jeżeli po zdarzeniu `OrderPlaced` nastąpi `PaymentFailed`, system powinien wygenerować zdarzenie kompensujące, na przykład `OrderCancelled`. W bardziej rozbudowanym procesie może pojawić się również refund, zwolnienie rezerwacji magazynowej albo cofnięcie wcześniejszego kroku sagi. Test kompensacji powinien sprawdzić, czy błąd w jednym serwisie prowadzi do właściwego zdarzenia naprawczego i czy inne serwisy potrafią na nie odpowiednio zareagować. Dzięki temu testujemy nie tylko pojedynczy przypadek błędu, ale także spójność całego procesu rozproszonego.
+Testy tego pakietu mają dwie uzupełniające się role. Szybkie testy z fake'ami
+sprawdzają decyzje aplikacyjne i pozwalają precyzyjnie wstrzykiwać błędy.
+`KafkaPostgresSemanticsTest` uruchamia natomiast prawdziwe Kafka i PostgreSQL,
+aby potwierdzić zachowanie partycji, offsetów, unikalnych ograniczeń i transakcji.
 
-Testy jednostkowe i integracyjne pełnią w takim systemie różne role. Testy jednostkowe powinny sprawdzać pojedyncze decyzje i reguły: czy duplikat jest rozpoznawany po `eventId`, czy handler nie wykonuje logiki biznesowej drugi raz, czy kompensacja tworzy poprawny typ zdarzenia, czy błędy są klasyfikowane jako retryable albo non-retryable. Takie testy powinny być szybkie, izolowane i możliwe do uruchamiania przy każdej zmianie kodu. Nie muszą korzystać z prawdziwej Kafka ani prawdziwej bazy danych, ponieważ ich celem jest sprawdzenie reguł aplikacyjnych.
+Fake nie jest zamiennikiem brokera. Nie potwierdzi rebalansu, położenia grupy,
+redelivery ani porządku w partycji. Kontener nie jest z kolei dobrym narzędziem
+do testowania każdej gałęzi klasyfikacji błędów. W kompendium potrzebne są oba
+poziomy.
 
-Testy integracyjne powinny natomiast obejmować współpracę kilku komponentów: konsumenta, bazy danych, tabeli `processed_events`, outboxa, producenta zdarzeń oraz brokera. W idealnym wariancie można uruchamiać je z użyciem kontenerów testowych, na przykład Kafka i PostgreSQL w środowisku testowym. Tego typu testy są wolniejsze, ale dają znacznie większą pewność, że konfiguracja transakcji, commit offsetów, serializacja, publikacja oraz deduplikacja działają poprawnie razem. W architekturze event-driven wiele błędów ujawnia się dopiero na styku komponentów, dlatego same testy jednostkowe nie są wystarczające.
+## Piramida testów dla consumera
 
-Szczególnie istotne jest testowanie granicy między bazą danych a Kafka. Jeżeli system zapisuje dane biznesowe, ale nie publikuje zdarzenia, inne serwisy nie dowiedzą się o zmianie. Jeżeli publikuje zdarzenie, ale nie zapisuje danych biznesowych, konsumenci mogą reagować na fakt, który nie został utrwalony w źródłowym serwisie. Wzorzec outbox rozwiązuje ten problem przez zapis biznesowy i zapis komunikatu w jednej transakcji lokalnej. Testy powinny więc potwierdzać, że zdarzenie w outboxie pojawia się razem ze zmianą stanu domenowego oraz że nie zostaje oznaczone jako opublikowane przed faktycznym wysłaniem do brokera.
+| Poziom | Co sprawdza | Przykłady w pakiecie |
+|---|---|---|
+| jednostkowy | klasyfikację błędu, deduplikację, retry i kompensację | `IdempotencyTest`, `CompensationTest` |
+| harness pamięciowy | kolejność kroków oraz kontrolowany crash | `ConsumerCrashTest`, `OutboxBrokerFailureTest` |
+| Kafka + PostgreSQL | rzeczywiste offsety, partycje i transakcje SQL | `KafkaPostgresSemanticsTest` |
 
-Warto również rozróżniać błędy tymczasowe i trwałe. Błąd tymczasowy, taki jak timeout zewnętrznej usługi, chwilowa niedostępność bazy lub krótkotrwały problem sieciowy, powinien prowadzić do retry. Błąd trwały, taki jak niepoprawny format zdarzenia, brak wymaganego pola albo nieobsługiwana wersja schematu, zwykle powinien zakończyć się skierowaniem komunikatu do DLQ. Testy powinny potwierdzać, że system nie ponawia bez końca komunikatów, które nigdy nie mają szansy zakończyć się sukcesem, ale jednocześnie nie porzuca zdarzeń, które mogą zostać poprawnie obsłużone po ustąpieniu problemu.
+## Wykonywalna specyfikacja Kafka + PostgreSQL
 
-Przy projektowaniu testów należy także zwrócić uwagę na obserwowalność. W środowisku produkcyjnym awarie w systemach event-driven często nie są widoczne jako jeden prosty wyjątek w jednym miejscu. Zdarzenie może przejść przez kilka serwisów, a problem może ujawnić się dopiero po pewnym czasie. Dlatego testy powinny weryfikować, czy zdarzenia zawierają `correlationId`, czy błędy są logowane z odpowiednim kontekstem oraz czy problematyczne komunikaty trafiają do miejsca, w którym można je później analizować. Dobrze zaprojektowany test nie tylko sprawdza wynik biznesowy, ale również potwierdza, że w razie awarii operator systemu będzie w stanie zrozumieć, co się wydarzyło.
+Suite `testing/integration/KafkaPostgresSemanticsTest.java` zawiera sześć
+celowanych eksperymentów:
 
-Testowanie replay, czyli ponownego odtwarzania zdarzeń, również ma duże znaczenie. W wielu systemach zdarzenia są używane do odbudowy modeli odczytowych, projekcji, indeksów wyszukiwania albo cache. Test replay powinien upewnić się, że ponowne przetworzenie historycznych komunikatów nie prowadzi do niespójności ani duplikatów. To ponownie sprowadza się do idempotencji, ale w szerszym kontekście: system powinien być bezpieczny nie tylko przy przypadkowym duplikacie, ale również przy świadomym ponownym przetwarzaniu większego zakresu historii.
+| Scenariusz | Obserwowana gwarancja | Najważniejsza granica |
+|---|---|---|
+| pięć zdarzeń z tym samym `orderId` | jeden klucz trafia do jednej partycji, a offsety zachowują kolejność | Kafka nie daje globalnego porządku między partycjami |
+| zamknięcie consumera bez commitu | nowy consumer tej samej grupy otrzymuje ten sam offset | redelivery jest normalną częścią `at-least-once` |
+| rollback PostgreSQL przed commitem offsetu | rekord wraca, a niedokończony efekt SQL znika | offset zatwierdzamy dopiero po commicie bazy |
+| dwa rekordy z tym samym `eventId` | `PRIMARY KEY` markera pozwala wykonać efekt biznesowy raz | marker i efekt muszą być w tej samej transakcji |
+| source → retry → DLQ | payload i klucz są zachowane, a nagłówki opisują źródło, próbę i błąd | publikacja do DLQ i commit offsetu nadal tworzą dual-write |
+| crash po ack z Kafki, przed `sent_at` | outbox publikuje rekord ponownie | outbox gwarantuje brak utraty, nie brak duplikatów |
 
-Nie każdy scenariusz musi być testowany na tym samym poziomie. Deduplikację można skutecznie sprawdzić testem jednostkowym i potwierdzić testem integracyjnym z prawdziwą bazą. Awarię konsumenta przed commitem najlepiej testować integracyjnie lub przez dobrze zaprojektowany harness symulujący commit offsetu. Zachowanie outboxa przy niedostępności brokera wymaga testu integracyjnego, ponieważ istotą tego scenariusza jest współpraca bazy, procesu publikującego i brokera. Kompensacje można testować zarówno jednostkowo, sprawdzając wygenerowane zdarzenie, jak i integracyjnie, weryfikując cały przepływ sagi.
+Test outboxa celowo otrzymuje dwa rekordy o tym samym `eventId`. Jest to poprawny
+wynik eksperymentu: baza nie może atomowo objąć lokalnego `UPDATE sent_at` oraz
+acknowledgement z Kafki. Odbiorca nadal potrzebuje idempotencji. Idempotentny
+producer Kafka zapobiega części duplikatów powstałych podczas retry protokołu
+producenta, ale nie scala dwóch świadomych wywołań `send()` po restarcie workera.
 
-Najważniejsza zasada brzmi: testy w architekturze event-driven powinny być projektowane wokół awarii, a nie wyłącznie wokół szczęśliwej ścieżki. Sam fakt, że `OrderPlaced` prowadzi do `PaymentAuthorized`, a następnie do `ShippingInitiated`, nie wystarcza. Trzeba jeszcze wiedzieć, co stanie się, gdy `OrderPlaced` przyjdzie dwa razy, gdy konsument padnie przed commitem, gdy Kafka będzie niedostępna, gdy płatność zostanie odrzucona albo gdy konieczne będzie ponowne odtworzenie historii zdarzeń. Dopiero takie testy dają realną pewność, że system jest odporny na naturalne warunki działania rozproszonej architektury.
+## Granica transakcji consumera
+
+Bezpieczna kolejność dla efektu w lokalnym PostgreSQL to:
+
+1. rozpoczęcie transakcji SQL,
+2. próba zapisu `eventId` do `processed_events`,
+3. wykonanie efektu biznesowego tylko dla nowego markera,
+4. commit transakcji SQL,
+5. commit następnego offsetu w Kafce (`record.offset() + 1`).
+
+Crash przed krokiem 4 wycofuje marker i efekt. Crash między krokami 4 i 5
+powoduje redelivery, ale unikalny marker zamienia duplikat w bezpieczne pominięcie.
+Commit offsetu przed krokiem 4 jest niebezpieczny, bo po awarii Kafka nie musi już
+ponownie dostarczyć rekordu, mimo że efekt biznesowy nie został utrwalony.
+
+## Retry topic i DLQ
+
+Przykład przenosi wraz z rekordem następujące nagłówki:
+
+- `x-original-topic`,
+- `x-original-partition`,
+- `x-original-offset`,
+- `x-retry-count`,
+- `x-error-class`,
+- `x-error-message`.
+
+W systemie produkcyjnym warto dodać również `eventId`, `correlationId`, czas
+pierwszej porażki i identyfikator wersji schematu. Nagłówki diagnostyczne nie
+zastępują monitorowania retry/DLQ ani procedury kontrolowanego replayu.
+
+## Uruchomienie
+
+Wymagany jest działający Docker. Z katalogu `backend-engineering`:
+
+```powershell
+.\mvnw.cmd --batch-mode --no-transfer-progress -Pinfrastructure-tests '-Dtest=KafkaPostgresSemanticsTest' test
+```
+
+Suite używa obrazów `apache/kafka-native:3.8.0` i `postgres:16-alpine`.
+Tag `infrastructure` wyłącza ją ze zwykłego `verify`. Profil infrastrukturalny
+uruchamia test bez trybu cichego pomijania, więc niedostępny Docker powoduje
+błąd, a nie pozornie poprawny build.
+
+Szybki zestaw bez infrastruktury:
+
+```powershell
+.\mvnw.cmd --batch-mode --no-transfer-progress '-Dtest=DefaultIdempotentEventProcessorTest,KafkaEventConsumerTest,RetryConfigurationTest,KafkaConfigurationTest,CompensationTest,ConsumerCrashTest,IdempotencyTest,OutboxBrokerFailureTest' test
+```

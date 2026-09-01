@@ -5,227 +5,107 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
-import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 
 import java.net.URI;
-import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
-/**
- * Global exception handler for REST controllers.
- *
- * @RestControllerAdvice combines:
- * - @ControllerAdvice
- * - @ResponseBody
- *
- * It allows mapping exceptions to consistent HTTP responses
- * in one central place.
- */
-@RestControllerAdvice
+/** Consistent RFC 9457 error contract for the exception-handling lab. */
+@RestControllerAdvice(assignableTypes = UserController.class)
 public class GlobalExceptionHandler {
 
-    private static final Logger log =
-            LoggerFactory.getLogger(GlobalExceptionHandler.class);
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
-    /**
-     * Handles entity/resource not found errors.
-     *
-     * Example:
-     * GET /users/999 -> 404 NOT_FOUND
-     */
     @ExceptionHandler(ResourceNotFoundException.class)
-    public ResponseEntity<ApiError> handleNotFound(
-            ResourceNotFoundException exception
-    ) {
-        ApiError error = ApiError.of(
-                "NOT_FOUND",
-                exception.getMessage(),
-                HttpStatus.NOT_FOUND.value()
-        );
-
-        return ResponseEntity
-                .status(HttpStatus.NOT_FOUND)
-                .body(error);
+    public ProblemDetail handleNotFound(ResourceNotFoundException exception) {
+        return problem(HttpStatus.NOT_FOUND, "RESOURCE_NOT_FOUND", exception.getMessage());
     }
 
-    /**
-     * Handles invalid business input.
-     *
-     * Example:
-     * invalid operation requested by the client.
-     */
     @ExceptionHandler(BadRequestException.class)
-    public ResponseEntity<ApiError> handleBadRequest(
-            BadRequestException exception
-    ) {
-        ApiError error = ApiError.of(
-                "BAD_REQUEST",
-                exception.getMessage(),
-                HttpStatus.BAD_REQUEST.value()
-        );
-
-        return ResponseEntity
-                .status(HttpStatus.BAD_REQUEST)
-                .body(error);
+    public ProblemDetail handleBadRequest(BadRequestException exception) {
+        return problem(HttpStatus.BAD_REQUEST, "BAD_REQUEST", exception.getMessage());
     }
 
-    /**
-     * Handles business rule violations.
-     *
-     * Example:
-     * trying to cancel an already completed order.
-     */
     @ExceptionHandler(BusinessRuleViolationException.class)
-    public ResponseEntity<ApiError> handleBusinessRuleViolation(
+    public ProblemDetail handleBusinessRuleViolation(
             BusinessRuleViolationException exception
     ) {
-        ApiError error = ApiError.of(
-                "BUSINESS_RULE_VIOLATION",
-                exception.getMessage(),
-                HttpStatus.CONFLICT.value()
-        );
-
-        return ResponseEntity
-                .status(HttpStatus.CONFLICT)
-                .body(error);
+        return problem(HttpStatus.CONFLICT, "BUSINESS_RULE_VIOLATION", exception.getMessage());
     }
 
-    /**
-     * Handles validation errors from @Valid request bodies.
-     *
-     * Triggered when controller method has:
-     *
-     * public ResponseEntity<?> create(@Valid @RequestBody CreateUserRequest request)
-     *
-     * and validation fails.
-     */
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ApiError> handleValidationException(
-            MethodArgumentNotValidException exception
-    ) {
-        List<FieldErrorResponse> fieldErrors =
-                exception.getBindingResult()
-                        .getFieldErrors()
-                        .stream()
-                        .map(fieldError -> new FieldErrorResponse(
-                                fieldError.getField(),
-                                fieldError.getDefaultMessage()
-                        ))
-                        .toList();
-
-        ApiError error = ApiError.withFieldErrors(
-                "VALIDATION_ERROR",
-                "Request validation failed",
-                HttpStatus.BAD_REQUEST.value(),
-                fieldErrors
+    public ProblemDetail handleValidationException(MethodArgumentNotValidException exception) {
+        ProblemDetail problem = problem(
+                HttpStatus.BAD_REQUEST,
+                "VALIDATION_FAILED",
+                "Request body validation failed"
         );
-
-        return ResponseEntity
-                .badRequest()
-                .body(error);
+        Map<String, String> fields = exception.getBindingResult().getFieldErrors().stream()
+                .collect(Collectors.toMap(
+                        error -> error.getField(),
+                        error -> error.getDefaultMessage() == null
+                                ? "Invalid value"
+                                : error.getDefaultMessage(),
+                        (first, ignored) -> first
+                ));
+        problem.setProperty("fields", fields);
+        return problem;
     }
 
-    /**
-     * Handles validation errors from request parameters or path variables.
-     *
-     * Example:
-     * @RequestParam @Min(1) Integer page
-     */
     @ExceptionHandler(ConstraintViolationException.class)
-    public ResponseEntity<ApiError> handleConstraintViolation(
-            ConstraintViolationException exception
-    ) {
-        List<FieldErrorResponse> fieldErrors =
-                exception.getConstraintViolations()
-                        .stream()
-                        .map(violation -> new FieldErrorResponse(
-                                violation.getPropertyPath().toString(),
-                                violation.getMessage()
-                        ))
-                        .toList();
-
-        ApiError error = ApiError.withFieldErrors(
-                "CONSTRAINT_VIOLATION",
-                "Request parameter validation failed",
-                HttpStatus.BAD_REQUEST.value(),
-                fieldErrors
+    public ProblemDetail handleConstraintViolation(ConstraintViolationException exception) {
+        ProblemDetail problem = problem(
+                HttpStatus.BAD_REQUEST,
+                "VALIDATION_FAILED",
+                "Request parameter validation failed"
         );
-
-        return ResponseEntity
-                .badRequest()
-                .body(error);
+        problem.setProperty("violations", exception.getConstraintViolations().stream()
+                .map(violation -> Map.of(
+                        "path", violation.getPropertyPath().toString(),
+                        "message", violation.getMessage()
+                ))
+                .toList());
+        return problem;
     }
 
-    /**
-     * Handles authorization errors.
-     *
-     * Usually Spring Security handles 401/403 earlier,
-     * but this handler can be useful for method-level security.
-     */
+    @ExceptionHandler(HandlerMethodValidationException.class)
+    public ProblemDetail handleMethodValidation(HandlerMethodValidationException exception) {
+        return problem(
+                HttpStatus.BAD_REQUEST,
+                "VALIDATION_FAILED",
+                "Request parameter validation failed"
+        );
+    }
+
     @ExceptionHandler(AccessDeniedException.class)
-    public ResponseEntity<ApiError> handleAccessDenied(
-            AccessDeniedException exception
-    ) {
-        ApiError error = ApiError.of(
+    public ProblemDetail handleAccessDenied(AccessDeniedException exception) {
+        return problem(
+                HttpStatus.FORBIDDEN,
                 "ACCESS_DENIED",
-                "You do not have permission to perform this action",
-                HttpStatus.FORBIDDEN.value()
+                "You do not have permission to perform this action"
         );
-
-        return ResponseEntity
-                .status(HttpStatus.FORBIDDEN)
-                .body(error);
     }
 
-    /**
-     * Fallback handler for unexpected exceptions.
-     *
-     * Important:
-     * - log full exception on the server,
-     * - return generic message to the client,
-     * - do not expose stack trace or internal details.
-     */
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ApiError> handleUnexpectedException(
-            Exception exception
-    ) {
+    public ProblemDetail handleUnexpectedException(Exception exception) {
         log.error("Unexpected server error", exception);
-
-        ApiError error = ApiError.of(
+        return problem(
+                HttpStatus.INTERNAL_SERVER_ERROR,
                 "SERVER_ERROR",
-                "Unexpected server error occurred",
-                HttpStatus.INTERNAL_SERVER_ERROR.value()
+                "Unexpected server error occurred"
         );
-
-        return ResponseEntity
-                .status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(error);
     }
 
-    /**
-     * Alternative approach available in Spring 6+.
-     *
-     * ProblemDetail follows RFC 7807 standard.
-     * Spring can serialize it as application/problem+json.
-     *
-     * This method is shown as an example.
-     * In real code, choose either ApiError or ProblemDetail
-     * to keep API responses consistent.
-     */
-    public ProblemDetail createProblemDetailExample(
-            RuntimeException exception
-    ) {
-        ProblemDetail problemDetail =
-                ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
-
-        problemDetail.setType(URI.create("https://api.example.com/errors/bad-request"));
-        problemDetail.setTitle("Bad Request");
-        problemDetail.setDetail(exception.getMessage());
-        problemDetail.setProperty("code", "BAD_REQUEST");
-
-        return problemDetail;
+    private static ProblemDetail problem(HttpStatus status, String code, String detail) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail);
+        problem.setType(URI.create("https://api.example.com/problems/" + code.toLowerCase()));
+        problem.setTitle(status.getReasonPhrase());
+        problem.setProperty("code", code);
+        return problem;
     }
 }

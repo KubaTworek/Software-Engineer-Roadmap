@@ -1,31 +1,122 @@
-# Konfiguracja i profile w Spring Boot
+# configuration
 
-Konfiguracja aplikacji jest jednym z najważniejszych elementów architektury Spring Boot. Framework został zaprojektowany w taki sposób, aby oddzielić konfigurację od kodu biznesowego i umożliwić łatwe zarządzanie ustawieniami dla różnych środowisk. W nowoczesnych aplikacjach Spring praktycznie całkowicie odchodzi się od konfiguracji XML na rzecz Java Config, autokonfiguracji oraz externalized configuration.
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** configuration.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „configuration” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=ValidatedExternalApiPropertiesTest" test`
+> - **Role klas:** `ValidatedExternalApiProperties` = `correct`.
+> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+<!-- material-card:end -->
 
-Historycznie Spring opierał się głównie na plikach XML definiujących beany oraz zależności pomiędzy nimi. Współcześnie standardem jest Java Config, czyli klasy oznaczone `@Configuration`, zawierające metody `@Bean`. Dzięki temu konfiguracja staje się typowana, łatwiejsza do refaktoryzacji oraz bardziej zintegrowana z IDE. W praktyce jednak Spring Boot znacząco ogranicza potrzebę ręcznego definiowania beanów, ponieważ większość infrastruktury tworzona jest automatycznie przez autokonfigurację starterów.
+## Konfiguracja Spring Boot — źródła, typy i walidacja
 
-Autokonfiguracja jest jednym z fundamentów Spring Boot. Framework analizuje zależności znajdujące się w classpath oraz dostępne właściwości konfiguracyjne i na tej podstawie automatycznie tworzy odpowiednie beany. Dzięki temu dodanie startera, np. `spring-boot-starter-data-jpa`, wystarcza do skonfigurowania Hibernate, `DataSource` i transakcji bez konieczności ręcznego definiowania całej infrastruktury.
 
-Spring Boot automatycznie skanuje komponenty oznaczone adnotacjami takimi jak `@Component`, `@Service`, `@Repository` czy `@Controller`. Mechanizm ten nazywa się component scanning i jest domyślnie aktywowany przez `@SpringBootApplication`. Dzięki temu większość beanów tworzona jest automatycznie bez potrzeby rejestracji w konfiguracji.
 
-Bardzo istotnym mechanizmem są profile środowiskowe. Spring Profiles pozwalają definiować konfigurację aktywną wyłącznie dla określonego środowiska, np. development, test lub production. Klasy oznaczone `@Profile("dev")` zostaną załadowane tylko wtedy, gdy aktywny jest profil `dev`. Dzięki temu można utrzymywać osobne konfiguracje dla różnych środowisk bez modyfikowania kodu aplikacji.
+Konfiguracja jest wejściem do programu. Błędny URL, timeout albo limit puli jest
+tak samo realnym błędem jak niepoprawny argument metody, dlatego powinien zostać
+związany z typem, zwalidowany i odrzucony podczas startu aplikacji.
 
-Profile aktywuje się najczęściej poprzez właściwość `spring.profiles.active`, zmienne środowiskowe lub argumenty JVM. Jeśli profil nie zostanie ustawiony, Spring użyje profilu `default`. Mechanizm profili jest bardzo ważny w systemach enterprise, ponieważ pozwala oddzielić konfigurację developerską od produkcyjnej, np. różne bazy danych, endpointy API czy feature flagi.
+## Mapa przykładów
 
-Spring Boot wspiera zarówno pliki `.properties`, jak i `.yml`. Oba formaty są równoważne funkcjonalnie, jednak YAML jest często preferowany ze względu na większą czytelność przy bardziej rozbudowanej konfiguracji. Spring automatycznie ładuje pliki takie jak `application.yml`, `application-dev.yml` czy `application-prod.yml` w zależności od aktywnego profilu. Konfiguracje profili są nadpisywane warstwowo, co pozwala utrzymywać wspólną konfigurację bazową oraz różnice specyficzne dla środowiska.
+| Przykład | Rola |
+| --- | --- |
+| `AppConfig` | jawna rejestracja beanów i `proxyBeanMethods=false` |
+| `ValidatedExternalApiProperties` | immutable binding do `URI` i `Duration`, fail-fast |
+| `FeatureFlagsProperties` | grupa powiązanych flag |
+| `ValueBasedService` | lokalne użycie pojedynczego `@Value` |
+| `DevConfig`, `ProdConfig`, `DefaultConfig` | warunkowa topologia beanów przez profile |
+| `CloudConfigClient` | wartość pochodząca z zewnętrznego property source |
 
-Do odczytywania pojedynczych wartości konfiguracyjnych można używać `@Value`. Mechanizm ten sprawdza się przy prostych przypadkach, np. odczycie jednej właściwości. W większych projektach znacznie lepszym rozwiązaniem jest jednak `@ConfigurationProperties`. Pozwala ono mapować grupy właściwości na typowane klasy Java. Dzięki temu konfiguracja staje się bardziej przejrzysta, łatwiejsza do walidacji oraz bardziej odporna na błędy.
+## Precedence property sources
 
-`@ConfigurationProperties` jest szczególnie przydatne przy konfiguracji klientów zewnętrznych systemów, feature flag czy połączeń sieciowych. Zamiast wielu pojedynczych `@Value`, aplikacja posiada jedną spójną klasę reprezentującą konfigurację danego modułu. Spring Boot automatycznie mapuje właściwości z plików konfiguracyjnych na pola klasy.
+Spring rozpatruje wiele źródeł, a źródło o wyższym priorytecie przesłania niższe.
+Praktyczny, uproszczony porządek od niższego do wyższego priorytetu to:
 
-Jednym z najważniejszych założeń Spring Boot jest externalized configuration, czyli przechowywanie konfiguracji poza kodem aplikacji. W praktyce oznacza to możliwość dostarczania konfiguracji z wielu źródeł: plików `application.yml`, zmiennych środowiskowych, parametrów JVM, argumentów uruchomieniowych czy zewnętrznych serwerów konfiguracji. Dzięki temu ten sam artefakt aplikacji może działać w różnych środowiskach jedynie poprzez zmianę konfiguracji.
+1. wartości domyślne zapisane w kodzie,
+2. `application.properties` lub `application.yml`,
+3. pliki wariantu profilu i importowane config data,
+4. zmienne środowiskowe,
+5. system properties JVM (`-D...`),
+6. argumenty command line (`--...`),
+7. właściwości dostarczone przez test.
 
-Spring Boot bardzo dobrze integruje się ze zmiennymi środowiskowymi. W środowiskach kontenerowych i Kubernetes jest to szczególnie istotne, ponieważ konfiguracja często przekazywana jest właśnie przez env variables. Spring automatycznie mapuje zmienne takie jak `SPRING_DATASOURCE_URL` na odpowiednie właściwości konfiguracyjne aplikacji.
+Pełna lista Spring Boot zawiera dodatkowe źródła, np. `SPRING_APPLICATION_JSON`,
+JNDI i servlet init parameters. W diagnozie sprawdzaj `Environment` oraz actuator
+`env` z zachowaniem ochrony sekretów; nie zgaduj, który plik „powinien wygrać”.
+`ValidatedExternalApiPropertiesTest` dodaje dwa property sources i potwierdza,
+że pierwsze źródło w `MutablePropertySources` dostarcza wartość efektywną.
 
-W bardziej rozbudowanych systemach mikroserwisowych często wykorzystuje się Spring Cloud Config. Jest to centralny serwer konfiguracji przechowujący ustawienia aplikacji np. w repozytorium Git. Klient podczas uruchamiania pobiera konfigurację z Config Server przez HTTP. Dzięki temu wszystkie mikroserwisy mogą korzystać ze wspólnego źródła konfiguracji.
+Relaxed binding mapuje przykładowo `APP_EXTERNAL_API_BASE_URL` na
+`app.external-api.base-url`. Nazwa zmiennej środowiskowej nie zmienia kontraktu
+konfiguracji — jest tylko inną reprezentacją tego samego klucza.
 
-Spring Cloud Config wspiera również dynamiczne odświeżanie konfiguracji przy użyciu `@RefreshScope`. Po wywołaniu endpointu `/actuator/refresh` wybrane beany są rekonstruowane z nowymi wartościami konfiguracyjnymi bez restartu aplikacji. Mechanizm ten jest szczególnie przydatny dla feature flag oraz konfiguracji zewnętrznych integracji.
+## `@Value` czy `@ConfigurationProperties`
 
-Dobrą praktyką jest minimalizowanie liczby hardcoded values w kodzie aplikacji. Parametry takie jak URL-e, timeouty, klucze API, feature flagi czy konfiguracja baz danych powinny znajdować się w zewnętrznej konfiguracji. Dzięki temu aplikacja pozostaje elastyczna i łatwiejsza do wdrażania w różnych środowiskach.
+| Sytuacja | Wybór |
+| --- | --- |
+| jedna lokalna, nieskomplikowana wartość | `@Value` może wystarczyć |
+| grupa ustawień jednego klienta/modułu | `@ConfigurationProperties` |
+| potrzebne `Duration`, `URI`, lista lub zagnieżdżona struktura | `@ConfigurationProperties` |
+| potrzebna walidacja i metadata dla IDE | `@ConfigurationProperties` |
+| wyrażenie SpEL | `@Value`, ale najpierw oceń, czy logika należy do konfiguracji |
 
-Konfiguracja w Spring Boot jest bardzo silnie związana z filozofią convention over configuration. Framework dostarcza sensowne wartości domyślne i autokonfigurację, ale jednocześnie pozwala łatwo nadpisywać ustawienia w razie potrzeby. Zrozumienie mechanizmów profilów, externalized configuration oraz autokonfiguracji jest kluczowe przy budowaniu większych aplikacji enterprise oraz systemów mikroserwisowych.
+`ValidatedExternalApiProperties` używa typów `URI` i `Duration`. Konstruktor
+odrzuca schemat inny niż HTTP(S) oraz timeout poza zakresem `100ms..30s`, a Bean
+Validation pilnuje wartości wymaganych. Niepoprawna konfiguracja zatrzymuje start
+zamiast ujawniać się przy pierwszym ruchu produkcyjnym.
+
+Sekret może być powiązany z properties, ale nie powinien mieć bezpiecznej
+wartości domyślnej zapisanej w Git. Powinien pochodzić z secret managera lub
+kontrolowanego środowiska, nie być logowany i mieć procedurę rotacji.
+
+## Profile nie są systemem konfiguracji biznesowej
+
+Profil zmienia zestaw beanów. Jest właściwy, gdy środowiska naprawdę potrzebują
+innej implementacji, np. emulatora zamiast zewnętrznego adaptera. Nie używaj
+profili do każdej różnicy wartości ani jako zamiennika feature flags.
+
+Ryzyka nadmiaru profili:
+
+- kombinacje `dev,cloud,region-a,feature-x` tworzą trudną do przewidzenia topologię,
+- test może uruchomić inny graf beanów niż produkcja,
+- negacje typu `@Profile("!prod")` mogą przypadkowo aktywować kod demonstracyjny,
+- sekret lub URL nadal powinien być wartością, nie osobną klasą konfiguracyjną.
+
+Profil `default` jest aktywny tylko wtedy, gdy nie wskazano żadnego profilu. Nie
+jest profilem bazowym dokładanym do każdego środowiska.
+
+## Java Config i autokonfiguracja
+
+`@Configuration(proxyBeanMethods=false)` unika proxy klasy konfiguracyjnej. Jest
+poprawne, gdy metody `@Bean` przyjmują zależności jako parametry i nie wywołują
+się wzajemnie. Przy `proxyBeanMethods=true` bezpośrednie wywołanie innej metody
+`@Bean` jest przechwytywane, aby zachować semantykę singletona; koszt i ukryte
+powiązanie zwykle nie są potrzebne.
+
+Autokonfiguracja działa warunkowo na podstawie classpath, properties i istniejących
+beanów. Gdy wynik zaskakuje, sprawdź condition evaluation report. Ręczne dodanie
+beana może celowo wyłączyć konfigurację oznaczoną `@ConditionalOnMissingBean`.
+
+## Dynamiczne odświeżanie
+
+`@RefreshScope` rekonstruuje wybrane beany, ale nie daje atomowej zmiany całej
+aplikacji. Dwa beany mogą przez chwilę widzieć różne wersje ustawień, istniejące
+requesty mogą używać starej instancji, a zmiana rozmiaru puli czy schematu danych
+może wymagać kontrolowanego restartu. Każdą dynamiczną właściwość trzeba ocenić
+pod kątem spójności i możliwości rollbacku.
+
+## Jak testować konfigurację
+
+`ApplicationContextRunner` uruchamia mały kontekst tylko z badaną konfiguracją.
+Test powinien potwierdzić:
+
+- poprawne mapowanie do typów domenowych,
+- fail-fast dla brakującej lub niepoprawnej wartości,
+- wartość efektywną przy kilku property sources,
+- obecność lub brak warunkowego beana.
+
+Pełny `@SpringBootTest` jest potrzebny dopiero, gdy sprawdzamy współdziałanie wielu
+autokonfiguracji, a nie sam rekord properties.

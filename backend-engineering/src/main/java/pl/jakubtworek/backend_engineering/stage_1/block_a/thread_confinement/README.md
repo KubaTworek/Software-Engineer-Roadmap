@@ -1,3 +1,16 @@
+# Thread confinement i własność stanu
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** Thread confinement i własność stanu.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „Thread confinement i własność stanu” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=ThreadConfinementTest" test`
+> - **Role klas:** `BrokenOrderProcessor` = `naive`.
+> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+<!-- material-card:end -->
+
 Współbieżność w Javie: izolacja stanu i synchronizacja
 ==================================================
 

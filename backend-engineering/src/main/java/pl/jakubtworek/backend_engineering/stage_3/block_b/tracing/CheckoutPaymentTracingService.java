@@ -1,6 +1,6 @@
 package pl.jakubtworek.backend_engineering.stage_3.block_b.tracing;
 
-import io.opentelemetry.api.trace.Span;
+import java.util.Objects;
 
 /**
  * Demonstrates how manual tracing composes the checkout payment flow.
@@ -14,6 +14,7 @@ public final class CheckoutPaymentTracingService {
     private final TracedRedisClient redisClient;
     private final TracedOrderRepository orderRepository;
     private final TracedPaymentProviderClient paymentProviderClient;
+    private final OrderCacheCodec orderCacheCodec;
 
     public CheckoutPaymentTracingService(
             CheckoutSpanFactory spanFactory,
@@ -21,53 +22,74 @@ public final class CheckoutPaymentTracingService {
             TracedOrderRepository orderRepository,
             TracedPaymentProviderClient paymentProviderClient
     ) {
-        this.spanFactory = spanFactory;
-        this.redisClient = redisClient;
-        this.orderRepository = orderRepository;
-        this.paymentProviderClient = paymentProviderClient;
+        this(spanFactory, redisClient, orderRepository, paymentProviderClient, new OrderCacheCodec());
+    }
+
+    public CheckoutPaymentTracingService(
+            CheckoutSpanFactory spanFactory,
+            TracedRedisClient redisClient,
+            TracedOrderRepository orderRepository,
+            TracedPaymentProviderClient paymentProviderClient,
+            OrderCacheCodec orderCacheCodec
+    ) {
+        this.spanFactory = Objects.requireNonNull(spanFactory, "spanFactory must not be null");
+        this.redisClient = Objects.requireNonNull(redisClient, "redisClient must not be null");
+        this.orderRepository = Objects.requireNonNull(orderRepository, "orderRepository must not be null");
+        this.paymentProviderClient = Objects.requireNonNull(
+                paymentProviderClient,
+                "paymentProviderClient must not be null"
+        );
+        this.orderCacheCodec = Objects.requireNonNull(orderCacheCodec, "orderCacheCodec must not be null");
     }
 
     public PaymentResult payOrder(RequestCorrelation requestCorrelation, String orderId) {
-        try (SpanScope ignored = spanFactory.startChargeOrderSpan(orderId)) {
-            String cacheKey = "order:" + orderId;
+        Objects.requireNonNull(requestCorrelation, "requestCorrelation must not be null");
+        String validatedOrderId = requireNonBlank(orderId, "orderId");
 
-            String cachedOrder = redisClient.getOrderFromCache(cacheKey);
+        try (SpanScope spanScope = spanFactory.startChargeOrderSpan(validatedOrderId)) {
+            try {
+                String cacheKey = "order:" + validatedOrderId;
 
-            TracedOrderRepository.OrderRecord order;
-            if (cachedOrder == null) {
-                order = orderRepository.findOrder(orderId);
-            } else {
-                order = decodeCachedOrder(cachedOrder);
-            }
+                String cachedOrder = redisClient.getOrderFromCache(cacheKey);
 
-            TracedPaymentProviderClient.PaymentProviderResponse providerResponse =
-                    paymentProviderClient.charge(
-                            requestCorrelation,
-                            order.id(),
-                            order.totalCents(),
-                            order.currency()
-                    );
+                TracedOrderRepository.OrderRecord order;
+                if (cachedOrder == null) {
+                    order = orderRepository.findOrder(validatedOrderId);
+                } else {
+                    order = orderCacheCodec.decode(cachedOrder);
+                    if (!order.id().equals(validatedOrderId)) {
+                        throw new IllegalStateException("cached order does not match the requested order id");
+                    }
+                }
 
-            if (providerResponse.statusCode() >= 500) {
-                RuntimeException exception = new RuntimeException("payment provider failed");
-                SpanErrorHandler.recordException(Span.current(), exception);
+                TracedPaymentProviderClient.PaymentProviderResponse providerResponse =
+                        paymentProviderClient.charge(
+                                requestCorrelation,
+                                order.id(),
+                                order.totalCents(),
+                                order.currency()
+                        );
+
+                if (providerResponse.statusCode() >= 500) {
+                    throw new RuntimeException("payment provider failed");
+                }
+                if (providerResponse.statusCode() < 200 || providerResponse.statusCode() >= 300) {
+                    return new PaymentResult(false, order.id());
+                }
+
+                return new PaymentResult(true, order.id());
+            } catch (RuntimeException exception) {
+                SpanErrorHandler.recordException(spanScope.span(), exception);
                 throw exception;
             }
-
-            return new PaymentResult(true, order.id());
-        } catch (RuntimeException exception) {
-            SpanErrorHandler.recordException(Span.current(), exception);
-            throw exception;
         }
     }
 
-    private TracedOrderRepository.OrderRecord decodeCachedOrder(String cachedOrder) {
-        /**
-         * This is only a placeholder.
-         *
-         * Real code should deserialize the cached value safely and validate its schema.
-         */
-        return new TracedOrderRepository.OrderRecord("cached-order", 1000L, "PLN");
+    private static String requireNonBlank(String value, String fieldName) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(fieldName + " must not be blank");
+        }
+        return value;
     }
 
     public record PaymentResult(

@@ -1,4 +1,19 @@
-# Model domenowy i kontrakty eventów w architekturze event-driven
+# domain
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `praktyka-produkcyjna`
+> - **Uczy:** domain.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „domain” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Role klas:** brak klasy-kontrprzykładu; pozostałe typy są minimalnymi modelami pojęć opisanych niżej.
+> - **Granica:** Laboratorium pokazuje kontrakt i failure modes; nie zastępuje pełnego testu end-to-end ani operacyjnej konfiguracji środowiska.
+<!-- material-card:end -->
+
+## Model domenowy i kontrakty eventów w architekturze event-driven
+
+
 
 ## Wprowadzenie
 

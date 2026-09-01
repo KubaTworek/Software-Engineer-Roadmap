@@ -11,7 +11,7 @@ import java.util.UUID;
 public interface ProcessedEventRepository {
 
     /**
-     * Tries to mark the event as processed before business logic is executed.
+     * Tries to reserve the event ID before business logic is executed.
      *
      * Returns true when the event was inserted successfully.
      * Returns false when the event ID already exists, which means the event is a duplicate.
@@ -19,7 +19,8 @@ public interface ProcessedEventRepository {
     boolean tryMarkAsProcessed(UUID eventId);
 
     /**
-     * Removes the processed marker when business processing failed before completion.
+     * Removes the marker whenever business processing failed before completion,
+     * including permanent failures that still need to be durably published to DLQ.
      *
      * This is optional and depends on the transaction strategy.
      * If the deduplication insert and business effects are in the same database transaction,

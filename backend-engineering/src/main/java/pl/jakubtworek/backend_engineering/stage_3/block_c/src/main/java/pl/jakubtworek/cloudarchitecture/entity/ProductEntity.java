@@ -1,4 +1,4 @@
-package pl.jakubtworek.backend_engineering.stage_3.block_c.src.main.java.pl.jakubtworek.cloudarchitecture.entity;
+package pl.jakubtworek.cloudarchitecture.entity;
 
 import jakarta.persistence.*;
 import java.math.BigDecimal;
@@ -16,10 +16,10 @@ public class ProductEntity {
     private Long id;
 
     /** Product name can be indexed when the application frequently filters by this field. */
-    @Column(nullable = false)
+    @Column(name = "name", nullable = false)
     private String name;
 
-    @Column(nullable = false)
+    @Column(name = "price", nullable = false)
     private BigDecimal price;
 
     protected ProductEntity() {

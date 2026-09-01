@@ -1,6 +1,21 @@
-# OFFSET vs Keyset Pagination — szczegółowe podsumowanie
+# pagination
 
-# Wprowadzenie
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** pagination.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „pagination” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Role klas:** brak klasy-kontrprzykładu; pozostałe typy są minimalnymi modelami pojęć opisanych niżej.
+> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+<!-- material-card:end -->
+
+## OFFSET vs Keyset Pagination — szczegółowe podsumowanie
+
+
+
+## Wprowadzenie
 
 Paginacja jest jednym z podstawowych mechanizmów praktycznie każdej aplikacji backendowej. Występuje w:
 - API,
@@ -31,7 +46,7 @@ Choć logicznie rozwiązują ten sam problem, działają zupełnie inaczej na po
 
 ---
 
-# OFFSET Pagination
+## OFFSET Pagination
 
 Najbardziej klasyczna forma paginacji wygląda tak:
 
@@ -55,7 +70,7 @@ Dlatego OFFSET jest bardzo popularny.
 
 ---
 
-# Jak działa OFFSET wewnętrznie
+## Jak działa OFFSET wewnętrznie
 
 Problem polega na tym, że PostgreSQL nie „teleportuje się” do offsetu.
 
@@ -70,7 +85,7 @@ To kluczowy problem.
 
 ---
 
-# Dlaczego OFFSET jest kosztowny
+## Dlaczego OFFSET jest kosztowny
 
 Przykład:
 
@@ -95,7 +110,7 @@ Koszt:
 
 ---
 
-# OFFSET i indeksy
+## OFFSET i indeksy
 
 Bardzo częste nieporozumienie:
 
@@ -122,7 +137,7 @@ ale:
 
 ---
 
-# Wzrost kosztu OFFSET
+## Wzrost kosztu OFFSET
 
 To fundamentalna cecha OFFSET pagination.
 
@@ -144,7 +159,7 @@ To oznacza:
 
 ---
 
-# Dlaczego to jest problem produkcyjny
+## Dlaczego to jest problem produkcyjny
 
 W małych tabelach problem często nie istnieje.
 
@@ -163,7 +178,7 @@ duże OFFSET-y zaczynają:
 
 ---
 
-# Keyset Pagination
+## Keyset Pagination
 
 Alternatywą jest:
 ```text
@@ -188,7 +203,7 @@ mówimy:
 
 ---
 
-# Podstawowy przykład
+## Podstawowy przykład
 
 Zamiast:
 
@@ -210,7 +225,7 @@ To fundamentalna różnica.
 
 ---
 
-# Jak działa keyset pagination
+## Jak działa keyset pagination
 
 PostgreSQL:
 - wykorzystuje indeks,
@@ -224,7 +239,7 @@ Nie musi:
 
 ---
 
-# Dlaczego keyset jest szybki
+## Dlaczego keyset jest szybki
 
 Najważniejsza cecha:
 
@@ -244,7 +259,7 @@ jest zwykle bardzo szybkie, ponieważ:
 
 ---
 
-# OFFSET vs Keyset — fundamentalna różnica
+## OFFSET vs Keyset — fundamentalna różnica
 
 OFFSET:
 ```text
@@ -262,7 +277,7 @@ To właśnie dlatego keyset skaluje się znacznie lepiej.
 
 ---
 
-# Złożoność wydajnościowa
+## Złożoność wydajnościowa
 
 W uproszczeniu:
 
@@ -282,7 +297,7 @@ To ogromna różnica dla dużych datasetów.
 
 ---
 
-# Stable Ordering
+## Stable Ordering
 
 Keyset pagination wymaga:
 ```text
@@ -302,7 +317,7 @@ może być problematyczny, ponieważ:
 
 ---
 
-# Tie-breaker
+## Tie-breaker
 
 Dlatego zwykle dodaje się:
 ```sql
@@ -321,7 +336,7 @@ Dzięki temu:
 
 ---
 
-# Cursor Pagination
+## Cursor Pagination
 
 Keyset pagination bardzo często używa:
 ```text
@@ -348,7 +363,7 @@ WHERE id > 500000
 
 ---
 
-# Infinite Scroll
+## Infinite Scroll
 
 Dlatego keyset pagination idealnie nadaje się do:
 - infinite scroll,
@@ -362,7 +377,7 @@ To obecnie standard dużych systemów.
 
 ---
 
-# Problem random access
+## Problem random access
 
 Największą wadą keyset pagination jest brak wygodnego:
 ```text
@@ -379,7 +394,7 @@ Keyset:
 
 ---
 
-# Czy to realny problem?
+## Czy to realny problem?
 
 W praktyce:
 - większość nowoczesnych UI,
@@ -394,7 +409,7 @@ Dlatego:
 
 ---
 
-# Keyset a consistency
+## Keyset a consistency
 
 Keyset pagination ma również przewagę consistency.
 
@@ -411,7 +426,7 @@ Przykład:
 
 ---
 
-# Keyset jest bardziej stabilny
+## Keyset jest bardziej stabilny
 
 Ponieważ:
 - paginacja opiera się na konkretnym kluczu,
@@ -424,7 +439,7 @@ To szczególnie ważne dla:
 
 ---
 
-# Composite Keyset Pagination
+## Composite Keyset Pagination
 
 Często keyset używa wielu kolumn.
 
@@ -441,7 +456,7 @@ To bardzo ważny wzorzec produkcyjny.
 
 ---
 
-# Indeksy dla keyset pagination
+## Indeksy dla keyset pagination
 
 Keyset wymaga odpowiednich indeksów.
 
@@ -464,7 +479,7 @@ Bez indeksu:
 
 ---
 
-# OFFSET nadal ma zastosowania
+## OFFSET nadal ma zastosowania
 
 OFFSET nie jest „zły”.
 
@@ -483,7 +498,7 @@ Problem zaczyna się przy:
 
 ---
 
-# Kiedy wybierać OFFSET
+## Kiedy wybierać OFFSET
 
 OFFSET sprawdza się gdy:
 - dataset jest mały,
@@ -493,7 +508,7 @@ OFFSET sprawdza się gdy:
 
 ---
 
-# Kiedy wybierać keyset
+## Kiedy wybierać keyset
 
 Keyset jest lepszy gdy:
 - tabela jest bardzo duża,
@@ -504,7 +519,7 @@ Keyset jest lepszy gdy:
 
 ---
 
-# Największy błąd projektowy
+## Największy błąd projektowy
 
 Najczęstszym błędem jest:
 - używanie OFFSET dla ogromnych tabel,
@@ -520,7 +535,7 @@ potrafi dramatycznie obciążyć bazę.
 
 ---
 
-# Najważniejsza praktyczna zasada
+## Najważniejsza praktyczna zasada
 
 OFFSET:
 ```text
@@ -542,3 +557,10 @@ Dlatego:
 Keyset:
 - wymaga bardziej świadomego projektu,
 - ale daje znacznie lepszą wydajność dla dużych systemów.
+
+## Automatyczna weryfikacja
+
+`PostgreSqlExecutableLabTest` porównuje JSON-owe plany głębokiego `OFFSET` i
+keyset pagination. Asercja dotyczy maksymalnego `Actual Rows`, czyli wykonanej
+pracy, a nie niestabilnego czasu odpowiedzi. Oba zapytania zwracają tę samą
+liczbę elementów strony, ale tylko offset musi odwiedzić pomijane rekordy.

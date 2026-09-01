@@ -1,6 +1,8 @@
-package pl.jakubtworek.backend_engineering.stage_3.block_c.src.main.java.pl.jakubtworek.cloudarchitecture.service;
+package pl.jakubtworek.cloudarchitecture.service;
 
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 import java.time.Duration;
 
@@ -13,9 +15,27 @@ import java.time.Duration;
 @Component
 public class ExternalApiClient {
     private final RestClient restClient;
+    private final Duration timeout;
 
-    public ExternalApiClient(RestClient.Builder builder) {
-        this.restClient = builder.baseUrl("https://api.example.com").build();
+    public ExternalApiClient(
+            RestClient.Builder builder,
+            @Value("${external-api.base-url:https://api.example.com}") String baseUrl,
+            @Value("${external-api.timeout:3s}") Duration timeout
+    ) {
+        if (baseUrl == null || baseUrl.isBlank()) {
+            throw new IllegalArgumentException("baseUrl must not be blank");
+        }
+        if (timeout == null || timeout.isZero() || timeout.isNegative()) {
+            throw new IllegalArgumentException("timeout must be positive");
+        }
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(timeout);
+        requestFactory.setReadTimeout(timeout);
+        this.restClient = builder
+                .baseUrl(baseUrl)
+                .requestFactory(requestFactory)
+                .build();
+        this.timeout = timeout;
     }
 
     /**
@@ -28,6 +48,6 @@ public class ExternalApiClient {
     }
 
     public Duration recommendedTimeout() {
-        return Duration.ofSeconds(3);
+        return timeout;
     }
 }

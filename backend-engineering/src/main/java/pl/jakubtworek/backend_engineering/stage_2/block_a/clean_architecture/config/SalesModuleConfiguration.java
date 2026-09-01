@@ -4,9 +4,9 @@ import pl.jakubtworek.backend_engineering.stage_2.block_a.clean_architecture.ada
 import pl.jakubtworek.backend_engineering.stage_2.block_a.clean_architecture.adapter.out.messaging.KafkaClient;
 import pl.jakubtworek.backend_engineering.stage_2.block_a.clean_architecture.adapter.out.messaging.KafkaOrderEventPublisherAdapter;
 import pl.jakubtworek.backend_engineering.stage_2.block_a.clean_architecture.adapter.out.messaging.OrderEventMessageMapper;
-import pl.jakubtworek.backend_engineering.stage_2.block_a.clean_architecture.adapter.out.persistance.JpaOrderRepositoryAdapter;
-import pl.jakubtworek.backend_engineering.stage_2.block_a.clean_architecture.adapter.out.persistance.OrderPersistenceMapper;
-import pl.jakubtworek.backend_engineering.stage_2.block_a.clean_architecture.adapter.out.persistance.SpringDataOrderRepository;
+import pl.jakubtworek.backend_engineering.stage_2.block_a.clean_architecture.adapter.out.persistence.JpaOrderRepositoryAdapter;
+import pl.jakubtworek.backend_engineering.stage_2.block_a.clean_architecture.adapter.out.persistence.OrderPersistenceMapper;
+import pl.jakubtworek.backend_engineering.stage_2.block_a.clean_architecture.adapter.out.persistence.SpringDataOrderRepository;
 import pl.jakubtworek.backend_engineering.stage_2.block_a.clean_architecture.application.port.in.PlaceOrderUseCase;
 import pl.jakubtworek.backend_engineering.stage_2.block_a.clean_architecture.application.port.out.OrderEventPublisher;
 import pl.jakubtworek.backend_engineering.stage_2.block_a.clean_architecture.application.port.out.OrderRepository;

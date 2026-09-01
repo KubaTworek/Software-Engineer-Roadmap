@@ -1,6 +1,23 @@
-# Dobór Technologii pod Workload
+# workload
 
-# Architektura powinna wynikać z problemu, nie z trendów
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** workload.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „workload” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Role klas:** brak klasy-kontrprzykładu; pozostałe typy są minimalnymi modelami pojęć opisanych niżej.
+> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+<!-- material-card:end -->
+
+## Dobór Technologii pod Workload
+
+
+
+> `schema.sql` tworzy od nowa samodzielny schemat PostgreSQL używany przez laboratoria i usuwa tabele o nazwach `users`, `accounts`, `orders`, `order_items`, `payments` oraz `outbox`. Uruchamiaj go wyłącznie w przeznaczonej do ćwiczeń bazie. Constrainty w tym schemacie są częścią modelu: chronią invariants także wtedy, gdy zapis omija kod aplikacji.
+
+## Architektura powinna wynikać z problemu, nie z trendów
 
 Jednym z najczęstszych błędów przy projektowaniu systemów jest wybieranie technologii na podstawie ich popularności, marketingu albo tego, co aktualnie dominuje w dyskusjach branżowych. W praktyce bardzo wiele problemów produkcyjnych nie wynika z „błędów implementacyjnych”, lecz z fundamentalnego niedopasowania technologii do charakterystyki workloadu.
 
@@ -50,7 +67,7 @@ To zwykle prowadzi do:
 
 ---
 
-# Workload jako punkt wyjścia
+## Workload jako punkt wyjścia
 
 Podstawowym pytaniem powinno być:
 
@@ -69,7 +86,7 @@ Kluczowe znaczenie ma:
 
 ---
 
-# Read-heavy Workload
+## Read-heavy Workload
 
 Systemy read-heavy wykonują ogromną liczbę odczytów i relatywnie niewiele zapisów.
 
@@ -128,7 +145,7 @@ To oznacza, że system można zoptymalizować pod:
 
 ---
 
-# Write-heavy Workload
+## Write-heavy Workload
 
 Systemy write-heavy generują ogromną liczbę zapisów.
 
@@ -178,7 +195,7 @@ Próba realizacji takiego workloadu na klasycznej relacyjnej bazie danych bardzo
 
 ---
 
-# Strong Consistency vs Eventual Consistency
+## Strong Consistency vs Eventual Consistency
 
 Jednym z najważniejszych pytań architektonicznych jest:
 
@@ -186,7 +203,7 @@ Jednym z najważniejszych pytań architektonicznych jest:
 
 ---
 
-# Strong Consistency
+## Strong Consistency
 
 Silna spójność oznacza, że dane muszą być natychmiast poprawne.
 
@@ -237,7 +254,7 @@ W takich systemach correctness jest ważniejsze niż:
 
 ---
 
-# Eventual Consistency
+## Eventual Consistency
 
 Niektóre systemy mogą tolerować chwilową niespójność danych.
 
@@ -275,7 +292,7 @@ To świadoma zgoda na:
 
 ---
 
-# Invariants jako fundament architektury
+## Invariants jako fundament architektury
 
 Najbardziej niedocenianym aspektem projektowania systemów są invariants.
 
@@ -305,7 +322,7 @@ Próba implementowania takich wymagań na eventual consistency bardzo często ko
 
 ---
 
-# Relacyjne bazy danych są niedoceniane
+## Relacyjne bazy danych są niedoceniane
 
 Wiele nowoczesnych aplikacji nadal ma naturę relacyjną.
 
@@ -329,7 +346,7 @@ Dlatego PostgreSQL bardzo często jest lepszym wyborem niż NoSQL.
 
 ---
 
-# Problem z MongoDB i schema-less
+## Problem z MongoDB i schema-less
 
 Wiele organizacji wybiera MongoDB, ponieważ:
 - łatwo zacząć,
@@ -348,7 +365,7 @@ Zespół ręcznie implementuje funkcje, które relacyjne bazy oferują od dekad.
 
 ---
 
-# Distributed Systems są bardzo kosztowne
+## Distributed Systems są bardzo kosztowne
 
 Distributed systems rozwiązują konkretne problemy, ale wprowadzają ogromną złożoność.
 
@@ -379,9 +396,9 @@ To klasyczna przedwczesna optymalizacja.
 
 ---
 
-# Przykłady Doboru Technologii
+## Przykłady Doboru Technologii
 
-# 1. System bankowy
+## 1. System bankowy
 
 ## Wymagania
 
@@ -406,7 +423,7 @@ To klasyczna przedwczesna optymalizacja.
 
 ---
 
-# 2. Social Media Feed
+## 2. Social Media Feed
 
 ## Wymagania
 
@@ -428,7 +445,7 @@ Eventual consistency jest akceptowalna.
 
 ---
 
-# 3. System rezerwacji miejsc
+## 3. System rezerwacji miejsc
 
 ## Wymagania
 
@@ -445,7 +462,7 @@ Eventual consistency jest akceptowalna.
 
 ---
 
-# 4. Platforma telemetryczna
+## 4. Platforma telemetryczna
 
 ## Wymagania
 
@@ -462,7 +479,7 @@ Eventual consistency jest akceptowalna.
 
 ---
 
-# 5. E-commerce
+## 5. E-commerce
 
 ## Wymagania
 
@@ -480,7 +497,7 @@ Eventual consistency jest akceptowalna.
 
 ---
 
-# 6. Platforma analityczna
+## 6. Platforma analityczna
 
 ## Wymagania
 
@@ -498,7 +515,7 @@ Eventual consistency jest akceptowalna.
 
 ---
 
-# Najważniejsze Wnioski
+## Najważniejsze Wnioski
 
 Dobra architektura nie polega na używaniu:
 - najbardziej modnych technologii,
@@ -521,3 +538,11 @@ Bardzo wiele systemów działałoby:
 - bardziej przewidywalnie
 
 na pojedynczym PostgreSQL niż na rozbudowanym distributed stacku budowanym „na przyszłość”.
+
+## Constrainty jako ostatnia linia obrony
+
+`PostgreSqlExecutableLabTest` wykonuje `schema.sql`, a następnie próbuje ominąć
+walidację aplikacji przez bezpośrednie JDBC. PostgreSQL odrzuca puste nazwy,
+ujemne saldo, nieznany status, osierocony klucz obcy, duplikat relacji i zerową
+ilość. Test sprawdza kategorie SQLSTATE `23514`, `23505` i `23503`, dzięki czemu
+invariants są częścią wykonywalnego kontraktu schematu.

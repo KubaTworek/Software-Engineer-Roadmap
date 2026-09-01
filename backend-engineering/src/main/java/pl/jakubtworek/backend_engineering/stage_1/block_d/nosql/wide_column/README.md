@@ -1,25 +1,43 @@
-# Wide-column databases
+# wide column
 
-Wide-column databases, takie jak Cassandra, ScyllaDB czy HBase, są projektowane z myślą o bardzo dużej skali danych, wysokiej przepustowości zapisu i pracy w środowisku rozproszonym. Ten model jest szczególnie popularny w systemach eventowych, telemetrycznych, time-series, logach, IoT i wszędzie tam, gdzie zapisujemy ogromne ilości danych, a zapytania są z góry znane.
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** wide column.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „wide column” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=PartitioningTest" test`
+> - **Role klas:** brak klasy-kontrprzykładu; pozostałe typy są minimalnymi modelami pojęć opisanych niżej.
+> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+<!-- material-card:end -->
 
-Najważniejsza różnica względem SQL polega na sposobie projektowania tabel. W relacyjnej bazie danych zwykle zaczynasz od encji, normalizacji i relacji. W Cassandrze zaczynasz od query. Jedna tabela często istnieje po to, żeby obsłużyć jeden konkretny access pattern. Jeśli potrzebujesz pobierać eventy użytkownika po `user_id` i czasie, tworzysz tabelę dokładnie pod to zapytanie. Jeśli dodatkowo potrzebujesz pobierać eventy po typie eventu, często tworzysz drugą tabelę z tymi samymi danymi, ale innym kluczem.
+## Wide-column: partycja jest jednostką skali
 
-Centralnym pojęciem jest partition key. Partition key decyduje, gdzie fizycznie trafią dane i jak będą rozłożone po klastrze. Query powinno zawierać partition key, bo inaczej baza może być zmuszona skanować wiele partycji. W Cassandrze zapytanie bez partition key jest zwykle sygnałem ostrzegawczym. Oczywiście istnieją secondary indexes i inne mechanizmy, ale nie zmienia to podstawowej zasady: model danych powinien być zgodny z zapytaniami.
 
-Drugim ważnym pojęciem są clustering columns. Dane z tym samym partition key znajdują się w jednej partycji, a clustering columns decydują o ich kolejności wewnątrz tej partycji. To jest bardzo przydatne przy danych czasowych. Przykładowo tabela `user_events` może mieć `user_id` jako partition key i `event_time` jako clustering column. Dzięki temu można szybko pobrać ostatnie eventy konkretnego użytkownika w odpowiedniej kolejności.
 
-Problemem może być zbyt duża partycja. Jeśli użyjemy `user_id` jako partition key, a jeden użytkownik generuje miliony eventów dziennie, partycja może rosnąć bez kontroli. W danych time-series często stosuje się bucketing czasowy, na przykład partition key złożony z `device_id` i `bucket_day`. Dzięki temu metryki jednego urządzenia są dzielone na dzienne partycje. To ogranicza rozmiar pojedynczej partycji i poprawia przewidywalność odczytów.
+W Cassandrze lub ScyllaDB tabela jest projektowana dla konkretnego zapytania.
+Partition key wskazuje nody i lokalizuje dane, a clustering columns porządkują
+wiersze wewnątrz partycji. Zapytanie niezgodne z tym kształtem zwykle wymaga
+innej tabeli, a nie dowolnego skanu.
 
-Hot partition to jedno z najważniejszych ryzyk. Powstaje wtedy, gdy zbyt dużo odczytów lub zapisów trafia do jednej partycji. Zły partition key, taki jak `status`, może spowodować, że większość danych trafi do wartości `ACTIVE`. Wtedy jeden fragment klastra jest przeciążony, mimo że cały klaster teoretycznie ma dużo zasobów. Dobry partition key powinien mieć wysoką kardynalność, równomierny rozkład i pasować do access patternu.
+`DeviceMetricRow` pokazuje metryki urządzenia uporządkowane w czasie.
+`BucketedPartitionKey` buduje klucz z:
 
-Denormalizacja jest normalna w wide-column databases. Jeśli system potrzebuje kilku różnych sposobów odczytu tych samych danych, często tworzy się kilka tabel. Na przykład `events_by_user`, `events_by_device` i `events_by_type` mogą zawierać podobne dane, ale być zoptymalizowane pod różne query. To przyspiesza odczyty, ale komplikuje zapisy. Jeden event trzeba zapisać w kilku miejscach, a aplikacja musi poradzić sobie z częściowymi błędami, retry i idempotencją.
+- właściciela danych, np. `deviceId`,
+- początku bucketu czasowego,
+- deterministycznego numeru sharda.
 
-`ALLOW FILTERING` w Cassandrze jest znanym sygnałem ostrzegawczym. Oznacza, że baza może musieć przefiltrować dużą liczbę danych po stronie serwera, zamiast bezpośrednio dotrzeć do właściwej partycji. Nie jest to absolutnie zakazane w każdym możliwym przypadku, ale w systemie produkcyjnym często wskazuje na źle zaprojektowaną tabelę. Jeśli często potrzebujesz `ALLOW FILTERING`, prawdopodobnie brakuje osobnego modelu pod dane query.
+Bucket ogranicza wzrost partycji. Shard rozprasza zapis popularnego klucza, ale
+powoduje read fan-out: aby pobrać cały bucket, trzeba odczytać wszystkie shardy i
+scalić wyniki. Zbyt wiele shardów zwiększa liczbę round-tripów, a zbyt mało nie
+usuwa hot partition.
 
-Wide-column databases nie są dobrym wyborem do ad hoc query, złożonych joinów i klasycznego raportowania. Nie powinno się ich traktować jak relacyjnej bazy bez relacji. Ich siła polega na tym, że dla znanych zapytań i dużego wolumenu danych mogą działać bardzo szybko i przewidywalnie. Jeżeli jednak wymagania dotyczące zapytań są zmienne, użytkownicy oczekują elastycznego filtrowania, a domena ma wiele relacji, SQL lub inny typ bazy może być lepszy.
+`PartitionLoadAnalyzer` grupuje próbkę kluczy i oblicza udział najbardziej
+obciążonej partycji. Próg nie jest uniwersalny — należy go zestawić z limitem
+throughputu pojedynczej partycji, rozmiarem rekordów, compaction, retencją i
+rozkładem ruchu w percentylach, nie tylko ze średnią.
 
-Consistency w takich bazach często jest konfigurowalna. Cassandra pozwala dobierać poziomy spójności dla odczytów i zapisów. Można preferować niższe latency i wyższą dostępność albo mocniejsze gwarancje spójności kosztem wydajności. To nie jest decyzja czysto techniczna. Trzeba wiedzieć, czy domena akceptuje opóźnione odczyty, konflikty i retry.
-
-Najważniejsze pytania przy projektowaniu wide-column modelu to: jakie query obsługuję, jaki jest partition key, czy partycja nie będzie zbyt duża, czy ruch rozłoży się równomiernie, jakie clustering columns zapewnią potrzebne sortowanie, czy potrzebuję bucketingu, ile tabel będzie aktualizowanych przy jednym zapisie i jak obsłużę błędy częściowe. Jeśli potrafisz odpowiedzieć na te pytania, zaczynasz myśleć w sposób właściwy dla Cassandry i podobnych baz.
-
-Wide-column database jest bardzo mocnym narzędziem, ale tylko wtedy, gdy access patterny są znane i stabilne. Daje wysoką skalowalność, ale wymaga dyscypliny projektowej. Nie wybacza przypadkowego modelowania danych tak łatwo jak SQL, gdzie można czasem dodać indeks albo join. Tutaj model danych jest w dużej mierze planem wykonania przyszłych zapytań.
+`UserEventRow` reprezentuje query „ostatnie zdarzenia użytkownika”. Dla bardzo
+aktywnych użytkowników sam `userId` nie jest bezpiecznym kluczem na zawsze.
+Dodanie bucketu dnia lub godziny ogranicza partycję, ale wymaga od klienta
+przejścia przez kilka bucketów podczas odczytu długiego zakresu.

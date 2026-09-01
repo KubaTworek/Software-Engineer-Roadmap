@@ -1,25 +1,137 @@
-# NoSQL — modelowanie danych i performance
+# nosql
 
-NoSQL to nie jest jedna konkretna technologia ani prosty zamiennik SQL. To szeroka grupa baz danych, które powstały po to, aby lepiej obsługiwać wybrane problemy: bardzo duży wolumen danych, wysoki throughput zapisu, elastyczny model dokumentów, szybkie odczyty po kluczu, dane grafowe, dane czasowe albo systemy rozproszone działające na wielu nodach. Wybór NoSQL ma sens wtedy, gdy konkretna baza pasuje do konkretnego access patternu i konkretnych wymagań dotyczących spójności, dostępności oraz skalowania. Nie powinno się wybierać NoSQL tylko dlatego, że brzmi nowocześnie albo dlatego, że „SQL się nie skaluje”.
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** nosql.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „nosql” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=ConditionalDocumentStoreTest,QuorumConfigurationTest,ReplicatedValueStoreTest" test`
+> - **Role klas:** `AtomicFixedWindowRateLimiter` = `correct`; `QuorumConfiguration` = `production-boundary`.
+> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+<!-- material-card:end -->
 
-Najważniejsza różnica w myśleniu polega na tym, że w SQL często zaczynasz od modelu domenowego i relacji, a w NoSQL częściej zaczynasz od pytań aplikacyjnych. Trzeba wiedzieć, jak dane będą czytane, po jakim kluczu będą wyszukiwane, czy potrzebne jest sortowanie, czy wynik ma być stronicowany, czy dane są zapisywane razem, czy można zaakceptować duplikację oraz jak silnej spójności wymaga dany przypadek biznesowy. W NoSQL model danych jest zwykle silniej dopasowany do sposobu użycia. To może dawać bardzo wysoką wydajność, ale kosztem mniejszej elastyczności przy nowych zapytaniach.
+## NoSQL — model danych wynika z operacji
 
-Document databases, takie jak MongoDB, Couchbase czy Firestore, przechowują dane jako dokumenty podobne do JSON. Dobrze sprawdzają się tam, gdzie dane mają strukturę agregatu i są często odczytywane razem. Przykładem może być zamówienie z listą pozycji, profil użytkownika z preferencjami albo katalog produktów z opisami i parametrami. W takim modelu często embeduje się dane podrzędne wewnątrz jednego dokumentu, ponieważ pozwala to pobrać pełny widok jednym zapytaniem. To jest wygodne i szybkie, ale wymaga kontroli rozmiaru dokumentów oraz świadomego podejścia do aktualizacji danych, które zostały zduplikowane.
 
-Denormalizacja w NoSQL nie jest z definicji błędem. Często jest podstawową techniką projektową. Jeżeli endpoint szczegółów zamówienia zawsze potrzebuje emaila użytkownika i nazwy produktów, można te dane skopiować do dokumentu zamówienia. Dzięki temu odczyt jest prosty i szybki. Trzeba jednak rozumieć konsekwencje. Jeśli użytkownik zmieni email, stare zamówienia mogą nadal przechowywać poprzedni adres. Czasem jest to poprawne, bo zamówienie powinno zachować historyczny snapshot danych. Czasem jest to problem i wtedy potrzebny jest mechanizm synchronizacji, eventy, joby aktualizujące albo inny model danych.
 
-Key-value stores, takie jak Redis, są zoptymalizowane pod bardzo szybki dostęp po kluczu. Model jest prosty: aplikacja zna klucz i chce pobrać wartość. To świetnie pasuje do cache, sesji, tokenów, rate limitingu, feature flags, liczników i danych tymczasowych z TTL. Key-value store nie jest natomiast dobrym wyborem do złożonych zapytań, joinów, filtrowania po wielu polach albo raportowania. Jeżeli dane są zapisane pod kluczem `session:{sessionId}`, to bardzo łatwo pobrać konkretną sesję, ale trudno odpowiedzieć na pytanie „daj wszystkie sesje użytkowników z rolą ADMIN”, jeśli wcześniej nie zaprojektowano dodatkowej struktury wspierającej taki access pattern.
+NoSQL nie jest jedną technologią ani automatycznym sposobem na skalowanie. Baza
+dokumentowa, key-value, wide-column i grafowa optymalizują inne operacje i mają
+inne granice transakcji. Punktem wyjścia powinien być access pattern oraz
+niezmiennik biznesowy, a dopiero później wybór silnika.
 
-Wide-column databases, takie jak Cassandra, ScyllaDB czy HBase, są projektowane z myślą o dużej skali zapisu, danych rozproszonych i przewidywalnych zapytaniach po kluczu partycji. W tego typu bazach modelowanie zaczyna się od query. Tabela często istnieje po to, żeby obsłużyć jeden konkretny access pattern. Jeżeli aplikacja musi pobierać ostatnie eventy użytkownika, tabela może być zaprojektowana z `user_id` jako partition key i `event_time` jako clustering key. Jeżeli później pojawi się potrzeba pobierania eventów po typie, często tworzy się drugą tabelę zduplikowaną pod ten inny access pattern.
+## Mapa laboratorium
 
-W wide-column bazach szczególnie ważny jest partition key. Decyduje on o tym, jak dane rozłożą się między nody. Dobry partition key ma wysoką kardynalność, równomiernie rozkłada ruch i pasuje do zapytań. Zły partition key prowadzi do hot partitions, czyli sytuacji, w której zbyt dużo odczytów lub zapisów trafia do jednej partycji. Przykładem złego klucza jest `status`, jeśli większość rekordów ma wartość `ACTIVE`. Taki klucz nie rozkłada danych równomiernie i może zablokować skalowanie całego systemu. W danych czasowych często stosuje się bucketing, na przykład po dniu lub godzinie, żeby pojedyncza partycja nie rosła bez końca.
+| Obszar | Pytanie | Wykonywalny przykład |
+| --- | --- | --- |
+| `modeling` | czy tabela obsługuje konkretny query shape bez scanu? | `AccessPatternDesign` |
+| `document` | co embedować, a co trzymać jako referencję? | `OrderDocument`, `UserProfileDocument` |
+| `key_value` | jak połączyć licznik i TTL w jednej operacji? | `AtomicFixedWindowRateLimiter` |
+| `wide_column` | jak ograniczyć rozmiar i ruch partycji? | `BucketedPartitionKey`, `PartitionLoadAnalyzer` |
+| `consistency` | co daje CAS, quorum i read-your-writes? | `ConditionalDocumentStore`, `QuorumConfiguration`, `ReplicatedValueStore` |
+| `graph` | kiedy relacja jest ważniejsza od rekordu? | `UserNode`, `ProductNode` |
 
-Graph databases, takie jak Neo4j, JanusGraph czy Amazon Neptune, są dobrym wyborem wtedy, gdy najważniejsze są relacje między obiektami i przechodzenie po tych relacjach. Typowe przypadki użycia to rekomendacje, social graph, fraud detection, dependency graph albo knowledge graph. W relacyjnej bazie również można modelować relacje, ale głębokie zapytania przechodzące przez wiele poziomów połączeń mogą stać się skomplikowane i kosztowne. Grafowa baza danych może naturalniej obsłużyć pytania typu „znajdź znajomych znajomych”, „które konta korzystają z tego samego urządzenia” albo „jakie produkty kupili użytkownicy podobni do tego użytkownika”.
+## Projektowanie access-pattern-first
 
-NoSQL wymaga dobrego rozumienia spójności. Strong consistency oznacza, że po zapisie kolejne odczyty widzą aktualny stan. Eventual consistency oznacza, że przez pewien czas różne części systemu mogą widzieć różne wersje danych, ale finalnie system powinien dojść do spójnego stanu. Eventual consistency jest często akceptowalna przy feedach, licznikach, rekomendacjach, read modelach, wyszukiwarce albo analityce. Nie jest jednak dobrym wyborem dla operacji, w których użytkownik musi natychmiast zobaczyć efekt zapisu albo gdzie stary odczyt mógłby prowadzić do utraty pieniędzy, błędnej rezerwacji albo naruszenia bezpieczeństwa.
+Przed utworzeniem tabeli zapisz dla każdej operacji:
 
-W systemach rozproszonych trzeba również rozumieć replication lag. Jeśli aplikacja zapisuje dane do primary, a potem od razu czyta z repliki, może zobaczyć stary stan. To nie zawsze jest bug w aplikacji. Często jest to naturalna konsekwencja replikacji asynchronicznej. Trzeba wtedy zdecydować, czy dany przypadek użycia może czytać z repliki, czy musi czytać z lidera, czy potrzebny jest mechanizm read-your-writes, czy wystarczy komunikat informujący użytkownika, że zmiana może pojawić się z opóźnieniem.
+1. pola wymagane jako equality filters,
+2. porządek sortowania i sposób stronicowania,
+3. pola potrzebne w odpowiedzi,
+4. maksymalny rozmiar pojedynczej partycji,
+5. oczekiwany rozkład ruchu między kluczami,
+6. wymaganą spójność i reakcję na konflikt.
 
-Indeksy w NoSQL istnieją, ale ich znaczenie zależy od konkretnej bazy. W MongoDB compound indexes działają podobnie koncepcyjnie do indeksów złożonych w SQL i kolejność pól ma znaczenie. W DynamoDB podstawą jest primary key, czyli partition key i opcjonalny sort key, a dodatkowe access patterny obsługuje się przez GSI albo LSI. W Cassandrze query powinno być zgodne z partition key i clustering columns, a secondary indexes mają ograniczone zastosowanie. Nie można więc mówić ogólnie, że „NoSQL ma indeksy tak jak SQL”. Każda baza ma własny model wydajności i własne ograniczenia.
+`AccessPatternDesign` łączy te wymagania ze schematem tabeli. Test pokazuje, że
+`orders_by_user_status` obsłuży odczyt dla użytkownika i statusu, ale nie obsłuży
+globalnego odczytu wszystkich statusów w kolejności czasu. To nie jest zachęta
+do scanu. Nowy query shape zwykle oznacza nową projekcję, zmianę klucza albo
+świadomą rezygnację z wymagania.
 
-Dobrze zaprojektowany NoSQL oznacza, że znasz access patterny, świadomie akceptujesz denormalizację, rozumiesz konsekwencje eventual consistency, potrafisz dobrać partition key, unikasz hot partitions i wiesz, które zapytania będą szybkie, a które będą kosztownym scanem. NoSQL może dać bardzo dobrą skalowalność i prosty model odczytu, ale tylko wtedy, gdy model danych jest zaprojektowany pod konkretne użycie. Jeśli potrzebujesz wielu ad hoc query, silnych transakcji, joinów i integralności relacyjnej, NoSQL może skomplikować system zamiast go uprościć.
+## Conditional writes zamiast utraconej aktualizacji
+
+Dwa procesy mogą odczytać wersję `1`, obliczyć różne zmiany i próbować zapisać
+wynik. Bez warunku drugi zapis nadpisze pierwszy. `ConditionalDocumentStore`
+realizuje odpowiednik:
+
+```text
+UPDATE document
+SET value = :newValue, version = 2
+IF version = 1
+```
+
+Tylko pierwszy zapis zostanie zastosowany. Drugi otrzyma aktualną wersję i musi
+odrzucić operację, połączyć zmiany albo ponownie wykonać logikę. Retry nie może
+bezrefleksyjnie powtarzać nieidempotentnego efektu biznesowego.
+
+## Partycje, bucketing i hot keys
+
+Klucz o niskiej kardynalności, np. `status=ACTIVE`, kieruje dużą część ruchu do
+jednej partycji. Podobny problem tworzy poprawny semantycznie, ale ekstremalnie
+popularny tenant. `PartitionLoadAnalyzer` mierzy udział najbardziej obciążonego
+klucza, a `BucketedPartitionKey` dodaje dwa mechanizmy:
+
+- bucket czasowy ogranicza wzrost partycji,
+- deterministyczny shard rozprasza równoczesne zapisy.
+
+Sharding zwiększa koszt odczytu: klient musi znać shard albo wykonać fan-out do
+kilku partycji i scalić wynik. Liczby bucketów oraz shardów wynikają z pomiarów,
+retencji i limitów silnika, a nie z uniwersalnej recepty.
+
+## Quorum: N, R i W
+
+Dla `N` replik, odczytu wymagającego `R` odpowiedzi i zapisu wymagającego `W`:
+
+- `R + W > N` zapewnia przecięcie zbioru odczytu z udanym zapisem,
+- `2W > N` zapewnia przecięcie dwóch udanych quorum zapisu,
+- mniejsze `R` lub `W` zwiększa tolerancję awarii, ale osłabia gwarancje.
+
+Same nierówności nie gwarantują linearizability. Nadal znaczenie mają wersje,
+wybór koordynatora, konflikty, sloppy quorum, hinted handoff, read repair oraz to,
+czy wszystkie repliki stosują ten sam porządek wersji. `QuorumConfiguration`
+pokazuje matematykę zbiorów, nie emuluje konkretnej bazy.
+
+## Replication lag i read-your-writes
+
+`ReplicatedValueStore` oddziela stan leadera od opóźnionej repliki. Po zapisie
+zwykły odczyt z repliki może zwrócić poprzednią wartość. Klient otrzymuje token
+minimalnej wersji; odczyt read-your-writes trafia do repliki dopiero, gdy ta
+dogoniła token, a wcześniej jest kierowany do leadera.
+
+Jest to gwarancja sesyjna dla konkretnego klienta. Nie oznacza, że wszyscy
+użytkownicy natychmiast zobaczą ten sam stan. W realnym systemie podobny efekt
+można uzyskać przez routing do leadera, session token, sticky reads lub oczekiwanie
+na wymaganą pozycję logu replikacji.
+
+## Atomowy rate limiting i TTL
+
+Sekwencja `GET`, zwiększenie licznika w aplikacji, `SET` oraz osobne `EXPIRE` ma
+race condition i może pozostawić klucz bez TTL po częściowej awarii.
+`AtomicFixedWindowRateLimiter` wykonuje decyzję, increment i ustalenie czasu
+wygaśnięcia jako jedną sekcję atomową. W Redisie odpowiednikiem może być skrypt
+Lua albo odpowiednio zaprojektowana funkcja serwerowa.
+
+Granica TTL jest domknięta: dokładnie w chwili `resetAt` stara wartość przestaje
+obowiązywać. Odrzucone żądanie nie przedłuża okna, bo zmieniłoby fixed window w
+inny algorytm. Fixed window może dopuszczać burst na granicy dwóch okien; sliding
+window lub token bucket rozwiązują inny problem kosztem większej złożoności.
+
+## Czego te przykłady nie udają
+
+Są to deterministyczne modele semantyki, dzięki którym failure mode można
+sprawdzić szybkim testem. Monitor JVM nie jest rozproszoną transakcją, mapa nie
+jest Redisem, a kolejka w pamięci nie jest protokołem replikacji. Produkcyjną
+gwarancję należy potwierdzić dokumentacją konkretnej bazy i testem integracyjnym
+obejmującym jej prawdziwe operacje serwerowe.
+
+## Uruchomienie
+
+Z katalogu `backend-engineering`:
+
+```powershell
+.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=AccessPatternDesignTest,ConditionalDocumentStoreTest,QuorumConfigurationTest,ReplicatedValueStoreTest,PartitioningTest,AtomicFixedWindowRateLimiterTest" test
+```
+
+Testy pokazują zarówno poprawną ścieżkę, jak i sytuacje, w których zapytanie nie
+pasuje do tabeli, writer ma starą wersję, replika jest opóźniona, partycja staje
+się gorąca albo limit został już wyczerpany.

@@ -21,6 +21,12 @@ public class BlockingTaskNoManagedBlock extends RecursiveAction {
     private final long blockMillis;
 
     public BlockingTaskNoManagedBlock(int depth, int maxDepth, long blockMillis) {
+        if (depth < 0 || maxDepth < depth) {
+            throw new IllegalArgumentException("depth must satisfy 0 <= depth <= maxDepth");
+        }
+        if (blockMillis < 0) {
+            throw new IllegalArgumentException("blockMillis must not be negative");
+        }
         this.depth = depth;
         this.maxDepth = maxDepth;
         this.blockMillis = blockMillis;
@@ -53,7 +59,8 @@ public class BlockingTaskNoManagedBlock extends RecursiveAction {
             // Simulated blocking operation executed directly
             // inside a ForkJoinPool worker thread
             Thread.sleep(ms);
-        } catch (InterruptedException ignored) {
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
         }
     }
 }

@@ -1,27 +1,70 @@
-# AOP – programowanie aspektowe w Spring
+# aspect
 
-AOP, czyli Aspect-Oriented Programming, jest podejściem pozwalającym wydzielić logikę przekrojową aplikacji do osobnych komponentów zwanych aspektami. Logika przekrojowa to taka, która pojawia się w wielu miejscach aplikacji i nie należy bezpośrednio do logiki biznesowej. Typowymi przykładami są logowanie, bezpieczeństwo, transakcje, cache, monitoring czy retry mechanizmy. Zamiast powielać ten sam kod w wielu klasach, można zdefiniować aspekt, który będzie wykonywany automatycznie wokół określonych metod. :contentReference[oaicite:0]{index=0}
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** aspect.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „aspect” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=PaymentServiceAopTest" test`
+> - **Role klas:** brak klasy-kontrprzykładu; pozostałe typy są minimalnymi modelami pojęć opisanych niżej.
+> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+<!-- material-card:end -->
 
-Spring AOP opiera się na mechanizmie proxy. Framework tworzy obiekt pośredniczący opakowujący właściwy bean i przechwytujący wywołania metod. Dzięki temu możliwe jest wykonanie dodatkowej logiki przed wywołaniem metody, po jej wykonaniu lub w przypadku wystąpienia wyjątku. Oznacza to jednak, że Spring AOP ma wszystkie ograniczenia wynikające z proxy, takie jak problem self invocation czy brak wsparcia dla metod final. :contentReference[oaicite:1]{index=1}
+## AOP i mechanizm proxy w Spring
 
-Podstawowym elementem AOP jest aspekt oznaczony adnotacją `@Aspect`. Aspekt zawiera tzw. advice, czyli fragmenty kodu wykonywane w określonych momentach cyklu wywołania metody. Spring wspiera kilka rodzajów advice. `@Before` wykonuje logikę przed wywołaniem metody, `@After` po zakończeniu metody niezależnie od wyniku, `@AfterReturning` po poprawnym zakończeniu, a `@AfterThrowing` w przypadku wyjątku. Najbardziej rozbudowanym typem jest `@Around`, który daje pełną kontrolę nad wykonaniem metody. :contentReference[oaicite:2]{index=2}
 
-`@Around` jest szczególnie istotny, ponieważ może całkowicie przejąć kontrolę nad wywołaniem metody. Aspect może zmieniać argumenty, modyfikować wynik, wykonywać retry lub nawet całkowicie zablokować wykonanie metody. Kluczowe jest jednak wywołanie `proceed()` na `ProceedingJoinPoint`. Bez tego metoda docelowa nigdy nie zostanie wykonana. Mechanizmy takie jak retry czy pomiar czasu wykonania bardzo często wykorzystują właśnie `@Around`. :contentReference[oaicite:3]{index=3}
 
-Aspekty działają na podstawie pointcutów. Pointcut definiuje, które metody mają zostać przechwycone przez aspekt. Najczęściej wykorzystuje się wyrażenia `execution(...)`, które pozwalają określić pakiety, klasy, metody lub sygnatury argumentów objęte aspektem. Spring analizuje pointcuty i tworzy proxy dla beanów spełniających określone warunki. :contentReference[oaicite:4]{index=4}
+## Po co istnieje AOP
 
-W praktyce wiele kluczowych mechanizmów Springa jest zaimplementowanych właśnie przy użyciu AOP. `@Transactional` wykorzystuje aspekt odpowiedzialny za zarządzanie transakcją. `@Cacheable` używa aspektu cache’ującego wyniki metod. `@PreAuthorize` opiera się na aspekcie bezpieczeństwa sprawdzającym uprawnienia użytkownika przed wykonaniem metody. Dzięki temu programista korzysta z prostych adnotacji, podczas gdy cała logika infrastrukturalna wykonywana jest automatycznie przez proxy i aspekty. :contentReference[oaicite:5]{index=5}
+Aspect-Oriented Programming wydziela zachowania przekrojowe, które dotyczą wielu przypadków użycia, ale nie stanowią ich logiki biznesowej. Typowe przykłady to transakcje, autoryzacja metod, cache, pomiar czasu, logowanie techniczne i kontrolowane retry. Spring AOP realizuje je przede wszystkim przez proxy otaczające bean.
 
-Jednym z najważniejszych ograniczeń Spring AOP jest problem self invocation. Ponieważ aspekty działają przez proxy, wywołanie metody z wnętrza tej samej klasy omija proxy i trafia bezpośrednio do obiektu docelowego. W efekcie aspekt nie zostaje uruchomiony. Problem ten dotyczy nie tylko `@Transactional`, ale również wszystkich mechanizmów opartych o AOP, takich jak cache czy retry. Najlepszym rozwiązaniem jest wydzielenie logiki do osobnego beana, aby wywołanie przechodziło przez proxy Springa. :contentReference[oaicite:6]{index=6}
+Najważniejszy model wywołania wygląda tak:
 
-Spring AOP wykorzystuje dwa rodzaje proxy: JDK Dynamic Proxy oraz CGLIB. Jeśli bean implementuje interfejs, Spring zwykle używa proxy JDK. Jeśli interfejsu brak, framework tworzy subclassę przy pomocy CGLIB. Oznacza to, że klasy oraz metody `final` nie mogą zostać poprawnie objęte aspektami, ponieważ CGLIB nie jest w stanie nadpisać metod finalnych. :contentReference[oaicite:7]{index=7}
+```text
+caller -> proxy Springa -> advice/aspect -> metoda obiektu docelowego
+```
 
-W bardziej złożonych systemach istotna staje się kolejność wykonywania aspektów. Spring pozwala kontrolować kolejność przy pomocy `@Order` lub interfejsu `Ordered`. Ma to duże znaczenie w sytuacjach, gdy jednocześnie działają aspekty bezpieczeństwa, transakcji, logowania i cache. Niewłaściwa kolejność może prowadzić do błędów logicznych lub problemów wydajnościowych. :contentReference[oaicite:8]{index=8}
+Jeśli wywołanie nie przejdzie przez proxy, advice się nie wykona. To wyjaśnia większość pozornie „losowych” problemów z `@Transactional`, `@Cacheable` i `@PreAuthorize`.
 
-AOP jest również często wykorzystywane do implementacji retry mechanizmów. Aspekt może przechwycić wyjątek, ponowić wywołanie metody i dopiero po przekroczeniu określonej liczby prób zgłosić błąd. Podobnie działa Spring Retry. Mechanizm ten jest szczególnie przydatny przy komunikacji z systemami zewnętrznymi, np. API lub brokerami wiadomości. :contentReference[oaicite:9]{index=9}
+## Mapa kodu
 
-Innym popularnym zastosowaniem AOP jest logowanie oraz monitoring. Aspect może mierzyć czas wykonania metod, logować parametry wejściowe i wyniki lub śledzić wyjątki. Dzięki temu logika monitoringu nie zaśmieca kodu biznesowego. :contentReference[oaicite:10]{index=10}
+| Klasa | Pokazywane zagadnienie |
+| --- | --- |
+| `LoggingAspect` | advice wokół wywołania i obserwacja wyniku |
+| `PerformanceAspect` | pomiar czasu wykonania |
+| `SecurityAspect` | przekrojowa kontrola przed operacją |
+| `RetryAspect` / `RetryableOperation` | retry sterowane adnotacją i klasyfikacją wywołania |
+| `ProductCacheService` | cache jako zachowanie proxy |
+| `ProxyAwareService` | granica self-invocation |
+| `AopConfig` / `AopDemoRunner` | konfiguracja oraz uruchomienie przykładów |
 
-Aspekty najczęściej testuje się pośrednio poprzez testy integracyjne. Zamiast testować sam aspekt, zwykle sprawdza się efekt działania mechanizmu, np. czy metoda została wykonana w transakcji, czy cache zwraca zapisane dane albo czy retry rzeczywiście ponawia wywołanie po błędzie. :contentReference[oaicite:11]{index=11}
+## Advice i pointcut
 
-Spring AOP jest jednym z fundamentów działania całego frameworka. Wiele kluczowych funkcjonalności Springa opiera się właśnie na aspektach oraz proxy. Zrozumienie mechanizmu AOP jest więc niezbędne do poprawnego korzystania z transakcji, bezpieczeństwa, cache oraz wielu innych elementów ekosystemu Spring Boot. :contentReference[oaicite:12]{index=12}
+Pointcut wybiera metody objęte aspektem. Advice określa, kiedy i jak wykona się zachowanie:
+
+- `@Before` — przed metodą,
+- `@After` — po zakończeniu niezależnie od wyniku,
+- `@AfterReturning` — po sukcesie,
+- `@AfterThrowing` — po wyjątku,
+- `@Around` — pełna kontrola przed i po wywołaniu.
+
+`@Around` musi wywołać `ProceedingJoinPoint.proceed()`, jeśli metoda docelowa ma się wykonać. Może też zmienić argumenty, wynik lub obsługę wyjątku, dlatego powinien być mały i przewidywalny. Kolejność wielu aspektów należy ustalać jawnie przez `@Order`/`Ordered`, szczególnie gdy łączą się bezpieczeństwo, transakcja, retry i logowanie.
+
+## JDK proxy, CGLIB i self-invocation
+
+JDK dynamic proxy działa przez interfejs, a proxy klasowe tworzy podklasę. Metody `final`, prywatne i obiekty utworzone poza kontenerem nie są dobrym celem dla Spring AOP. Dokładny wybór rodzaju proxy zależy od konfiguracji i wersji Springa, więc nie warto opierać projektu na założeniu „interfejs zawsze oznacza JDK proxy”.
+
+Self-invocation oznacza wywołanie `this.drugaMetoda()` wewnątrz tego samego obiektu. Nie przechodzi ono ponownie przez zewnętrzne proxy, więc advice przypisany wyłącznie do drugiej metody nie zadziała. Najczytelniejszym rozwiązaniem jest zwykle wydzielenie drugiej odpowiedzialności do osobnego beana. Samowstrzykiwanie proxy jest możliwe, ale silniej wiąże kod z frameworkiem i utrudnia rozumienie przepływu.
+
+## Retry i logowanie — ważne granice
+
+Aspekt retry nie może automatycznie ponawiać każdego wyjątku. Potrzebuje klasyfikacji błędów przejściowych, limitu prób, backoffu, jittera, budżetu czasu oraz idempotentnej operacji. Retry w wielu warstwach może zwielokrotnić ruch. Przykład pokazuje mechanizm przechwycenia, a pełniejszy kontrakt odporności znajduje się w Stage 3.
+
+Aspekt logujący nie powinien bezrefleksyjnie zapisywać argumentów i wyników. Mogą zawierać hasła, tokeny, dane osobowe albo duże payloady. W produkcji potrzebne są redakcja, stabilny schemat zdarzeń, kontrola poziomu logowania i korelacja z trace’em.
+
+## Jak testować
+
+Logikę pomocniczą aspektu można testować jednostkowo, ale najważniejszy test jest integracyjny: wywołuje bean pobrany z kontekstu i sprawdza obserwowalny efekt proxy. Taki test wykrywa brak rejestracji aspektu, błędny pointcut, niewłaściwą kolejność oraz self-invocation — problemy niewidoczne przy bezpośrednim `new`.
+
+Kod jest częścią głównego modułu `backend-engineering`.

@@ -1,4 +1,19 @@
-# Monolit vs. mikroserwisy – kryteria wyboru i koszty
+# monolith vs microservices
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `praktyka-produkcyjna`
+> - **Uczy:** monolith vs microservices.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „monolith vs microservices” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Role klas:** brak klasy-kontrprzykładu; pozostałe typy są minimalnymi modelami pojęć opisanych niżej.
+> - **Granica:** Laboratorium pokazuje kontrakt i failure modes; nie zastępuje pełnego testu end-to-end ani operacyjnej konfiguracji środowiska.
+<!-- material-card:end -->
+
+## Monolit vs. mikroserwisy – kryteria wyboru i koszty
+
+
 
 ## Wprowadzenie
 

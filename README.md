@@ -344,7 +344,11 @@ Po tym etapie powinieneś:
   - testowanie transakcji,
   - testowanie security,
   - mockowanie zależności,
-  - kiedy test integracyjny ma sens.
+  - kiedy test integracyjny ma sens,
+  - property-based testing i shrinking,
+  - stateful/model-based testing protokołów,
+  - mutation testing przez PIT,
+  - consumer-driven contracts.
 
 ### Kryteria ukończenia
 
@@ -526,6 +530,11 @@ Po tym etapie powinieneś:
 ### Zakres
 
 - Refaktoryzacja istniejącego kodu bez rewrite’u.
+- Characterization tests dla czasu, losowości i statycznych zależności.
+- Golden master dla trudnego kontraktu legacy.
+- Branch by abstraction, shadow comparison i stopniowe przełączanie implementacji.
+- Bezpieczna ewolucja kontraktu V1 → V2.
+- Rozpoznawanie „czystych” zmian, które przypadkiem zmieniają semantykę.
 - Granice odpowiedzialności klas:
   - domain,
   - application,
@@ -543,6 +552,8 @@ Po tym etapie powinieneś:
 - Refaktor zwiększa czytelność i testowalność bez zmiany zachowania systemu.
 - Testy łapią regresje, a nie tylko happy path.
 - Potrafisz uzasadnić, dlaczego dany test jest unit, integration albo end-to-end.
+- Potrafisz zabezpieczyć nieznane zachowanie przed utworzeniem seamów.
+- Potrafisz rozłożyć większą refaktoryzację na wdrażalne kroki i odróżnić refaktoryzację od zmiany biznesowej.
 
 ### Materiały
 
@@ -556,6 +567,38 @@ Po tym etapie powinieneś:
 
 - Refactoring Guru
 - Materiały Martina Fowlera o refaktoryzacji i testowalności
+
+---
+
+## Blok F — [Networking dla backend developera](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_1/block_f/README.md)
+
+### Zakres
+
+- DNS caching, negative TTL i rotacja adresów instancji.
+- Pool acquisition, connect, TLS handshake, read timeout i deadline requestu.
+- Keep-alive, ograniczona pula połączeń oraz usuwanie stale socketów.
+- Koszt TLS 1.2/1.3 i ograniczenia 0-RTT.
+- HTTP/1.1 kontra HTTP/2 multiplexing i limit równoległych strumieni.
+- Ephemeral ports, `TIME_WAIT`, limity socketów i wpływ NAT.
+- Kolejność timeoutów klienta, proxy, load balancera i downstreamu.
+- Retry amplification na warstwach klient → proxy → service mesh.
+- FIN, RST, half-close, silent blackhole i heartbeat.
+
+### Kryteria ukończenia
+
+- Potrafisz wskazać fazę, w której wystąpił timeout, zamiast mówić tylko „sieć nie działa”.
+- Rozumiesz, dlaczego zmiana DNS nie przenosi istniejącego keep-alive connection.
+- Umiesz dobrać limit puli, timeout oczekiwania i lifetime połączenia do downstreamu oraz LB.
+- Potrafisz policzyć zwielokrotnienie retry i wyznaczyć jednego właściciela polityki.
+- Rozróżniasz EOF, reset i brak odpowiedzi wymagający timeoutu lub heartbeatów.
+- Diagnozujesz wyczerpanie portów i socketów przed zmianą parametrów kernela.
+
+### Materiały
+
+- dokumentacja Java networking i używanego klienta HTTP,
+- RFC 9110 oraz RFC 9113,
+- *High Performance Browser Networking*,
+- dokumentacja timeoutów używanego reverse proxy, load balancera i service mesha.
 
 ---
 
@@ -731,41 +774,15 @@ Po tym etapie powinieneś:
 
 ### Zakres
 
-- [`docker`](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_c/docker/README.md)
-  - Dockerfile,
-  - multi-stage build,
-  - małe obrazy,
-  - szybkie buildy,
-  - `.dockerignore`,
-  - uruchamianie aplikacji z konfiguracją przez zmienne środowiskowe.
+Stage 2C rozwija jedną aplikację referencyjną zamiast czterech podobnych projektów:
 
-- [`kubernetes`](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_c/kubernetes/README.md)
-  - Pod,
-  - Deployment,
-  - Service,
-  - ConfigMap,
-  - Secret,
-  - readiness probe,
-  - liveness probe,
-  - restart policy,
-  - rolling update.
+1. [`workshop`](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_c/workshop/README.md) — kod aplikacji, lifecycle, probe’y, graceful shutdown i testy kontraktowe.
+2. [`configuration`](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_c/configuration/README.md) — konfiguracja runtime, ConfigMap, Secret, `emptyDir` kontra PVC.
+3. [`docker`](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_c/docker/README.md) — multi-stage build, cache warstw, niezmienny obraz, użytkownik non-root i obsługa `SIGTERM`.
+4. [`kubernetes`](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_c/kubernetes/README.md) — Deployment, Service, trzy probe’y, resources, securityContext, HPA i bezpieczny rolling update.
+5. [`progressive_delivery`](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_c/progressive_delivery/README.md) — canary analysis, automatyczny rollback, shadow traffic, kill switch, game day, runbook i postmortem.
 
-- [`configuration`](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_c/configuration/README.md)
-  - konfiguracja aplikacji per środowisko,
-  - zmienne środowiskowe,
-  - profile aplikacji,
-  - ConfigMap vs Secret,
-  - konfiguracja obrazu vs konfiguracja runtime,
-  - typowe błędy przy przenoszeniu aplikacji z local na cluster.
-
-- [`workshop`](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_c/workshop/README.md)
-  - lokalny klaster przez kind albo minikube,
-  - build obrazu,
-  - push albo load obrazu do klastra,
-  - `kubectl apply`,
-  - sprawdzanie statusu poda,
-  - logi, eventy i opis zasobów,
-  - prosty pipeline: build, test, build image, opcjonalny deploy.
+Całość łączy lokalny przepływ kind/minikube z decyzją po wdrożeniu: build i load obrazu, `kubectl apply`, obserwacja rolloutu, analiza metryk oraz kontrolowana promocja lub rollback.
 
 ### Kryteria ukończenia
 
@@ -775,6 +792,10 @@ Po tym etapie powinieneś:
 - Potrafisz sprawdzić problem przez `kubectl logs`, `describe`, eventy i status zasobów.
 - Wiesz, gdzie szukać przyczyny, gdy aplikacja działa lokalnie, ale nie działa na klastrze.
 - Umiesz odróżnić problem aplikacji, konfiguracji, sieci i infrastruktury.
+- Potrafisz zatrzymać promocję przy małej próbce i wykonać automatyczny rollback przy regresji error rate lub p99.
+- Umiesz uruchomić shadow bez efektów biznesowych i zaprojektować kill switch nadrzędny wobec targetingu.
+- Weryfikujesz zgodność obu wersji aplikacji z live schema przed rolloutem i rollbackiem.
+- Potrafisz przygotować ograniczony game day oraz przetestować runbook, timeline i kryteria recovery.
 
 ### Materiały
 
@@ -787,6 +808,40 @@ Po tym etapie powinieneś:
 - KodeKloud
 - Docker docs — multi-stage build
 - Kubernetes docs
+
+---
+
+## Blok D — [Application Security i Secure SDLC](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_d/README.md)
+
+### Zakres
+
+- threat modeling, aktywa i trust boundaries,
+- SSRF i kontrolowany egress,
+- path traversal, request size i bezpieczny pipeline uploadu,
+- allowlisted deserialization i ochrona przed mass assignment,
+- zarządzanie sekretami i protokół rotacji,
+- encryption in transit/at rest wraz z ownershipem kluczy,
+- różnice między HTTPS, CORS, CSRF i security headers,
+- logowanie bez tokenów, sekretów i PII,
+- dependency/container scanning, SBOM, podpis, provenance i pinning po digest,
+- negatywne testy oraz fail-closed release gate.
+
+### Kryteria ukończenia
+
+- Potrafisz narysować przepływy danych i wskazać przekraczane granice zaufania.
+- Nie pobierasz dowolnego URL ani pliku tylko dlatego, że przeszedł walidację składni.
+- Rozumiesz, dlaczego CORS nie jest autoryzacją, a CSRF zależy od sposobu transportu credentiala.
+- Potrafisz rotować sekret bez przebudowy obrazu i bez bezterminowego akceptowania starej wersji.
+- Umiesz przypisać odpowiedzialność za TLS, encryption at rest, klucze, eksporty i backupy.
+- Pipeline blokuje artefakt bez dowodów: SBOM, skanu, podpisu, provenance i niezmiennego digestu.
+- Testujesz przede wszystkim odmowę, brak efektu ubocznego i brak wycieku w odpowiedzi lub logu.
+
+### Materiały
+
+- OWASP ASVS i OWASP Cheat Sheet Series,
+- OWASP SAMM,
+- NIST Secure Software Development Framework,
+- dokumentacja używanego secret managera, KMS i narzędzi supply-chain.
 
 ---
 
@@ -837,7 +892,20 @@ Po tym etapie powinieneś:
   - jitter,
   - rate limiting: per IP, per API key, token bucket, sliding window,
   - circuit breaker,
-  - retry, backoff i graceful degradation.
+  - retry, backoff i graceful degradation,
+  - propagacja deadline i podział budżetu czasu,
+  - przejście od JMH do testów całej usługi: load, stress, spike i soak,
+  - open/closed workload, coordinated omission i hipoteza capacity,
+  - p95/p99, saturation, kontrolowana degradacja i ocena autoskalowania,
+  - twarde kryteria przerwania eksperymentu,
+  - izolacja tenantów w danych, cache, eventach i kontekście requestu,
+  - noisy-neighbor protection przez per-tenant quota i bulkhead,
+  - klasyfikacja PII, retention, anonimizacja oraz audyt dostępu,
+  - propagacja usunięcia do cache, downstreamów i procesu odtwarzania backupu,
+  - współdzielony retry budget i retry storm,
+  - osobne bulkheady dla zależności,
+  - bounded queue, backpressure i load shedding,
+  - timeout klienta kontra anulowanie downstreamu.
 
 ### Kryteria ukończenia
 
@@ -939,12 +1007,20 @@ Wybierz jeden cloud provider, najlepiej AWS albo GCP, i poznaj go praktycznie.
   - RDS lub odpowiednik,
   - read replicas,
   - backupy,
-  - restore.
+  - restore i regularny restore drill,
+  - mierzalne RPO i RTO,
+  - HA kontra regionalne disaster recovery.
 - Networking:
   - VPC,
   - public/private subnets,
   - security groups,
   - routing.
+- Operacje i bezpieczeństwo:
+  - Infrastructure as Code i wykrywanie driftu,
+  - workload identity i minimalne IAM,
+  - regionalny failover i fencing starego primary,
+  - rollback obrazu oraz kompatybilne migracje expand/contract,
+  - degradacja przy utracie bazy, cache i brokera.
 - Koszt vs wydajność:
   - główne cost drivers,
   - autoscaling vs overprovisioning,
@@ -957,6 +1033,9 @@ Wybierz jeden cloud provider, najlepiej AWS albo GCP, i poznaj go praktycznie.
 - Potrafisz skonfigurować stateless workload z autoscalingiem.
 - Potrafisz wyjaśnić podstawy VPC, subnetów, routingu i security groups.
 - Potrafisz uruchomić managed database z backupem, restore i opcjonalną read replicą.
+- Potrafisz zmierzyć RPO/RTO i udowodnić restore testem integralności oraz critical journey.
+- Potrafisz odtworzyć desired state z IaC, wykryć drift i ograniczyć IAM per workload.
+- Potrafisz przeprowadzić failover bez split-brain oraz ocenić, czy rollback aplikacji jest zgodny ze schematem.
 - Potrafisz wskazać główne cost drivers danego rozwiązania.
 - Potrafisz odróżnić overprovisioning od sensownego autoscalingu.
 - Potrafisz powiedzieć: „To rozwiązanie jest technicznie poprawne, ale zbyt drogie. Zróbmy inaczej.”

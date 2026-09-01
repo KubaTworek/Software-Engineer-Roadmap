@@ -1,7 +1,8 @@
-package pl.jakubtworek.backend_engineering.stage_3.block_c.src.main.java.pl.jakubtworek.cloudarchitecture.entity;
+package pl.jakubtworek.cloudarchitecture.entity;
 
 import jakarta.persistence.*;
 import java.time.Instant;
+import java.util.Objects;
 
 /**
  * JPA entity mapped to the orders table.
@@ -10,27 +11,32 @@ import java.time.Instant;
  * not in memory of a single application instance.
  */
 @Entity
-@Table(name = "orders", indexes = {@Index(name = "idx_orders_customer_created_at", columnList = "customerId,createdAt")})
+@Table(name = "orders", indexes = {
+        @Index(name = "idx_orders_customer_created_at", columnList = "customer_id,created_at")
+})
 public class OrderEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     /** Customer identifier used for filtering and reporting. */
-    @Column(nullable = false)
+    @Column(name = "customer_id", nullable = false)
     private String customerId;
 
     /** Creation timestamp helps with ordering, reporting, and time-range queries. */
-    @Column(nullable = false)
+    @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
     protected OrderEntity() {
         // Required by JPA.
     }
 
-    public OrderEntity(String customerId) {
+    public OrderEntity(String customerId, Instant createdAt) {
+        if (customerId == null || customerId.isBlank()) {
+            throw new IllegalArgumentException("customerId must not be blank");
+        }
         this.customerId = customerId;
-        this.createdAt = Instant.now();
+        this.createdAt = Objects.requireNonNull(createdAt, "createdAt must not be null");
     }
 
     public Long getId() { return id; }

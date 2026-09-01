@@ -1,8 +1,36 @@
-Współbieżne przetwarzanie zadań w Javie -- notatka techniczna
-==================================================
+# executor service
 
-Wprowadzenie
-------------
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** executor service.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „executor service” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=ExecutorPolicyTest" test`
+> - **Role klas:** brak klasy-kontrprzykładu; pozostałe typy są minimalnymi modelami pojęć opisanych niżej.
+> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+<!-- material-card:end -->
+
+## ExecutorService i kontrola przeciążenia
+
+
+
+## Mapa przykładu
+
+- `ExecutorConfigurations` porównuje pule fixed/cached oraz ograniczone kolejki z `AbortPolicy` i `CallerRunsPolicy`.
+- `TaskProcessor` oddziela logikę zadania od strategii wykonania; nie przejmuje własności przekazanego executora.
+- `ExecutorExperiment` odpowiada za pełny lifecycle tworzonych pul.
+- `ExecutorPolicyTest` nasyca pulę za pomocą latchy, bez zależności od arbitralnego `Thread.sleep`.
+
+Z katalogu `backend-engineering` uruchom:
+
+```shell
+mvn --batch-mode --no-transfer-progress -Dtest=ExecutorPolicyTest test
+```
+
+Własność executora powinna być jednoznaczna: komponent, który tworzy pulę, odpowiada również za `shutdown`, oczekiwanie na zakończenie i ewentualne `shutdownNow`.
+
+## Wprowadzenie
 
 Współczesne systemy backendowe są projektowane z założeniem równoległego przetwarzania wielu zadań. Obsługa zapytań HTTP, komunikacja z bazą danych, przetwarzanie wiadomości z kolejek czy wykonywanie operacji asynchronicznych wymaga wykorzystania wielu wątków. Kluczowym problemem nie jest jednak samo uruchamianie równoległych operacji, lecz **kontrolowanie sposobu, w jaki są one wykonywane**.
 

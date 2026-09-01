@@ -1,4 +1,19 @@
-# Tracing z OpenTelemetry w aplikacji Java
+# tracing
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `temat-zaawansowany`
+> - **Uczy:** tracing.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „tracing” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Role klas:** `TracingConfiguration` = `production-boundary`.
+> - **Granica:** Model weryfikuje nazwany niezmiennik; nie implementuje produkcyjnego protokołu rozproszonego ani infrastruktury dostawcy.
+<!-- material-card:end -->
+
+## Tracing z OpenTelemetry w aplikacji Java
+
+
 
 ## Cel dokumentu
 
@@ -62,6 +77,12 @@ Head sampling ma jednak ograniczenie: decyzja zapada zanim wiemy, czy request b�
 
 Przy tail samplingu trzeba pamiętać, że wszystkie spany jednego trace’u powinny trafić do tego samego miejsca decyzyjnego. W większej skali oznacza to potrzebę trace-ID-aware load balancing albo dwuwarstwowej architektury Collectorów. Jeśli spany jednego śladu zostaną rozrzucone losowo między różne Collectory, decyzja samplingowa może być niepełna albo niespójna.
 
+Wykonywalna konfiguracja znajduje się w
+`../collector/otel-collector-tail-sampling.yaml`. Jest osobnym plikiem YAML, a nie
+stringiem w klasie Java, dzięki czemu może zostać poddana walidacji narzędziem
+Collectora. Zachowuje błędy, wolne trace’y i małą próbkę baseline; nie zawiera
+jednak uniwersalnych wartości sizingowych dla każdej produkcji.
+
 ## Exemplars jako pomost między metrykami i trace’ami
 
 Metryki i trace’y odpowiadają na różne pytania. Metryka mówi, że p99 dla `POST /orders/:id/pay` wzrosło albo że error rate przekroczył próg. Trace pokazuje konkretny przebieg requestu i pozwala zobaczyć, gdzie czas został zużyty. Exemplars są pomostem między tymi światami. Pozwalają dołączyć do punktu metrycznego kontekst, najczęściej `trace_id` i `span_id`, bez wrzucania tych identyfikatorów do zwykłych labeli Prometheusa.
@@ -77,6 +98,8 @@ Nie należy próbować zastąpić jednego sygnału drugim. Logi ze wszystkimi sz
 ## Projekt klas Java dla tracingu
 
 W warstwie kodu warto oddzielić instrumentację od logiki biznesowej. Klasa w rodzaju `CheckoutSpanFactory` centralizuje tworzenie spanów i pilnuje stabilnych nazw oraz atrybutów. `TraceHeaderPropagator` odpowiada za wstrzykiwanie kontekstu do nagłówków wychodzących. `SpanErrorHandler` narzuca spójną politykę oznaczania błędów. `TraceContextSnapshot` umożliwia pobranie aktualnego `trace_id` i `span_id` do logów lub exemplarów. Wrappery takie jak `TracedRedisClient`, `TracedOrderRepository` i `TracedPaymentProviderClient` pokazują, jak opakować zależności, aby każdy istotny downstream miał własny span.
+
+`OrderCacheCodec` dodaje osobny, wersjonowany kontrakt danych cache. Nieudane dekodowanie kończy się jawnym błędem zamiast utworzenia fikcyjnego zamówienia, a identyfikator z payloadu musi odpowiadać żądanemu kluczowi. W produkcji ten sam obowiązek zwykle realizuje JSON lub Protobuf ze strategią ewolucji schematu i metryką uszkodzonych wpisów.
 
 Taka struktura ma przewagę nad rozproszonym wywoływaniem `tracer.spanBuilder(...)` w wielu miejscach kodu. Jeśli programiści tworzą spany ad hoc, szybko pojawią się niespójne nazwy, różne atrybuty dla tego samego pojęcia i przypadkowe dane wysokokardynalne. Fabryka spanów działa jak kontrakt telemetryczny. Wymusza, że Redis zawsze wygląda jak Redis, PostgreSQL zawsze jak PostgreSQL, a endpoint płatności zawsze jest identyfikowany przez route template, a nie przez raw URL.
 
@@ -95,6 +118,10 @@ Czwarta pułapka to traktowanie samplingu jako ustawienia kosmetycznego. Samplin
 Tracing dla `checkout-api` można uznać za sensownie zaprojektowany dopiero wtedy, gdy pojedynczy trace pokazuje pełną ścieżkę requestu przez wejście HTTP, cache, bazę danych, providera płatności i logikę domenową. Spany powinny mieć stabilne nazwy, niskokardynalne atrybuty i poprawny parent-child relationship. Kontekst powinien przechodzić do wywołań wychodzących przez standardowe nagłówki, a `trace_id` i `span_id` powinny być dostępne w logach oraz exemplarach.
 
 Drugim kryterium jest użyteczność podczas incydentu. Jeśli p99 endpointu płatności rośnie, operator powinien móc przejść z metryki do exemplaru, z exemplaru do trace’u, a z trace’u do logów. Trace powinien pokazać, czy czas zjadł Redis, PostgreSQL, provider płatności czy kod domenowy. Jeśli zespół nadal musi zgadywać, który downstream jest winny, tracing jest obecny technicznie, ale nie spełnia swojej funkcji diagnostycznej.
+
+`TelemetryPipelineTest` sprawdza tę korelację bez mocków: przyjmuje zewnętrzny
+`traceparent`, eksportuje span serwera i błędny span providera, a następnie
+porównuje ich identyfikatory z logiem strukturalnym.
 
 ## Podsumowanie
 

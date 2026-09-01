@@ -1,4 +1,19 @@
-# Architektura nowoczesnego systemu e-commerce oparta o DDD, Clean Architecture i modularność
+# Stage 2A — modelowanie, API i architektura
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `praktyka-produkcyjna`
+> - **Uczy:** Stage 2A — modelowanie, API i architektura.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „Stage 2A — modelowanie, API i architektura” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=ApiContractCompatibilityTest,AsyncCancellationTest,OpenApiContractTest" test`
+> - **Role klas:** `LegacyOrderAcl` = `naive`, `LegacyOrderDto` = `naive`, `LegacyOrderLineDto` = `naive` (+1); `BoundedContext` = `correct`, `IdempotentEventConsumer` = `correct`; `InMemoryOrderRepository` = `simulation`, `InMemoryProductQueryUseCase` = `simulation`; `DomainEventPublisher` = `production-boundary`, `IdempotentEventConsumer` = `production-boundary`, `IntegrationEventPublisher` = `production-boundary` (+13).
+> - **Granica:** Laboratorium pokazuje kontrakt i failure modes; nie zastępuje pełnego testu end-to-end ani operacyjnej konfiguracji środowiska.
+<!-- material-card:end -->
+
+## Architektura nowoczesnego systemu e-commerce oparta o DDD, Clean Architecture i modularność
+
+
 
 ## Wprowadzenie
 
@@ -23,9 +38,100 @@ Właśnie dlatego współczesne systemy coraz częściej projektuje się w oparc
 
 Niniejszy dokument przedstawia teoretyczne podstawy projektowania systemu e-commerce z wykorzystaniem tych podejść oraz analizuje kompromisy architektoniczne między monolitem a mikroserwisami.
 
+## Mapa laboratoriów
+
+- `ddd_strategy` — bounded contexts, context map, published language i anti-corruption layer,
+- `ddd_tactic` — agregaty, Value Objects, repozytoria i zdarzenia domenowe,
+- `clean_architecture` — porty, adaptery i dependency rule,
+- `use_case` — pełny przepływ `PlaceOrder`, CQRS i transactional outbox,
+- [`api_design`](api_design/README.md) — semantyka HTTP, idempotency key, ETag,
+  Problem Details, OpenAPI, operacje asynchroniczne i webhooki,
+- [`graphql`](graphql/README.md) — schema-first API, N+1, kontrola kosztu zapytania,
+  field-level authorization i kompatybilna ewolucja,
+- [`grpc`](grpc/README.md) — Protobuf, deadline, anulowanie, status codes, streaming i
+  zgodność starszego klienta z nowszym serwerem,
+- [`reference_flow`](reference_flow/README.md) — jeden przypadek użycia dla GraphQL
+  i gRPC oraz idempotentna droga outbox → indeks wyszukiwania → WebSocket,
+- `integration` — komunikacja między kontekstami, idempotentność, retry i saga,
+- `monolith_vs_microservices` — kryteria wyboru modelu wdrożenia i migracji.
+
+GraphQL i gRPC są częścią Stage 2A, ponieważ rozwijają granice API i integracji.
+Pierwsze laboratorium dowodzi kontroli kosztu, batchingu i autoryzacji pola, a
+drugie zasad ewolucji numerów Protobuf, propagacji deadline i bezpiecznego retry.
+
+## Który model jest kanoniczny
+
+Powtarzające się nazwy nie oznaczają jednego współdzielonego modelu. Każde
+laboratorium odpowiada na inne pytanie, dlatego jego `Order` lub
+`PlaceOrderCommand` może mieć inny kształt. Kanoniczność oznacza tutaj punkt
+odniesienia dla przekrojowego przepływu w Stage 2A, a nie model obowiązujący w
+całym repozytorium.
+
+| Laboratorium | Status modelu | Rola podobnych klas |
+|---|---|---|
+| `use_case` | **kanoniczny przepływ Stage 2A** | kompletna droga HTTP → port wejściowy → use case → agregat → jawny integration event → outbox |
+| `api_design` | **kanoniczny kontrakt publicznego API** | granica HTTP zamówienia, kontrola współbieżności, błędy, paginacja i ewolucja kontraktu |
+| `clean_architecture` | model lokalny, minimalny | pokazuje sam kierunek zależności, porty i adaptery bez pełnej domeny zamówienia |
+| `ddd_tactic` | model lokalny, bogatsza domena | ćwiczy encje, Value Objects, agregaty, domain services i rejestrowanie domain events |
+| `ddd_strategy` | model lokalny bounded contextu | pokazuje różne znaczenia pojęć, published language oraz anti-corruption layer |
+| `integration` | model lokalny integracji | pokazuje idempotencję, retry, outbox, kontrakty między kontekstami i sagę |
+
+Przykładowo cztery klasy `PlaceOrderCommand` nie są zamiennikami. Komenda w
+`clean_architecture` jest minimalnym wejściem do demonstracji portu, w
+`ddd_strategy` należy do Sales Context, a wersje w `ddd_tactic` i `use_case`
+obsługują różne poziomy szczegółowości modelu domenowego. Podobnie `Order`,
+`OrderId`, `OrderRepository` i `OutboxMessage` nie powinny być importowane między
+laboratoriami tylko dlatego, że mają takie same nazwy.
+
+## Wykonywalne granice
+
+`Stage2ArchitectureTest` używa ArchUnit do ochrony reguł, które wcześniej były
+jedynie opisane:
+
+- wszystkie pakiety `domain` Stage 2A są niezależne od Springa, JPA i Hibernate;
+- domena `clean_architecture` nie zależy od application, adapterów ani konfiguracji;
+- application `clean_architecture` nie zna adapterów;
+- kanoniczna domena `use_case` nie zna application, adapterów, infrastruktury ani kontraktu integracyjnego;
+- application `use_case` zależy od portów, a nie od adapterów i infrastruktury.
+
+`PlaceOrderBoundaryFlowTest` przechodzi przez wszystkie istotne granice i
+potwierdza, że agregat oraz rekord outbox stają się widoczne dopiero po commit.
+Drugi scenariusz wymusza awarię tworzenia wiadomości i dowodzi rollbacku zapisu
+zamówienia. Fake unit of work demonstruje kontrakt; test PostgreSQL z profilu
+`infrastructure-tests` pozostaje dowodem zachowania prawdziwej bazy.
+
+## Gwarancje i świadome uproszczenia
+
+Kod rozdziela trzy poziomy, których nie wolno utożsamiać:
+
+| Mechanizm | Gwarancja lokalna | Czego sam nie gwarantuje |
+|---|---|---|
+| agregat | chroni niezmienniki w jednej operacji domenowej | izolacji między procesami i transakcji DB |
+| repozytorium | ukrywa sposób utrwalenia agregatu | atomowości z brokerem |
+| transactional outbox | atomowy zapis stanu i wiadomości w jednej DB | exactly-once publikacji i konsumpcji |
+| idempotent consumer | bezpieczny duplikat w granicy własnej transakcji | dokładnie jednego wywołania zewnętrznego API |
+| saga | jawny stan długiego procesu i kompensacje | globalnego rollbacku |
+| retry | ponowienie sklasyfikowanej operacji przejściowej | bezpieczeństwa operacji nieidempotentnej |
+
+Bezpośrednie wywołania `SagaCommandBus` w przykładzie pokazują kolejność decyzji,
+ale nie są trwałym transportem. Pomiędzy zapisem stanu sagi a wysłaniem komendy
+istnieje dual-write. W implementacji produkcyjnej komenda powinna zostać zapisana
+do outboxa w tej samej transakcji, a odbiorca powinien tolerować duplikaty.
+
+Kompensacja nie cofa czasu. Jest nową operacją biznesową, która może zawieść,
+zostać wykonana wielokrotnie albo wymagać ręcznej naprawy. Model sagi jest
+kompletny dopiero wtedy, gdy opisuje retry, idempotency key, timeout oraz stan
+wymagający interwencji człowieka.
+
+Przykłady są celowo niewielkie, ale ich reguły są wykonywalne i zabezpieczone testami. Testy `block_a` można uruchomić z katalogu `backend-engineering`:
+
+```shell
+mvn --batch-mode --no-transfer-progress "-Dtest=Stage2ArchitectureTest,OrderTest,DddTacticalOrderTest,PlaceOrderApplicationServiceTest,PlaceOrderApplicationServiceMockTest,JpaOrderRepositoryAdapterTest,PlaceOrderControllerTest,IdempotentEventConsumerTest,OutboxFlowTest,DomainToIntegrationEventMappingTest,PlaceOrderBoundaryFlowTest,OrderSagaOrchestratorTest" test
+```
+
 ---
 
-# Problem architektoniczny systemów e-commerce
+## Problem architektoniczny systemów e-commerce
 
 Większość systemów e-commerce rozpoczyna życie jako klasyczny monolit. Jest to rozwiązanie rozsądne:
 - prostszy deployment,
@@ -56,7 +162,7 @@ Dlatego coraz częściej stosuje się podejście pośrednie — modular monolith
 
 ---
 
-# Monolit, modular monolith i mikroserwisy
+## Monolit, modular monolith i mikroserwisy
 
 ## Klasyczny monolit
 
@@ -129,7 +235,7 @@ Mikroserwisy mają sens głównie wtedy, gdy:
 
 ---
 
-# Domain-Driven Design
+## Domain-Driven Design
 
 DDD nie jest frameworkiem ani strukturą katalogów. Jest sposobem modelowania złożonego biznesu.
 
@@ -143,7 +249,7 @@ DDD pomaga:
 
 ---
 
-# Bounded Context
+## Bounded Context
 
 Bounded Context definiuje granice modelu domenowego.
 
@@ -168,7 +274,7 @@ Przykład:
 
 ---
 
-# Context Map
+## Context Map
 
 Context Map opisuje relacje między bounded contexts.
 
@@ -183,7 +289,7 @@ Szczególnie istotny jest Anti-Corruption Layer, który chroni model domenowy pr
 
 ---
 
-# Tactical DDD
+## Tactical DDD
 
 ## Encje
 
@@ -270,7 +376,7 @@ Zdarzenia:
 
 ---
 
-# Clean Architecture i Hexagonal Architecture
+## Clean Architecture i Hexagonal Architecture
 
 ## Dependency Rule
 
@@ -308,7 +414,7 @@ Dzięki temu domena pozostaje niezależna technologicznie.
 
 ---
 
-# CQRS
+## CQRS
 
 CQRS rozdziela:
 - model zapisu,
@@ -335,7 +441,7 @@ CQRS pozwala:
 
 ---
 
-# Event-Driven Architecture
+## Event-Driven Architecture
 
 W architekturze event-driven moduły komunikują się przez zdarzenia.
 
@@ -355,7 +461,7 @@ Kosztem jest eventual consistency.
 
 ---
 
-# Eventual Consistency
+## Eventual Consistency
 
 W systemach rozproszonych nie można zakładać natychmiastowej spójności danych.
 
@@ -365,7 +471,7 @@ To fundamentalna różnica między monolitem a mikroserwisami.
 
 ---
 
-# Saga Pattern
+## Saga Pattern
 
 Saga zarządza długimi procesami biznesowymi rozproszonymi między serwisami.
 
@@ -382,7 +488,7 @@ Saga zastępuje distributed transactions.
 
 ---
 
-# Outbox Pattern
+## Outbox Pattern
 
 Outbox Pattern rozwiązuje problem atomowości:
 - zapis danych,
@@ -403,7 +509,7 @@ To jeden z kluczowych wzorców nowoczesnych systemów event-driven.
 
 ---
 
-# Idempotentność i retry
+## Idempotentność i retry
 
 Komunikacja rozproszona wymaga retry.
 
@@ -418,7 +524,7 @@ Idempotentność jest absolutnie kluczowa w systemach rozproszonych.
 
 ---
 
-# Shared Database vs Database per Service
+## Shared Database vs Database per Service
 
 ## Shared Database
 
@@ -450,7 +556,7 @@ W praktyce database per service jest standardem mikroserwisów.
 
 ---
 
-# Testowanie architektury DDD
+## Testowanie architektury DDD
 
 ## Testy agregatów
 
@@ -487,7 +593,7 @@ To jedyne miejsce, gdzie infrastruktura powinna być bezpośrednio testowana.
 
 ---
 
-# Migracja z modular monolith do mikroserwisów
+## Migracja z modular monolith do mikroserwisów
 
 Najlepszą strategią jest rozpoczęcie od modular monolith.
 
@@ -498,7 +604,7 @@ Dopiero później:
 
 ---
 
-# Kryteria wydzielania mikroserwisu
+## Kryteria wydzielania mikroserwisu
 
 Mikroserwis ma sens gdy:
 - moduł ma własny lifecycle,
@@ -514,7 +620,7 @@ Nie należy wydzielać mikroserwisów:
 
 ---
 
-# Strategia migracji
+## Strategia migracji
 
 Typowa migracja:
 1. Budowa modular monolith.
@@ -529,7 +635,7 @@ Najważniejsze jest to, aby granice logiczne istniały zanim pojawią się grani
 
 ---
 
-# Organizacja kodu
+## Organizacja kodu
 
 Dobra architektura organizuje kod wokół domeny, a nie wokół frameworka.
 
@@ -560,7 +666,7 @@ Każdy moduł zawiera:
 
 ---
 
-# Najważniejsze zasady praktyczne
+## Najważniejsze zasady praktyczne
 1. Framework nie może definiować architektury.
 2. Domena musi być niezależna technologicznie.
 3. Granice biznesowe są ważniejsze niż techniczne.
@@ -574,7 +680,7 @@ Każdy moduł zawiera:
 
 ---
 
-# Podsumowanie
+## Podsumowanie
 
 Nowoczesna architektura e-commerce nie polega na ślepym wyborze mikroserwisów, lecz na świadomym modelowaniu domeny biznesowej i granic odpowiedzialności.
 

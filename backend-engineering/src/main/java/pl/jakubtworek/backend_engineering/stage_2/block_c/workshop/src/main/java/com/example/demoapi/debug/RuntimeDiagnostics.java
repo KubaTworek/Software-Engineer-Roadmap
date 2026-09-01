@@ -1,4 +1,4 @@
-package pl.jakubtworek.backend_engineering.stage_2.block_c.workshop.src.main.java.com.example.demoapi.debug;
+package com.example.demoapi.debug;
 
 import java.lang.management.ManagementFactory;
 import java.time.Instant;

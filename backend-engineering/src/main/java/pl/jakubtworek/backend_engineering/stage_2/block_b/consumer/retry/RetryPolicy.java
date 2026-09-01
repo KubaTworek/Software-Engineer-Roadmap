@@ -10,4 +10,12 @@ public record RetryPolicy(
         int maxAttempts,
         RetryBackoffStrategy backoffStrategy
 ) {
+    public RetryPolicy {
+        if (maxAttempts <= 0) {
+            throw new IllegalArgumentException("Max attempts must be positive");
+        }
+        if (backoffStrategy == null) {
+            throw new IllegalArgumentException("Backoff strategy cannot be null");
+        }
+    }
 }

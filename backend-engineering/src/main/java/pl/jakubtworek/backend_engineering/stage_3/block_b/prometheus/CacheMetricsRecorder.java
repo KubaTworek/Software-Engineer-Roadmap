@@ -4,6 +4,7 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 
 import java.util.Objects;
+import java.util.Locale;
 
 /**
  * Records cache metrics.
@@ -19,6 +20,7 @@ public final class CacheMetricsRecorder {
     public CacheMetricsRecorder(MeterRegistry meterRegistry, String serviceName) {
         this.meterRegistry = Objects.requireNonNull(meterRegistry, "meterRegistry must not be null");
         this.serviceName = requireNonBlank(serviceName, "serviceName");
+        MetricCardinalityGuard.validateLabelValue(MetricLabels.SERVICE, this.serviceName);
     }
 
     /**
@@ -27,7 +29,8 @@ public final class CacheMetricsRecorder {
      * The operation label should be bounded, for example GET, SET, DEL, or EXISTS.
      */
     public void recordCacheRequest(String operation, CacheResult result) {
-        String normalizedOperation = requireNonBlank(operation, "operation").toUpperCase();
+        Objects.requireNonNull(result, "result must not be null");
+        String normalizedOperation = requireNonBlank(operation, "operation").toUpperCase(Locale.ROOT);
 
         MetricCardinalityGuard.validateLabelValue(MetricLabels.OPERATION, normalizedOperation);
 

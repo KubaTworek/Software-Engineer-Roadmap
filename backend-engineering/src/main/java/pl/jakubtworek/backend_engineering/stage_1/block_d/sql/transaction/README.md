@@ -1,6 +1,35 @@
-# Transakcje i poziomy izolacji w PostgreSQL — szczegółowe podsumowanie
+# transaction
 
-# Wprowadzenie
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** transaction.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „transaction” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Role klas:** brak klasy-kontrprzykładu; pozostałe typy są minimalnymi modelami pojęć opisanych niżej.
+> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+<!-- material-card:end -->
+
+## Transakcje i poziomy izolacji w PostgreSQL — szczegółowe podsumowanie
+
+
+
+> To laboratorium opisuje zachowanie PostgreSQL, a nie przenośną obietnicę
+> każdego silnika SQL. Uruchamiaj `transaction.sql` krok po kroku w dwóch
+> niezależnych sesjach. Mapowanie tych mechanizmów na Spring i JPA znajduje się
+> w `stage_1/block_c/transactional`.
+
+## Szybka ścieżka nauki
+
+1. Uruchom non-repeatable read w `READ COMMITTED`.
+2. Powtórz scenariusz w `REPEATABLE READ` i porównaj snapshoty.
+3. Odtwórz lost update, a następnie wariant z atomowym `UPDATE`.
+4. Porównaj optimistic locking z `SELECT ... FOR UPDATE`.
+5. Złam invariant dyżuru przez write skew.
+6. Uruchom ten sam przypadek w `SERIALIZABLE` i potraktuj błąd serializacji jako oczekiwany sygnał do retry całej transakcji.
+
+## Wprowadzenie
 
 Transakcje są jednym z najważniejszych mechanizmów relacyjnych baz danych. To właśnie one odpowiadają za:
 - spójność danych,
@@ -26,7 +55,7 @@ Poziomy izolacji definiują:
 
 ---
 
-# ACID i izolacja
+## ACID i izolacja
 
 Relacyjne bazy danych implementują model ACID:
 - Atomicity,
@@ -54,7 +83,7 @@ Niższa izolacja:
 
 ---
 
-# READ COMMITTED — domyślny poziom PostgreSQL
+## READ COMMITTED — domyślny poziom PostgreSQL
 
 Domyślnym poziomem izolacji w PostgreSQL jest:
 
@@ -68,7 +97,7 @@ W READ COMMITTED tak nie jest.
 
 ---
 
-# Jak działa READ COMMITTED
+## Jak działa READ COMMITTED
 
 Każde zapytanie SELECT:
 - tworzy własny snapshot,
@@ -86,7 +115,7 @@ jeżeli:
 
 ---
 
-# Przykład
+## Przykład
 
 Transakcja wykonuje:
 
@@ -120,7 +149,7 @@ non-repeatable read
 
 ---
 
-# Non-repeatable Read
+## Non-repeatable Read
 
 Non-repeatable read oznacza:
 
@@ -134,7 +163,7 @@ READ COMMITTED dopuszcza takie zachowanie.
 
 ---
 
-# Phantom Read
+## Phantom Read
 
 Kolejną anomalią jest:
 
@@ -148,7 +177,7 @@ To sytuacja, gdy:
 
 ---
 
-# Przykład
+## Przykład
 
 Pierwszy SELECT:
 
@@ -183,7 +212,7 @@ czyli nowy rekord spełniający warunek.
 
 ---
 
-# Dirty Read w PostgreSQL
+## Dirty Read w PostgreSQL
 
 Warto podkreślić bardzo ważną rzecz:
 
@@ -205,7 +234,7 @@ To ogromnie ważna cecha MVCC w PostgreSQL.
 
 ---
 
-# MVCC — Multi Version Concurrency Control
+## MVCC — Multi Version Concurrency Control
 
 PostgreSQL używa:
 ```text
@@ -232,7 +261,7 @@ Dzięki temu:
 
 ---
 
-# REPEATABLE READ w PostgreSQL
+## REPEATABLE READ w PostgreSQL
 
 Kolejnym poziomem izolacji jest:
 
@@ -251,7 +280,7 @@ To oznacza:
 
 ---
 
-# Co daje REPEATABLE READ
+## Co daje REPEATABLE READ
 
 W REPEATABLE READ:
 - kolejne SELECT-y widzą te same dane,
@@ -268,7 +297,7 @@ transakcja nadal widzi:
 
 ---
 
-# Snapshot Isolation
+## Snapshot Isolation
 
 To bardzo ważny koncept.
 
@@ -285,7 +314,7 @@ Jednak Snapshot Isolation nie jest pełnym SERIALIZABLE.
 
 ---
 
-# Lost Update
+## Lost Update
 
 Jedną z najważniejszych anomalii jest:
 
@@ -300,7 +329,7 @@ To sytuacja, gdy:
 
 ---
 
-# Przykład
+## Przykład
 
 Saldo:
 ```text
@@ -338,7 +367,7 @@ zamiast:
 
 ---
 
-# Dlaczego to jest niebezpieczne
+## Dlaczego to jest niebezpieczne
 
 Problem nie wynika z samego UPDATE.
 
@@ -351,7 +380,7 @@ To bardzo częsty błąd aplikacyjny.
 
 ---
 
-# Bezpieczniejszy wzorzec
+## Bezpieczniejszy wzorzec
 
 Znacznie lepiej wykonywać operacje bezpośrednio w bazie:
 
@@ -368,7 +397,7 @@ Wtedy PostgreSQL:
 
 ---
 
-# SELECT FOR UPDATE
+## SELECT FOR UPDATE
 
 Kolejnym mechanizmem ochrony jest:
 
@@ -389,7 +418,7 @@ Przydaje się gdy:
 
 ---
 
-# Write Skew — problem Snapshot Isolation
+## Write Skew — problem Snapshot Isolation
 
 Najbardziej podstępną anomalią Snapshot Isolation jest:
 
@@ -404,7 +433,7 @@ To sytuacja, gdy:
 
 ---
 
-# Przykład lekarzy na dyżurze
+## Przykład lekarzy na dyżurze
 
 Invariant:
 ```text
@@ -442,7 +471,7 @@ Invariant został złamany.
 
 ---
 
-# Dlaczego Snapshot Isolation tego nie wykrywa
+## Dlaczego Snapshot Isolation tego nie wykrywa
 
 Ponieważ:
 - nie ma konfliktu na tym samym rekordzie,
@@ -456,7 +485,7 @@ write skew
 
 ---
 
-# SERIALIZABLE w PostgreSQL
+## SERIALIZABLE w PostgreSQL
 
 Najwyższym poziomem izolacji jest:
 
@@ -472,7 +501,7 @@ SSI — Serializable Snapshot Isolation
 
 ---
 
-# Co robi SERIALIZABLE
+## Co robi SERIALIZABLE
 
 PostgreSQL:
 - analizuje zależności pomiędzy transakcjami,
@@ -492,7 +521,7 @@ To oznacza:
 
 ---
 
-# Bardzo ważna zasada
+## Bardzo ważna zasada
 
 W SERIALIZABLE aplikacja:
 - MUSI obsługiwać retry.
@@ -505,7 +534,7 @@ Transakcja:
 
 ---
 
-# SERIALIZABLE nie oznacza „wolno”
+## SERIALIZABLE nie oznacza „wolno”
 
 Bardzo częsty mit:
 ```text
@@ -524,7 +553,7 @@ Dla wielu systemów SERIALIZABLE jest całkowicie praktyczne.
 
 ---
 
-# Najważniejsze anomalie
+## Najważniejsze anomalie
 
 ## READ COMMITTED
 
@@ -560,7 +589,7 @@ PostgreSQL:
 
 ---
 
-# Najważniejsza praktyczna zasada
+## Najważniejsza praktyczna zasada
 
 Najważniejszym błędem projektowym jest:
 - ignorowanie współbieżności,
@@ -579,3 +608,10 @@ Dlatego:
 - projekt transakcji
 
 są fundamentalną częścią projektowania backendów i systemów bazodanowych.
+
+## Automatyczna weryfikacja snapshotów
+
+`PostgreSqlExecutableLabTest` otwiera niezależne połączenie czytające i zapisujące.
+Po commicie writera drugi `SELECT` w `READ COMMITTED` widzi nową wartość, natomiast
+w `REPEATABLE READ` pozostaje przy snapshocie ustalonym przez pierwszy odczyt.
+Test pokazuje zachowanie PostgreSQL MVCC, którego nie należy wnioskować z H2.

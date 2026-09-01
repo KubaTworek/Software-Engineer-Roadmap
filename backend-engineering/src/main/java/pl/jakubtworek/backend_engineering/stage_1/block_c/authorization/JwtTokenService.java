@@ -1,13 +1,13 @@
 package pl.jakubtworek.backend_engineering.stage_1.block_c.authorization;
 
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
 import org.springframework.stereotype.Service;
 
 import java.security.PrivateKey;
 import java.time.Instant;
 import java.util.Date;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Responsible for generating access tokens.
@@ -45,13 +45,15 @@ public class JwtTokenService {
         Instant now = Instant.now();
 
         return Jwts.builder()
-                .setSubject(username)
-                .setIssuer("demo-auth-server")
-                .setIssuedAt(Date.from(now))
-                .setExpiration(Date.from(now.plusSeconds(15 * 60)))
+                .subject(username)
+                .issuer("demo-auth-server")
+                .id(UUID.randomUUID().toString())
+                .issuedAt(Date.from(now))
+                .expiration(Date.from(now.plusSeconds(15 * 60)))
+                .claim("aud", List.of("backend-api"))
                 .claim("roles", roles)
                 .claim("permissions", permissions)
-                .signWith(privateKey, SignatureAlgorithm.RS256)
+                .signWith(privateKey, Jwts.SIG.RS256)
                 .compact();
     }
 }

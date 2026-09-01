@@ -1,8 +1,194 @@
-# Blok C – Architektura Cloud na Google Cloud Platform
+# Stage 3C — cloud architecture i disaster recovery
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `temat-zaawansowany`
+> - **Uczy:** Stage 3C — cloud architecture i disaster recovery.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „Stage 3C — cloud architecture i disaster recovery” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Role klas:** brak klasy-kontrprzykładu; pozostałe typy są minimalnymi modelami pojęć opisanych niżej.
+> - **Granica:** Model weryfikuje nazwany niezmiennik; nie implementuje produkcyjnego protokołu rozproszonego ani infrastruktury dostawcy.
+<!-- material-card:end -->
+
+## Blok C – Architektura Cloud na Google Cloud Platform
+
+
 
 ## Wprowadzenie
 
-Ten dokument stanowi teoretyczne omówienie podejścia do projektowania nowoczesnego backendu działającego w środowisku Google Cloud Platform. Głównym celem architektury cloud-native jest tworzenie systemów skalowalnych, odpornych na awarie, łatwych w obserwowaniu i możliwie efektywnych kosztowo. W praktyce oznacza to odejście od projektowania infrastruktury jako stałego, ręcznie utrzymywanego zaplecza serwerowego na rzecz usług zarządzanych, automatycznego skalowania oraz świadomego przenoszenia odpowiedzialności operacyjnej na platformę chmurową.
+Ten dokument łączy działającą aplikację cloud-native z wykonywalnym laboratorium decyzji operacyjnych. Nie wymaga konta GCP: kod modeluje kontrakty, które przed produkcją powinny zostać odwzorowane w wybranym narzędziu IaC, monitoringu i runbookach. Głównym celem jest projektowanie systemów skalowalnych, odpornych na awarie, możliwych do odtworzenia oraz efektywnych kosztowo.
+
+## Uruchomienie laboratorium
+
+`block_c` jest samodzielnym modułem Maven wymagającym Javy 21. Nie jest budowany przez nadrzędny `backend-engineering/pom.xml`.
+
+```shell
+cd backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_3/block_c
+mvn --batch-mode --no-transfer-progress verify
+```
+
+Do uruchomienia aplikacji potrzebne są PostgreSQL i Redis oraz następujące zmienne:
+
+| Zmienna | Znaczenie | Przykład |
+|---|---|---|
+| `DB_JDBC_URL` | JDBC URL PostgreSQL | `jdbc:postgresql://localhost:5432/cloud_architecture` |
+| `DB_USER` | użytkownik bazy | `app` |
+| `DB_PASSWORD` | hasło pobierane docelowo z Secret Manager | `local-password` |
+| `DB_POOL_SIZE` | maksymalna pula połączeń jednej instancji | `5` |
+| `SPRING_DATA_REDIS_HOST` | adres Redis/Memorystore | `localhost` |
+| `SPRING_DATA_REDIS_PORT` | port Redis | `6379` |
+| `EXTERNAL_API_BASE_URL` | bazowy URL zależności HTTP | `https://api.example.com` |
+| `EXTERNAL_API_TIMEOUT` | connect i read timeout | `3s` |
+
+Flyway tworzy schemat przy starcie, a Hibernate działa w trybie `validate`. Obraz można zbudować poleceniem `docker build -t cloud-architecture-lab .`. Endpoint `/health` sprawdza wyłącznie proces, natomiast `/ready` odpytuje PostgreSQL i Redis.
+
+Najważniejsze zaimplementowane przepływy:
+
+- cache-aside produktów z kontrolowaną degradacją przy awarii Redis,
+- atomowy fixed-window rate limiter oparty na skrypcie Lua,
+- idempotencja requestów ze stanami `PROCESSING` i `COMPLETED` oraz fingerprintem payloadu,
+- Transactional Outbox z retry, backoffem, limitem prób i `FOR UPDATE SKIP LOCKED`,
+- idempotentny worker używający trwałego znacznika i klucza downstream,
+- migracje Flyway, readiness oraz ustrukturyzowane logowanie requestów.
+- mierzalny plan disaster recovery z RPO/RTO, backupem, restore drill i regionalnym failoverem,
+- wykrywanie driftu infrastruktury oraz walidacja keyless workload identity i minimalnego IAM,
+- decyzje degradacji dla Cloud SQL, Redis i Pub/Sub oraz bezpieczny rollback aplikacji i migracji.
+
+## Wykonywalne laboratorium disaster recovery
+
+Pakiet `operations` oddziela trzy problemy, które bywają błędnie wrzucane do jednego worka:
+
+| Problem | Pytanie | Mechanizm |
+| --- | --- | --- |
+| High Availability | Czy usługa przetrwa awarię instancji lub strefy bez ręcznej interwencji? | redundancja, health checks, automatyczny zonal failover |
+| Disaster Recovery | Jak odtworzyć system po utracie regionu lub uszkodzeniu danych? | drugi region, backup, restore, runbook, ćwiczenia |
+| Business Continuity | Które funkcje mogą działać w trybie ograniczonym? | jawna degradacja, priorytety ruchu, komunikacja incydentu |
+
+HA zmniejsza liczbę incydentów wymagających DR, ale go nie zastępuje. Regionalna instancja Cloud SQL może chronić przed awarią strefy, lecz nie musi chronić przed błędnym `DELETE`, wadliwą migracją albo utratą całego regionu. Replika propaguje również część błędów logicznych; dlatego potrzebny jest niezależny backup i sprawdzony restore.
+
+### RPO i RTO jako kontrakt
+
+Referencyjny plan znajduje się w `src/main/resources/operations/reference-dr-plan.properties`:
+
+- `RPO = 5 min` — podczas zaakceptowanego scenariusza disaster można utracić najwyżej pięć minut trwałych danych,
+- `RTO = 30 min` — krytyczna ścieżka ma wrócić w ciągu trzydziestu minut,
+- backup/PITR musi tworzyć punkty odtworzenia co najwyżej co pięć minut,
+- kopia musi przeżyć awarię regionu podstawowego,
+- estymowany traffic switch i warmup muszą mieścić się w RTO,
+- restore drill odbywa się co 30 dni, a walidator odrzuca okres dłuższy niż 90 dni.
+
+`DisasterRecoveryPlanValidator` nie pozwala uznać planu za gotowy, gdy między innymi:
+
+- region recovery jest tym samym regionem co primary,
+- interwał backupu przekracza RPO,
+- czas failoveru przekracza RTO,
+- brakuje PITR, kopii cross-region, odtwarzalnego IaC lub workload identity,
+- runbook nie zawiera fencing/freeze writes, promocji secondary, zmiany ruchu i weryfikacji.
+
+Wartości są przykładem wymagania biznesowego, nie uniwersalną rekomendacją. Krótsze RPO/RTO zwiększają koszt i złożoność; powinny wynikać z analizy wpływu, a nie ambicji technicznej.
+
+### Backup i test odtworzenia
+
+Samo `backup enabled` nie jest dowodem odzyskiwalności. `RestoreDrillEvaluator` ocenia wynik ćwiczenia na podstawie:
+
+- wieku punktu odtworzenia względem RPO,
+- czasu odtworzenia względem RTO,
+- izolacji kopii od regionu podstawowego,
+- wersji schematu,
+- liczby rekordów i checksumy danych biznesowych,
+- smoke testu aplikacji podłączonej do odtworzonej bazy.
+
+Restore powinien odbywać się do izolowanego środowiska. Dopiero po weryfikacji danych i krytycznych ścieżek można rozważać promocję. Ćwiczenie musi zapisać realny czas, użyty snapshot, wynik integralności i odstępstwa od runbooka.
+
+### Regionalny failover
+
+Minimalna kolejność z referencyjnego runbooka:
+
+1. wyznacz incident commandera i jawnie ogłoś disaster,
+2. zatrzymaj lub odgrodź zapisy starego primary, aby uniknąć split-brain,
+3. zmierz replication lag i porównaj go z RPO,
+4. promuj bazę w regionie recovery,
+5. odtwórz stateless compute, IAM, sekrety i routing z IaC,
+6. przełącz ruch i weryfikuj critical journeys, nie tylko `/health`,
+7. utrzymuj stary region odgrodzony do czasu zaplanowanego failbacku.
+
+Automatyczny zonal failover jest mechanizmem HA. Regionalny failover jest decyzją o dużym blast radius i zwykle powinien mieć jawne kryteria, właściciela oraz checkpoint przed zmianą kierunku zapisu.
+
+## Scenariusze utraty zależności
+
+`FailureScenarioPlanner` dokumentuje różne reakcje zamiast stosowania jednego globalnego „retry”:
+
+| Awaria | Tryb | Decyzja |
+| --- | --- | --- |
+| Redis | degraded | odczyty produktu omijają cache; operacje zależne od idempotencji fail closed; cache jest odbudowywany, nie odtwarzany z backupu |
+| Pub/Sub | degraded | transakcja nadal zapisuje Outbox; relay zwalnia retry; po powrocie broker jest zasilany idempotentnym replayem |
+| Cloud SQL | unavailable | zapisy fail closed, worker staje, następuje ocena laga i kontrolowana promocja secondary |
+| region primary | unavailable | fencing starego primary, rekonstrukcja z IaC, promocja danych, traffic switch i test ścieżek biznesowych |
+
+Redis pełni tu zarówno rolę cache, jak i magazynu idempotencji/rate limitingu. Dlatego „po prostu omiń Redis” jest poprawne dla cache, lecz nie dla funkcji wpływających na poprawność zapisu.
+
+## IaC i wykrywanie driftu
+
+`ReferenceOperationalArchitecture` jest niewielkim, niezależnym od providera modelem desired state. `InfrastructureDriftDetector` porównuje z nim observed state i wykrywa:
+
+- brak zasobu zarządzanego przez IaC,
+- zasób utworzony ręcznie poza desired state,
+- zmianę typu lub zarządzanego atrybutu, np. publiczny ingress albo domyślne service account.
+
+`RecoveryInfrastructureValidator` dodatkowo łączy dwa kontrakty: sprawdza, czy regiony zadeklarowane w planie DR rzeczywiście mają primary z HA/PITR oraz bazę recovery wskazującą właściwe źródło. Dzięki temu RTO nie może opierać się wyłącznie na zasobie zapisanym w runbooku, ale nieobecnym w desired state.
+
+W realnym pipeline odpowiednikiem jest `terraform plan -detailed-exitcode`, plan Pulumi lub inny deterministyczny diff uruchamiany cyklicznie i przed wdrożeniem. Drift nie powinien być automatycznie „naprawiany” bez oceny: najpierw trzeba rozstrzygnąć, czy zmiana konsolowa była incydentem, awaryjną interwencją czy nowym desired state wymagającym review.
+
+Stan IaC również jest daną krytyczną. Wymaga zdalnego backendu, wersjonowania, blokady, szyfrowania, ograniczonego IAM i procedury odzyskania. Sekrety nie powinny trafiać do repozytorium ani jawnego planu.
+
+## Workload identity i minimalne IAM
+
+`IamPolicyValidator` sprawdza cztery antywzorce:
+
+- eksportowany, długowieczny klucz service account,
+- brak uprawnienia niezbędnego workloadowi,
+- uprawnienie wykraczające poza deklarowaną potrzebę,
+- współdzielenie jednej tożsamości przez różne workloady.
+
+Referencyjnie API, relay Outboxa i worker mają oddzielne service accounts. API nie potrzebuje publikowania do Pub/Sub, relay nie potrzebuje konsumowania subskrypcji, a worker nie potrzebuje zmiany polityki IAM. Produkcyjnie zestaw niskopoziomowych permissions powinien zostać zamknięty w reviewowane custom roles albo świadomie dobranych rolach predefiniowanych.
+
+## Rollback aplikacji i migracji
+
+`RollbackPlanner` rozróżnia rollback obrazu od cofania danych:
+
+- po migracji `EXPAND` lub kompatybilnym `BACKFILL` poprzedni digest aplikacji może zostać wdrożony przy pozostawieniu rozszerzonego schematu,
+- po `CONTRACT`, który usunął kolumnę lub zmienił znaczenie danych, automatyczny rollback starej aplikacji jest odrzucany,
+- destrukcyjna down migration nie powinna być domyślnym elementem rollbacku; bezpieczniejszy jest forward fix albo restore do izolowanej bazy,
+- każda decyzja kończy się weryfikacją health, error rate i krytycznej operacji biznesowej.
+
+To jest praktyczny powód stosowania expand → migrate/backfill → contract w osobnych wdrożeniach oraz promowania obrazu po digest, a nie po mutowalnym tagu.
+
+## Testy nowych kontraktów
+
+| Test | Co udowadnia |
+| --- | --- |
+| `DisasterRecoveryPlanValidatorTest` | poprawna konfiguracja przechodzi, a plan mylący HA z DR jest odrzucany |
+| `RestoreDrillEvaluatorTest` | backup jest wartościowy dopiero po spełnieniu RPO, RTO i kontroli integralności |
+| `FailureScenarioPlannerTest` | każda zależność ma inną semantykę degradacji i odzyskiwania |
+| `RollbackPlannerTest` | rollback obrazu jest oddzielony od niebezpiecznego rollbacku schematu |
+| `InfrastructureGovernanceTest` | drift, statyczne klucze, wspólne identity i nadmiarowe IAM są wykrywane |
+
+## Gwarancje i świadome uproszczenia laboratorium
+
+| Obszar | Co gwarantuje kod | Czego nadal nie gwarantuje |
+| --- | --- | --- |
+| zapis zamówienia + Outbox | oba rekordy powstają w jednej transakcji DB | publikacji dokładnie raz; crash po publish przed oznaczeniem tworzy duplikat |
+| publisher Outbox | `SKIP LOCKED` rozdziela rekordy między instancje, retry ma backoff i limit | krótkiej transakcji — przykład trzyma blokady podczas wywołania adaptera; przy większej skali lepszy jest claim/lease |
+| worker | trwały znacznik deduplikuje ponowne dostarczenie, a downstream dostaje stabilny klucz | atomowości lokalnego commitu z efektem zewnętrznym; downstream również musi być idempotentny |
+| idempotencja HTTP | atomowy claim Redis, fingerprint requestu, zapis i odczyt odpowiedzi, compare-and-set właściciela | atomowego commitu Redis z dowolnym efektem biznesowym; utracony wynik wymaga rekoncyliacji lub trwałej idempotencji domenowej |
+| cache produktu | awaria lub zepsuty wpis degraduje się do źródła prawdy i jest logowany | ochrony bazy przed falą missów podczas długiej awarii Redis; potrzebne są limity i metryki |
+| readiness | odróżnia żywy proces od instancji zdolnej obsłużyć ścieżki zależne od DB i Redis | osobnych polityk dla endpointów, dla których Redis jest jedynie opcjonalnym cache |
+| logi HTTP | monotoniczny pomiar czasu, request ID i niskokardynalny route template | kompletnej korelacji trace/span, eksportu, samplingu i polityki retencji |
+
+Redis jest w tym laboratorium jednocześnie opcjonalnym cache i krytycznym magazynem limitów oraz idempotencji. Dlatego awaria cache nie przerywa odczytu produktu, ale `/ready` uznaje Redis za zależność krytyczną dla całej instancji. W większej architekturze warto rozdzielić workloady lub readiness według klasy obsługiwanego ruchu.
+
+Lokalny `PubSubPublisher` jest adapterem demonstracyjnym zapisującym zdarzenie w logu. Nie wysyła danych do GCP i dzięki temu testy oraz lokalny build nie wymagają konta chmurowego. Wdrożenie produkcyjne powinno podmienić ten adapter na implementację Google Cloud Pub/Sub z uwierzytelnianiem przez dedykowane service account; semantyka Outbox i idempotentnego konsumenta pozostaje taka sama.
 
 Architektura opisana w tym bloku bazuje na założeniach zgodnych z dobrymi praktykami Google Cloud, wzorcami cloud-native oraz zasadami znanymi z Well-Architected Framework. Chociaż raport odnosi się do konkretnych usług GCP, takich jak Cloud Run, Cloud SQL, Memorystore, Pub/Sub czy Secret Manager, jego główna wartość polega na pokazaniu sposobu myślenia o systemie. Backend nie powinien być traktowany jako pojedyncza aplikacja uruchomiona na serwerze, ale jako zestaw współpracujących komponentów, z których każdy pełni jasno określoną rolę i może być skalowany, monitorowany oraz zabezpieczany niezależnie.
 
@@ -55,6 +241,10 @@ Nie wszystkie operacje powinny być wykonywane synchronicznie w czasie obsługi 
 Pub/Sub pozwala oddzielić producenta zdarzenia od konsumenta. Usługa obsługująca żądanie może opublikować komunikat i szybko zwrócić odpowiedź użytkownikowi, a dalsze przetwarzanie wykona osobny worker. Taki podział zwiększa odporność systemu, ponieważ chwilowe spowolnienie jednego komponentu nie musi blokować całej ścieżki użytkownika. Ułatwia też skalowanie, ponieważ konsumenci komunikatów mogą być skalowani niezależnie od API.
 
 Architektura asynchroniczna wymaga jednak poprawnej obsługi powtórzeń i idempotencji. Komunikat może zostać dostarczony więcej niż raz, a konsument może przerwać działanie w połowie operacji. Dlatego operacje wykonywane przez workery powinny być projektowane tak, aby ich ponowne uruchomienie nie prowadziło do błędnego stanu, podwójnych płatności, wielokrotnych e-maili lub niespójnych zapisów. Klucze idempotencyjne i jawne śledzenie statusu przetwarzania są w takim modelu nie dodatkiem, lecz wymogiem poprawności.
+
+Przykładowy `OrderService` realizuje Transactional Outbox: zapisuje zamówienie i rekord `outbox_events` w jednej transakcji. `OrderOutboxPublisher` niezależnie pobiera nieopublikowane rekordy, wysyła je do Pub/Sub i oznacza czas publikacji. Mechanizm ma semantykę at-least-once — awaria po wysłaniu komunikatu, ale przed oznaczeniem rekordu, może spowodować ponowną publikację. Konsument nadal musi więc deduplikować komunikaty. W instalacji z wieloma publisherami należy dodatkowo zastosować bezpieczne przejmowanie rekordów, na przykład blokadę `FOR UPDATE SKIP LOCKED` albo jawny lease.
+
+`OrderWorker` zapisuje trwały znacznik przetworzenia i przekazuje do zależności downstream deterministyczny klucz `order-created:<orderId>`. Samo lokalne sprawdzenie znacznika nie wystarczy do zapewnienia exactly-once: proces może zakończyć się po wykonaniu zewnętrznego efektu, ale przed lokalnym commitem. Z tego powodu odbiorca efektu, na przykład serwis faktur, również musi respektować klucz idempotencyjny.
 
 ## Idempotencja, limity i kontrola przeciążenia
 

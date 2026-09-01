@@ -5,8 +5,8 @@ import jakarta.persistence.*;
 /**
  * Simple JPA entity used in tests.
  */
-@Entity
-@Table(name = "users")
+@Entity(name = "TestingExampleUser")
+@Table(name = "testing_users")
 public class User {
 
     @Id

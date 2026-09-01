@@ -1,7 +1,7 @@
-package pl.jakubtworek.backend_engineering.stage_3.block_c.src.main.java.pl.jakubtworek.cloudarchitecture.controller;
+package pl.jakubtworek.cloudarchitecture.controller;
 
-import pl.jakubtworek.backend_engineering.stage_3.block_c.src.main.java.pl.jakubtworek.cloudarchitecture.dto.ProductDto;
-import pl.jakubtworek.backend_engineering.stage_3.block_c.src.main.java.pl.jakubtworek.cloudarchitecture.service.ProductService;
+import pl.jakubtworek.cloudarchitecture.dto.ProductDto;
+import pl.jakubtworek.cloudarchitecture.service.ProductService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 

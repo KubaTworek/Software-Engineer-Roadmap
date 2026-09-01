@@ -1,6 +1,29 @@
-# SQL — bazy relacyjne i performance
+# sql
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** sql.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „sql” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=ConnectionPoolBudgetTest,PostgreSqlExecutableLabTest" test`
+> - **Role klas:** brak klasy-kontrprzykładu; pozostałe typy są minimalnymi modelami pojęć opisanych niżej.
+> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+<!-- material-card:end -->
+
+## SQL — bazy relacyjne i performance
+
+
 
 SQL-owe bazy danych są naturalnym wyborem wtedy, gdy aplikacja pracuje na danych o wyraźnej strukturze, stabilnych relacjach i istotnych wymaganiach dotyczących spójności. Relacyjny model danych dobrze pasuje do systemów, w których encje są ze sobą powiązane, a poprawność tych powiązań jest ważna biznesowo. Przykładami są zamówienia, płatności, faktury, rezerwacje, konta użytkowników, uprawnienia, systemy CRM, ERP albo moduły billingowe. W takich systemach baza danych nie jest tylko miejscem przechowywania rekordów, ale również mechanizmem pilnującym integralności danych.
+
+Praktyczne laboratoria obejmują nie tylko zapytania, indeksy i transakcje. `migration` pokazuje kompatybilną zmianę schematu expand–migrate–contract, a `connection_pool` łączy limit połączeń bazy, autoscaling, prawo Little'a i metryki puli. Są to elementy tego samego modelu kosztu: aplikacja musi chronić poprawność danych, rozumieć generowany SQL i kontrolować ilość równoległej pracy kierowanej do bazy.
+
+Najważniejsze zachowania są również zebrane w wykonywalnej suite PostgreSQL.
+Instrukcja, mapa eksperymentów i zasady interpretacji planów znajdują się w
+[`EXECUTABLE_LAB.md`](EXECUTABLE_LAB.md). Test nie ustanawia progów czasu;
+sprawdza typ skanu, wykorzystany indeks, rzeczywistą liczbę odwiedzonych wierszy,
+snapshoty transakcji i kody SQLSTATE.
 
 Największą siłą SQL jest możliwość modelowania danych przez tabele, relacje, klucze główne, klucze obce, ograniczenia unikalności i transakcje. Dzięki temu wiele reguł spójności można przenieść bliżej danych, zamiast polegać wyłącznie na logice aplikacji. Jeżeli zamówienie musi wskazywać istniejącego użytkownika, płatność musi być przypisana do konkretnego zamówienia, a email użytkownika ma być unikalny, relacyjna baza danych daje do tego gotowe mechanizmy. To nie znaczy, że SQL automatycznie rozwiązuje wszystkie problemy projektowe, ale daje solidne fundamenty do budowania systemów, w których dane muszą pozostać poprawne nawet przy równoczesnym dostępie wielu użytkowników.
 

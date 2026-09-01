@@ -1,12 +1,14 @@
 package pl.jakubtworek.backend_engineering.stage_1.block_c.jpa;
 
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 /**
  * Demonstrates repository and transaction behavior.
  */
 @Component
+@Profile("demo")
 public class JpaDemoRunner implements CommandLineRunner {
 
     private final UserService userService;
@@ -21,11 +23,11 @@ public class JpaDemoRunner implements CommandLineRunner {
         /**
          * Demonstrates N+1 problem.
          */
-        userService.demonstrateNPlusOneProblem();
+        userService.findOrderSummariesNaively();
 
         /**
          * Demonstrates optimized query.
          */
-        userService.solveNPlusOneWithJoinFetch();
+        userService.findOrderSummariesWithFetchJoin();
     }
 }

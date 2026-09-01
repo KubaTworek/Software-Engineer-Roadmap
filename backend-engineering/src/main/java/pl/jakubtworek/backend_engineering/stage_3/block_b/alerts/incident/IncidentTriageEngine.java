@@ -2,6 +2,8 @@ package pl.jakubtworek.backend_engineering.stage_3.block_b.alerts.incident;
 
 import pl.jakubtworek.backend_engineering.stage_3.block_b.alerts.runbook.IncidentType;
 
+import java.util.Objects;
+
 /**
  * Encodes a simple symptom-first incident triage flow.
  *
@@ -16,6 +18,9 @@ public final class IncidentTriageEngine {
             IncidentSignal signal,
             IncidentHop slowestOrFailingHop
     ) {
+        Objects.requireNonNull(signal, "signal must not be null");
+        Objects.requireNonNull(slowestOrFailingHop, "slowestOrFailingHop must not be null");
+
         if (!significantTraffic) {
             return new IncidentTriageDecision(
                     userFacingImpact,
@@ -36,21 +41,21 @@ public final class IncidentTriageEngine {
             );
         }
 
-        if (slowestOrFailingHop == IncidentHop.REDIS) {
+        if (slowestOrFailingHop == IncidentHop.REDIS || signal == IncidentSignal.REDIS_ERRORS) {
             return new IncidentTriageDecision(
                     true,
                     true,
-                    slowestOrFailingHop,
+                    IncidentHop.REDIS,
                     IncidentType.REDIS_DOWN,
                     "Open Redis runbook and check for secondary database load."
             );
         }
 
-        if (slowestOrFailingHop == IncidentHop.DATABASE) {
+        if (slowestOrFailingHop == IncidentHop.DATABASE || signal == IncidentSignal.DATABASE_TIMEOUTS) {
             return new IncidentTriageDecision(
                     true,
                     true,
-                    slowestOrFailingHop,
+                    IncidentHop.DATABASE,
                     IncidentType.DB_DOWN,
                     "Open database runbook and check pool exhaustion, connectivity, and failover."
             );

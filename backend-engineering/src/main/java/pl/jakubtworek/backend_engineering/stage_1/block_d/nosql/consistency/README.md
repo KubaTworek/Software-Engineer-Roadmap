@@ -1,19 +1,58 @@
-# Consistency w bazach NoSQL
+# consistency
 
-Consistency, czyli spójność danych, jest jednym z najważniejszych tematów przy projektowaniu systemów opartych o bazy NoSQL. W relacyjnych bazach danych bardzo często zakładamy, że po zatwierdzeniu transakcji kolejny odczyt zobaczy aktualny stan. W systemach rozproszonych nie zawsze jest to takie proste. Dane mogą być replikowane między wieloma nodami, regionami lub centrami danych, a każdy zapis musi zostać w jakiś sposób rozpropagowany. To oznacza, że projektując system NoSQL trzeba świadomie zdecydować, jak bardzo zależy nam na natychmiastowej spójności, a jak bardzo na dostępności, niskim opóźnieniu i wysokiej przepustowości.
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** consistency.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „consistency” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=ConditionalDocumentStoreTest,QuorumConfigurationTest,ReplicatedValueStoreTest" test`
+> - **Role klas:** `QuorumConfiguration` = `production-boundary`.
+> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+<!-- material-card:end -->
 
-Najprostszy podział to strong consistency i eventual consistency. Strong consistency oznacza, że po udanym zapisie kolejny odczyt powinien zobaczyć nową wersję danych. Jest to intuicyjne i bezpieczne w domenach, gdzie błędny lub stary odczyt może prowadzić do realnego problemu biznesowego. Przykładami są płatności, stan konta, rezerwacje miejsc, limity bezpieczeństwa, stan magazynowy albo operacje, w których użytkownik musi mieć gwarancję, że widzi aktualny wynik swojej akcji. Strong consistency zwykle kosztuje więcej, bo system musi zsynchronizować więcej elementów przed potwierdzeniem operacji albo kierować odczyty do źródła prawdy.
+## Spójność w bazach NoSQL
 
-Eventual consistency oznacza, że po zapisie system może przez pewien czas zwracać starszą wersję danych, ale finalnie wszystkie repliki lub modele odczytowe powinny dojść do zgodnego stanu. To podejście jest bardzo często akceptowalne w systemach, gdzie krótka niespójność nie łamie logiki biznesowej. Przykładami są feedy aktywności, rekomendacje, liczniki polubień, wyniki wyszukiwania, cache, agregaty analityczne, read modele w CQRS albo widoki profilowe. Jeżeli użytkownik zmieni zdjęcie profilowe i przez kilka sekund w jednym miejscu widzi jeszcze stare zdjęcie, zwykle nie jest to krytyczny błąd. Jeżeli jednak użytkownik zapłacił za zamówienie, a system nadal traktuje je jako nieopłacone, problem jest dużo poważniejszy.
 
-W praktyce consistency nie jest tylko cechą bazy danych. Jest to decyzja architektoniczna. Ten sam system może mieć fragmenty silnie spójne i fragmenty eventual consistent. Główna tabela zamówień może wymagać silnej spójności, ale projekcja „ostatnie zamówienia użytkownika” może być aktualizowana asynchronicznie przez eventy. Podobnie główny stan płatności powinien być kontrolowany bardzo ostrożnie, ale dane analityczne o liczbie płatności w ostatniej godzinie mogą być opóźnione.
 
-Typowym źródłem niespójności jest replication lag. Jeżeli zapis trafia do primary node, a odczyt idzie do repliki, która nie zdążyła jeszcze otrzymać zmiany, aplikacja może zobaczyć stary stan. Z perspektywy użytkownika wygląda to jak bug: „zapisałem zmianę, ale po odświeżeniu jej nie widzę”. Z perspektywy systemu to naturalny efekt czytania z opóźnionej repliki. Rozwiązaniem może być read-after-write consistency dla konkretnego użytkownika, czytanie z primary po krytycznym zapisie, sticky session, wersjonowanie danych albo świadoma akceptacja krótkiego opóźnienia.
+Spójność jest właściwością konkretnej operacji i ścieżki odczytu, a nie prostą
+etykietą całej bazy. Źródło prawdy może wymagać silnej spójności, podczas gdy
+cache, wyszukiwarka lub projekcja CQRS świadomie dopuszcza stare dane.
 
-W bazach NoSQL ważnym mechanizmem są też conditional writes, compare-and-set oraz wersjonowanie. Zamiast blokować rekord tak jak w klasycznym pessimistic lockingu, można powiedzieć: „zapisz zmianę tylko wtedy, gdy aktualna wersja danych nadal wynosi X”. Jeśli w międzyczasie ktoś zmienił rekord, zapis się nie powiedzie i aplikacja musi wykonać retry albo zwrócić konflikt. To podejście jest szczególnie przydatne tam, gdzie konflikty są rzadkie, a throughput jest ważniejszy niż trzymanie długich blokad.
+## Conditional write
 
-Consistency trzeba też rozumieć w kontekście CAP theorem. W systemie rozproszonym, gdy wystąpi partition, czyli problem z komunikacją między częściami systemu, trzeba zdecydować, czy ważniejsza jest consistency, czy availability. System CP będzie skłonny odmówić części operacji, żeby nie zwrócić niespójnych danych. System AP będzie skłonny dalej przyjmować operacje, nawet jeśli przez pewien czas różne części systemu widzą różne stany. To nie znaczy jednak, że jedna opcja jest zawsze lepsza. System bankowy zwykle bardziej potrzebuje spójności, a system zbierania eventów telemetrycznych może bardziej potrzebować dostępności.
+`ConditionalDocumentStore` przechowuje `VersionedValue`. Dwóch writerów może
+odczytać tę samą wersję, ale `replaceIfVersion` zastosuje tylko jedną zmianę.
+Przegrany otrzymuje aktualny snapshot i podejmuje jawną decyzję o retry lub
+konflikcie. Warunek i zapis muszą być atomowe po stronie bazy; wcześniejszy
+odczyt w aplikacji nie wystarcza.
 
-Przy projektowaniu warto zadawać konkretne pytania. Czy użytkownik musi natychmiast zobaczyć własny zapis? Czy inni użytkownicy mogą przez chwilę widzieć starsze dane? Czy konflikt zapisu może zostać rozwiązany automatycznie? Czy można użyć retry? Czy dane są źródłem prawdy, czy tylko projekcją? Czy utrata dostępności jest gorsza niż chwilowa niespójność? Bez odpowiedzi na te pytania wybór consistency modelu będzie przypadkowy.
+## Quorum
 
-Najważniejszy wniosek jest taki, że eventual consistency nie jest błędem ani „gorszą spójnością”. To świadomy kompromis. Pozwala skalować system, obniżać latency i budować wydajne modele odczytowe, ale wymaga akceptacji opóźnień, retry, idempotencji i dobrego projektowania przepływu danych. Strong consistency daje prostszy model mentalny i większe bezpieczeństwo w krytycznych miejscach, ale może ograniczać dostępność i throughput. Dobry projekt zwykle łączy oba podejścia w różnych częściach systemu.
+`QuorumConfiguration` pokazuje relacje `R + W > N` oraz `2W > N`. Konfiguracja
+`N=3, R=2, W=2` tworzy przecięcia i toleruje awarię jednej repliki. Konfiguracja
+`N=3, R=1, W=1` jest bardziej dostępna, ale odczyt może ominąć udany zapis, a
+dwa zapisy mogą zakończyć się na rozłącznych replikach.
+
+To warunek konieczny dla niektórych gwarancji, nie dowód linearizability.
+Timestampy klientów, konflikty równoczesnych wersji, sloppy quorum i read repair
+mogą zmienić obserwowane zachowanie.
+
+## Replication lag i gwarancje sesyjne
+
+`ReplicatedValueStore` ma leadera, replikę oraz kolejkę zmian. `readReplica()`
+celowo może zwrócić stary stan. `write()` zwraca `ConsistencyToken`, a
+`readYourWrites(token)` nie pozwala zejść poniżej zapisanej przez klienta wersji:
+czyta z leadera, dopóki replika nie dogoni tokenu.
+
+Read-your-writes nie jest tym samym co strong consistency dla wszystkich
+klientów. Inne ważne gwarancje sesyjne to monotonic reads, monotonic writes oraz
+writes-follow-reads.
+
+## Pytania projektowe
+
+- Czy stary odczyt może spowodować stratę pieniędzy lub naruszenie uprawnień?
+- Czy konflikt można bezpiecznie ponowić?
+- Czy projekcja ma wersję i sposób odbudowy?
+- Jak klient rozpoznaje, że czyta stan starszy od własnego zapisu?
+- Co system robi podczas partition: odmawia operacji czy akceptuje rozbieżność?

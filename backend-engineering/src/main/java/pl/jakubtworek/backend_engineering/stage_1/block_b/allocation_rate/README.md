@@ -1,4 +1,19 @@
-# Case 3 — Allocation Rate / String Concatenation
+# allocation rate
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** allocation rate.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „allocation rate” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Role klas:** `StringAllocationChurnDemo` = `simulation`, `StringBuilderBetterDemo` = `simulation`, `StringBuilderPreSizedDemo` = `simulation`.
+> - **Granica:** Wynik eksperymentu opisuje tę maszynę i workload; nie jest uniwersalną liczbą produkcyjną.
+<!-- material-card:end -->
+
+## Case 3 — Allocation Rate / String Concatenation
+
+
 
 ## Wprowadzenie
 
@@ -18,7 +33,7 @@ String concatenation jest jednym z najlepszych przykładów pokazujących ten me
 
 ---
 
-# Allocation Rate — najważniejsza metryka
+## Allocation Rate — najważniejsza metryka
 
 W nowoczesnych aplikacjach JVM bardzo często ważniejsza od:
 - heap size,
@@ -27,7 +42,6 @@ W nowoczesnych aplikacjach JVM bardzo często ważniejsza od:
 
 jest metryka:
 
-## allocation rate
 
 czyli:
 
@@ -46,7 +60,7 @@ GC jest skutkiem nadmiernej alokacji.
 
 ---
 
-# Dlaczego String jest kosztowny
+## Dlaczego String jest kosztowny
 
 Kluczowa rzecz:
 
@@ -73,7 +87,7 @@ Dzieje się to przy każdej iteracji pętli.
 
 ---
 
-# Dlaczego concatenation generuje allocation churn
+## Dlaczego concatenation generuje allocation churn
 
 W pętli:
 
@@ -103,7 +117,7 @@ czyli sytuacji, w której aplikacja:
 
 ---
 
-# Problem nie jest tylko w GC pause
+## Problem nie jest tylko w GC pause
 
 To bardzo ważne.
 
@@ -124,7 +138,7 @@ a mimo to działać znacznie wolniej niż powinna.
 
 ---
 
-# Jak działa StringBuilder
+## Jak działa StringBuilder
 
 `StringBuilder` rozwiązuje problem inaczej.
 
@@ -147,7 +161,7 @@ W praktyce:
 
 ---
 
-# Dlaczego pre-sizing ma znaczenie
+## Dlaczego pre-sizing ma znaczenie
 
 Nawet `StringBuilder` może generować niepotrzebne koszty.
 
@@ -177,7 +191,7 @@ To szczególnie istotne w:
 
 ---
 
-# Co pokaże JFR
+## Co pokaże JFR
 
 W tym case Java Flight Recorder bardzo dobrze pokazuje:
 - liczbę alokowanych obiektów,
@@ -199,7 +213,7 @@ Najczęściej widać:
 
 ---
 
-# Istotna zmiana od Java 9+
+## Istotna zmiana od Java 9+
 
 W starszych wersjach Javy String używał:
 - `char[]`
@@ -221,7 +235,7 @@ Dlatego nawet nowoczesne wersje JVM nadal cierpią przy intensywnej konkatenacji
 
 ---
 
-# Dlaczego compiler nie zawsze „naprawi” problem
+## Dlaczego compiler nie zawsze „naprawi” problem
 
 To kolejny częsty mit.
 
@@ -248,7 +262,7 @@ problem nadal istnieje, ponieważ:
 
 ---
 
-# Allocation pressure a skalowanie systemu
+## Allocation pressure a skalowanie systemu
 
 To jest bardzo praktyczny problem produkcyjny.
 
@@ -267,7 +281,7 @@ To bardzo ważna intuicja:
 
 ---
 
-# Najważniejsze wnioski
+## Najważniejsze wnioski
 
 Najbardziej użyteczny model mentalny wygląda tak:
 

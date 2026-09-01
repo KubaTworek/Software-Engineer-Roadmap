@@ -1,17 +1,109 @@
-# Spring Bean Lifecycle i mechanizm proxy
+# bean
 
-Kontener Springa (`ApplicationContext`) odpowiada za tworzenie, konfigurację oraz zarządzanie beanami w aplikacji. Bean w Springu przechodzi przez określony cykl życia — od momentu utworzenia instancji, przez wstrzyknięcie zależności i inicjalizację, aż do zniszczenia podczas zamykania kontekstu aplikacji. Zrozumienie tego procesu jest istotne, ponieważ wiele mechanizmów Springa, takich jak `@Transactional`, AOP, cache czy security, działa właśnie w oparciu o lifecycle beanów oraz mechanizm proxy.
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** bean.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „bean” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=BeanLifecycleContractTest,ProxyMechanicsTest" test`
+> - **Role klas:** brak klasy-kontrprzykładu; pozostałe typy są minimalnymi modelami pojęć opisanych niżej.
+> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+<!-- material-card:end -->
 
-Proces rozpoczyna się od instancjonowania beana. Spring tworzy obiekt najczęściej przy starcie aplikacji, jeśli bean ma scope `singleton`, który jest domyślnym scope w Springu. W przypadku scope `prototype` nowa instancja tworzona jest przy każdym żądaniu pobrania beana z kontekstu. Następnie Spring wykonuje dependency injection, czyli wstrzykuje zależności. Może to odbywać się przez konstruktor, settery lub pola klasy. Aktualnie zalecanym podejściem jest constructor injection, ponieważ pozwala tworzyć niemutowalne zależności, ułatwia testowanie oraz eliminuje ryzyko stworzenia obiektu w niepoprawnym stanie.
+## Spring bean lifecycle i mechanizm proxy
 
-Po wstrzyknięciu zależności Spring przechodzi do fazy inicjalizacji beana. W tym momencie wykonywane są callbacki lifecycle, takie jak `@PostConstruct` lub metoda `afterPropertiesSet()` z interfejsu `InitializingBean`. Typowym zastosowaniem tej fazy jest inicjalizacja cache, walidacja konfiguracji lub przygotowanie zasobów potrzebnych podczas działania aplikacji. Następnie bean przechodzi przez `BeanPostProcessor`. Jest to jeden z najważniejszych mechanizmów rozszerzania Springa, ponieważ umożliwia przechwytywanie beanów przed i po inicjalizacji. W praktyce Spring wykorzystuje `BeanPostProcessor` do tworzenia proxy odpowiedzialnych za obsługę transakcji, AOP czy security.
 
-Mechanizm proxy jest kluczowy dla działania Spring AOP. Spring nie modyfikuje bezpośrednio bytecode klas, ale tworzy obiekt pośredniczący, który opakowuje właściwy bean. Wywołania metod trafiają najpierw do proxy, a dopiero później do docelowego obiektu. Dzięki temu proxy może dodać dodatkowe zachowanie, np. rozpoczęcie transakcji, logowanie lub sprawdzenie uprawnień użytkownika.
 
-Spring wykorzystuje dwa główne typy proxy: JDK Dynamic Proxy oraz CGLIB. Dynamiczne proxy JDK działa wyłącznie dla klas implementujących interfejsy. Proxy implementuje wtedy ten sam interfejs i deleguje wywołania do właściwego obiektu. Jeśli bean nie implementuje interfejsu, Spring używa CGLIB, które tworzy subclassę klasy w czasie działania aplikacji. Z tego powodu CGLIB nie może proxy’ować klas ani metod oznaczonych jako `final`, ponieważ nie można ich rozszerzyć ani nadpisać. W praktyce oznacza to, że `@Transactional` lub aspecty mogą nie działać poprawnie dla metod final.
+Spring zarządza definicją beana, utworzoną instancją oraz — opcjonalnie — proxy
+zwracanym klientom. Te trzy rzeczy nie są tożsame. Adnotacja infrastrukturalna
+na obiekcie utworzonym przez `new` nie uruchamia transakcji ani aspektu, ponieważ
+wywołanie nie przechodzi przez kontener.
 
-Jednym z najważniejszych problemów wynikających z proxy jest tzw. self invocation. Proxy działa wyłącznie dla wywołań przychodzących z zewnątrz beana. Jeśli metoda jednej klasy wywołuje inną metodę tej samej klasy przy użyciu `this.method()`, wywołanie omija proxy i trafia bezpośrednio do obiektu docelowego. W rezultacie adnotacje takie jak `@Transactional` czy mechanizmy AOP nie zostaną uruchomione. Jest to bardzo częsta przyczyna problemów w aplikacjach Springowych i jedno z najpopularniejszych pytań rekrutacyjnych. Najlepszym rozwiązaniem jest wydzielenie logiki do osobnego beana, aby wywołanie przechodziło przez proxy zarządzane przez Spring.
+## Mapa przykładów
 
-Istotnym elementem lifecycle jest również niszczenie beanów. Podczas zamykania kontekstu aplikacji Spring wywołuje callbacki takie jak `@PreDestroy` lub metodę `destroy()` z interfejsu `DisposableBean`. Umożliwia to zwolnienie zasobów, zamknięcie połączeń lub zatrzymanie wątków. Warto jednak pamiętać, że Spring zarządza pełnym lifecycle tylko beanów singletonowych. Dla scope `prototype` Spring tworzy i inicjalizuje bean, ale nie odpowiada za jego zniszczenie.
+| Przykład | Co pokazuje |
+| --- | --- |
+| `LifecycleProbe` | obserwowalną kolejność inicjalizacji i niszczenia |
+| `LifecycleObservationPostProcessor` | granice łańcucha `BeanPostProcessor` |
+| `PaymentServiceImpl` | proxy interfejsowe i self-invocation |
+| `CglibExampleService` | proxy klasowe |
+| `FinalService` | finalna metoda, której CGLIB nie może nadpisać |
+| `LoggingBeanAspect` | pointcut odnoszący się do rzeczywistego pakietu |
 
-Cały mechanizm lifecycle i proxy jest fundamentalny dla działania Spring Framework. W praktyce większość funkcjonalności infrastrukturalnych Springa działa właśnie poprzez dynamiczne tworzenie proxy podczas inicjalizacji beanów. Dlatego problemy związane z transakcjami, AOP czy security bardzo często wynikają nie z samej logiki biznesowej, ale z niezrozumienia sposobu działania proxy i cyklu życia beanów.
+## Kolejność lifecycle
+
+Dla typowego singletona kolejność jest następująca:
+
+1. instancjonowanie — konstruktor lub factory method,
+2. dependency injection właściwości, pól i metod,
+3. callbacki `Aware`, np. `BeanNameAware`,
+4. `BeanPostProcessor.postProcessBeforeInitialization`,
+5. `@PostConstruct`, wykonywane przez jeden z post-processorów,
+6. `InitializingBean.afterPropertiesSet()`,
+7. własna metoda `initMethod`,
+8. `BeanPostProcessor.postProcessAfterInitialization` — tutaj często pojawia się proxy,
+9. bean jest gotowy do użycia,
+10. `@PreDestroy`,
+11. `DisposableBean.destroy()`,
+12. własna metoda `destroyMethod`.
+
+Punkt 4 jest łańcuchem wielu processorów. Kolejność dowolnego własnego
+`BeanPostProcessor` względem obsługi `@PostConstruct` zależy od `PriorityOrdered`
+i `Ordered`; nie należy zakładać kolejności rejestracji. Test
+`BeanLifecycleContractTest` ustala ją jawnie dla tego laboratorium.
+
+Spring wykonuje niszczenie singletonów przy kontrolowanym zamknięciu kontekstu.
+Dla obiektu `prototype` kontener tworzy i inicjalizuje instancję, ale klient
+odpowiada za jej dalszy lifecycle oraz zwolnienie zasobów.
+
+## JDK proxy i CGLIB
+
+| Właściwość | JDK dynamic proxy | CGLIB proxy |
+| --- | --- | --- |
+| Mechanizm | implementuje wskazane interfejsy | tworzy podklasę targetu |
+| Typ widoczny klientowi | interfejs | klasa targetu |
+| Metody bez interfejsu | niewidoczne przez proxy | mogą być przechwycone |
+| `final` class/method | interfejs może nadal być proxowany | nie można nadpisać |
+| `private` method | nie jest metodą kontraktu proxy | nie można nadpisać |
+
+Sam fakt, że klasa implementuje interfejs, nie dowodzi rodzaju proxy. Spring AOP
+może użyć obu strategii, a Spring Boot domyślnie preferuje proxy klasowe przez
+`spring.aop.proxy-target-class=true`. `ProxyMechanicsTest` wybiera strategię
+jawnie i sprawdza ją przez `AopUtils`.
+
+## Self-invocation
+
+Klient wywołuje `proxy.internalCall()`, ale wewnętrzne `this.pay()` jest już
+zwykłym wywołaniem na target object:
+
+```text
+client -> proxy -> target.internalCall() -> this.pay()
+                                      bypass proxy ---^
+```
+
+Dlatego interceptor widzi jedno wywołanie, nie dwa. Dotyczy to m.in.
+`@Transactional`, `@Async`, `@Cacheable`, `@Retryable` i method security, jeśli
+mechanizm działa przez Spring AOP.
+
+Najczytelniejszą naprawą jest wydzielenie drugiej odpowiedzialności do osobnego
+beana i wykonanie wywołania przez jego publiczny kontrakt. Self-injection albo
+`AopContext.currentProxy()` wiążą kod z mechanizmem proxy i zwykle utrudniają
+testowanie. AspectJ weaving ma inne własności, ale nie jest domyślnym modelem
+Spring AOP.
+
+## Czego nie robić w callbackach
+
+- Nie wykonuj długich wywołań sieciowych w `@PostConstruct`; blokują gotowość.
+- Nie zakładaj, że każdy inny bean jest już w pełni zainicjalizowany.
+- Nie uruchamiaj ręcznie niekontrolowanych wątków bez symetrycznego shutdownu.
+- Nie polegaj wyłącznie na `@PreDestroy` podczas awarii procesu lub `SIGKILL`.
+- Nie wywołuj metod biznesowych na `this`, jeśli oczekujesz działania aspektu.
+
+## Testy
+
+`BeanLifecycleContractTest` uruchamia minimalny `AnnotationConfigApplicationContext`
+i sprawdza pełną kolejność. `ProxyMechanicsTest` nie ładuje Spring Boota — tworzy
+proxy przez `ProxyFactory` i pokazuje różnice JDK/CGLIB, self-invocation oraz
+finalną metodę. Testowanie obiektu utworzonego przez `new` nie wystarcza do
+potwierdzenia, że deklaratywna infrastruktura została poprawnie podłączona.

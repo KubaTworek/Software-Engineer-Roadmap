@@ -4,6 +4,7 @@ import pl.jakubtworek.backend_engineering.stage_2.block_a.use_case.application.c
 import pl.jakubtworek.backend_engineering.stage_2.block_a.use_case.application.command.PlaceOrderLineCommand;
 import pl.jakubtworek.backend_engineering.stage_2.block_a.use_case.application.port.DomainEventPublisher;
 import pl.jakubtworek.backend_engineering.stage_2.block_a.use_case.application.port.OrderRepository;
+import pl.jakubtworek.backend_engineering.stage_2.block_a.use_case.application.port.PlaceOrderUseCase;
 import pl.jakubtworek.backend_engineering.stage_2.block_a.use_case.application.port.TransactionManager;
 import pl.jakubtworek.backend_engineering.stage_2.block_a.use_case.domain.event.DomainEvent;
 import pl.jakubtworek.backend_engineering.stage_2.block_a.use_case.domain.model.*;
@@ -12,7 +13,7 @@ import java.util.Currency;
 
 // Application service orchestrating the PlaceOrder use case.
 // It creates the aggregate, invokes domain behavior, saves it, and publishes events.
-public final class PlaceOrderApplicationService {
+public final class PlaceOrderApplicationService implements PlaceOrderUseCase {
 
     private final OrderRepository orderRepository;
     private final DomainEventPublisher eventPublisher;
@@ -28,6 +29,7 @@ public final class PlaceOrderApplicationService {
         this.transactionManager = transactionManager;
     }
 
+    @Override
     public OrderId placeOrder(PlaceOrderCommand command) {
         OrderId[] createdOrderId = new OrderId[1];
 

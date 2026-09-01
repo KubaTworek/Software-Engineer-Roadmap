@@ -1,4 +1,19 @@
-# Clean Architecture i Hexagonal Architecture – porty, adaptery oraz Dependency Rule
+# clean architecture
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `praktyka-produkcyjna`
+> - **Uczy:** clean architecture.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „clean architecture” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Role klas:** `JpaOrderRepositoryAdapter` = `production-boundary`, `KafkaOrderEventPublisherAdapter` = `production-boundary`, `OrderEventPublisher` = `production-boundary` (+2).
+> - **Granica:** Laboratorium pokazuje kontrakt i failure modes; nie zastępuje pełnego testu end-to-end ani operacyjnej konfiguracji środowiska.
+<!-- material-card:end -->
+
+## Clean Architecture i Hexagonal Architecture – porty, adaptery oraz Dependency Rule
+
+
 
 ## Wprowadzenie
 
@@ -111,6 +126,17 @@ Adaptery testuje się osobno. Adapter JPA można testować jako integrację z ba
 Jeżeli przetestowanie podstawowego przypadku użycia wymaga uruchomienia całej aplikacji, serwera HTTP i bazy danych, to zwykle oznacza, że warstwy są zbyt mocno sprzężone.
 
 ## Kryterium poprawnej architektury
+
+Reguła opisana w diagramie lub README z czasem może zostać naruszona przez
+zwykły import. `Stage2ArchitectureTest` zamienia kluczowe granice w testy
+ArchUnit. Build nie pozwoli domenie zacząć zależeć od Springa, JPA, Hibernate,
+application layer, adapterów ani konfiguracji. Osobna reguła nie pozwala
+application layer importować adapterów. Test analizuje skompilowany bytecode,
+więc chroni rzeczywiste zależności, a nie konwencję nazw deklarowaną w opisie.
+
+ArchUnit nie potwierdza poprawności biznesowej ani dobrej jakości każdego
+portu. Jest zabezpieczeniem strukturalnym, uzupełniającym testy agregatów,
+przypadków użycia, adapterów i przepływów transakcyjnych.
 
 System zgodny z Clean/Hexagonal Architecture spełnia kilka praktycznych warunków.
 

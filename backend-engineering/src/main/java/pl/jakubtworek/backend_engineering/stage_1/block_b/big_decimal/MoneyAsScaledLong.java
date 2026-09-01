@@ -1,5 +1,7 @@
 package pl.jakubtworek.backend_engineering.stage_1.block_b.big_decimal;
 
+import java.util.Objects;
+
 public final class MoneyAsScaledLong {
 
     private final long cents;
@@ -22,6 +24,7 @@ public final class MoneyAsScaledLong {
     public MoneyAsScaledLong plus(MoneyAsScaledLong other) {
         // This immutable wrapper still allocates a new object for every plus() call.
         // It is useful for domain modeling, but it is not allocation-free in a hot loop.
-        return new MoneyAsScaledLong(this.cents + other.cents);
+        Objects.requireNonNull(other, "other must not be null");
+        return new MoneyAsScaledLong(Math.addExact(this.cents, other.cents));
     }
 }

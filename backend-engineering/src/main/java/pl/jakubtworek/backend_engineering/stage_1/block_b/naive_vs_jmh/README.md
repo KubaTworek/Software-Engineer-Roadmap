@@ -1,4 +1,19 @@
-# Case 11 — Naive benchmark vs JMH: jak nie okłamywać się wynikami
+# naive vs jmh
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** naive vs jmh.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „naive vs jmh” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=BenchmarkTargetCorrectnessTest" test`
+> - **Role klas:** `NaiveBenchmark` = `naive`.
+> - **Granica:** Wynik eksperymentu opisuje tę maszynę i workload; nie jest uniwersalną liczbą produkcyjną.
+<!-- material-card:end -->
+
+## Case 11 — Naive benchmark vs JMH: jak nie okłamywać się wynikami
+
+
 
 ## Wprowadzenie
 
@@ -40,7 +55,7 @@ oficjalny framework benchmarkowy OpenJDK.
 
 ---
 
-# Dlaczego benchmarkowanie JVM jest trudne
+## Dlaczego benchmarkowanie JVM jest trudne
 
 W językach natywnych:
 - kod zwykle jest skompilowany wcześniej,
@@ -59,7 +74,7 @@ W efekcie:
 
 ---
 
-# Warmup — najczęstszy problem
+## Warmup — najczęstszy problem
 
 JVM nie startuje od razu z pełną optymalizacją.
 
@@ -79,7 +94,7 @@ Dlatego:
 
 ---
 
-# Dlaczego `System.nanoTime()` jest niewystarczające
+## Dlaczego `System.nanoTime()` jest niewystarczające
 
 Sam pomiar czasu:
 - nie rozwiązuje problemów metodologicznych.
@@ -107,7 +122,7 @@ W efekcie:
 
 ---
 
-# Dead-code elimination
+## Dead-code elimination
 
 To jeden z najbardziej klasycznych problemów.
 
@@ -138,7 +153,7 @@ I właśnie dlatego benchmark:
 
 ---
 
-# Constant folding
+## Constant folding
 
 Kolejny bardzo częsty problem.
 
@@ -159,7 +174,7 @@ Wtedy benchmark:
 
 ---
 
-# Inlining i agresywne optymalizacje
+## Inlining i agresywne optymalizacje
 
 Małe metody:
 - są idealnymi kandydatami do inliningu.
@@ -180,7 +195,7 @@ To naturalne zachowanie nowoczesnego JIT.
 
 ---
 
-# Dlaczego benchmark musi być izolowany
+## Dlaczego benchmark musi być izolowany
 
 Wydajność JVM jest silnie zależna od:
 - aktualnego stanu procesu,
@@ -198,7 +213,7 @@ Inaczej:
 
 ---
 
-# JMH — po co naprawdę istnieje
+## JMH — po co naprawdę istnieje
 
 JMH został stworzony właśnie po to, by:
 - kontrolować zachowanie JVM,
@@ -214,7 +229,7 @@ dla benchmarków JVM.
 
 ---
 
-# Co robi JMH
+## Co robi JMH
 
 JMH automatycznie:
 - wykonuje warmup,
@@ -231,7 +246,7 @@ To ogromna różnica względem:
 
 ---
 
-# Blackhole
+## Blackhole
 
 To bardzo ważny mechanizm.
 
@@ -245,7 +260,7 @@ Bez tego:
 
 ---
 
-# Forks
+## Forks
 
 JMH uruchamia benchmark:
 - w osobnych JVM processach.
@@ -264,7 +279,7 @@ Forki poprawiają:
 
 ---
 
-# Throughput vs AverageTime
+## Throughput vs AverageTime
 
 JMH pozwala mierzyć różne metryki.
 
@@ -284,7 +299,7 @@ Przykład:
 
 ---
 
-# Dlaczego benchmarki micro są zdradliwe
+## Dlaczego benchmarki micro są zdradliwe
 
 Microbenchmark:
 - mierzy bardzo mały fragment kodu.
@@ -299,7 +314,7 @@ Dlatego:
 
 ---
 
-# Benchmark ≠ profiling
+## Benchmark ≠ profiling
 
 To bardzo ważne rozróżnienie.
 
@@ -317,7 +332,7 @@ Bardzo częsty błąd:
 
 ---
 
-# Benchmarki bez metodologii są niebezpieczne
+## Benchmarki bez metodologii są niebezpieczne
 
 Największy problem benchmarków nie polega na:
 - niewielkiej niedokładności.
@@ -331,7 +346,7 @@ I właśnie dlatego:
 
 ---
 
-# Dlaczego wyniki benchmarków bywają niestabilne
+## Dlaczego wyniki benchmarków bywają niestabilne
 
 Na wyniki wpływają:
 - JIT state,
@@ -353,7 +368,7 @@ Potrzebna jest:
 
 ---
 
-# Najczęstszy błąd początkujących
+## Najczęstszy błąd początkujących
 
 Najczęstszy błąd wygląda tak:
 
@@ -372,7 +387,7 @@ To prowadzi do:
 
 ---
 
-# Najważniejsza intuicja praktyczna
+## Najważniejsza intuicja praktyczna
 
 Najbardziej praktyczny wniosek brzmi:
 
@@ -383,7 +398,7 @@ I właśnie dlatego:
 
 ---
 
-# Najważniejsze wnioski
+## Najważniejsze wnioski
 
 Najbardziej użyteczny model mentalny wygląda tak:
 

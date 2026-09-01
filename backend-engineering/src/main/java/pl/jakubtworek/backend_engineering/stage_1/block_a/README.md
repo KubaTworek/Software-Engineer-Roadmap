@@ -1,4 +1,19 @@
-# Programowanie współbieżne w Javie — ujęcie teoretyczne
+# Stage 1A — współbieżność, czas i modele wykonania
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** Stage 1A — współbieżność, czas i modele wykonania.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „Stage 1A — współbieżność, czas i modele wykonania” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=CancelTest,CompletableFutureTest,ConcurrentHashMapTest" test`
+> - **Role klas:** `BrokenCache` = `naive`, `BrokenOrderProcessor` = `naive`, `BrokenTicketStore` = `naive` (+1); `AtomicCache` = `correct`, `AtomicTicketStore` = `correct`, `BoundedDownstream` = `correct` (+1); `InMemoryScheduleStore` = `simulation`, `PinningDiagnosticDemo` = `simulation`.
+> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+<!-- material-card:end -->
+
+## Programowanie współbieżne w Javie — ujęcie teoretyczne
+
+
 
 ## Executive Summary
 
@@ -7,6 +22,33 @@ Ten dokument jest teoretycznym opracowaniem najważniejszych problemów i wzorc�
 W praktyce większość trudnych błędów współbieżności nie wynika z tego, że programista nie zna konkretnej klasy API. Wynika raczej z błędnego modelu mentalnego: założenia, że zapis wykonany przez jeden wątek „na pewno” będzie od razu widoczny dla drugiego, że pojedyncza linia kodu jest automatycznie atomowa, że kolekcja używana tylko „prawie zawsze” z jednego wątku nie wymaga ochrony, albo że test jednostkowy, który raz przechodzi, dowodzi poprawności programu współbieżnego. Współbieżność wymaga myślenia o stanie współdzielonym, niezmiennikach, granicach odpowiedzialności, własności obiektów oraz o tym, kto i kiedy może obserwować dany stan.
 
 Najbezpieczniejsze projekty współbieżne ograniczają współdzielenie mutowalnego stanu. Jeżeli stan nie jest współdzielony, nie trzeba go synchronizować. Jeżeli obiekt jest niemutowalny, można go bezpiecznie przekazywać między wątkami. Jeżeli mutowalny stan musi być współdzielony, należy jasno określić mechanizm synchronizacji i stosować go konsekwentnie. Najgorsze rozwiązania to te, w których część dostępu do pola jest chroniona, a część odbywa się „na skróty”, ponieważ wtedy program ma pozory bezpieczeństwa, ale nie posiada realnej gwarancji poprawności.
+
+## Jak pracować z blokiem
+
+Teoria w tym pliku jest punktem wejścia. Każdy podkatalog zawiera mniejszy, uruchamialny eksperyment:
+
+| Pakiet | Najważniejszy problem | Test |
+|---|---|---|
+| `cancel` | kooperacyjne anulowanie i zachowanie flagi przerwania | `CancelTest` |
+| `completable_future` | fan-out/fan-in, `thenCombine`, `thenCompose`, timeout i recovery | `CompletableFutureTest` |
+| `concurrent_hash_map` | check-then-act kontra atomowe `computeIfAbsent` | `ConcurrentHashMapTest` |
+| `deadlock` | circular wait, kolejność blokad i `tryLock` | `DeadlockTest` |
+| `executor_service` | ograniczone kolejki, rejection policy i lifecycle puli | `ExecutorPolicyTest` |
+| `fork_join` | divide-and-conquer, próg podziału i blokowanie workerów | `ForkJoinPoolTest` |
+| `race_condition` | overselling i ochrona niezmiennika | `TicketStoreConcurrencyTest` |
+| `testing` | deterministyczne wymuszanie przeplotów | `RaceConditionDetectionTest` |
+| [`temporal_correctness`](temporal_correctness/README.md) | UTC, strefy, DST, deadline, clock skew, restart schedulera, misfire i fencing | `TimeRepresentationTest`, `RecurringJobSchedulerTest` |
+| `thread_confinement` | izolacja mutowalnego stanu na jednym wątku | `ThreadConfinementTest` |
+| [`virtual_threads`](virtual_threads/README.md) | blocking I/O, CPU-bound, pinning, ograniczony downstream, anulowanie i kontekst requestu | `VirtualThreadWorkloadTest`, `VirtualThreadLifecycleTest` |
+| [`reactive_streams`](reactive_streams/README.md) | demand, backpressure, anulowanie, błędy terminalne i granice blokujące | `ReactiveStreamsDemandTest` |
+| `visibility` | happens-before przez `volatile` i monitor | `VisibilityExampleTest` |
+
+Cały blok można sprawdzić selektywnie przez Maven Surefire. Testy jednostkowe nie powinny udowadniać wydajności ani liczyć na przypadkowy harmonogram systemu operacyjnego; takie obserwacje należą do osobnych eksperymentów i benchmarków.
+
+Laboratorium Reactive Streams używa standardowego `Flow`, aby najpierw pokazać
+kontrakt Publisher–Subscriber bez ukrywania go za API WebFlux lub Reactor.
+Porównanie z virtual threads dotyczy modelu zasobów i kontroli popytu, a nie
+założenia, że jeden paradygmat jest zawsze szybszy.
 
 ## Java Memory Model jako fundament
 
@@ -87,6 +129,21 @@ Executor oddziela opis zadania od sposobu jego wykonania. Zamiast ręcznie tworz
 Ten model jest często niedoceniany, ponieważ wydaje się mniej „równoległy”. W rzeczywistości bywa bardzo skalowalny, jeżeli stan można podzielić na niezależne partycje. Na przykład zamiast jednej globalnej blokady można mieć wiele kolejek obsługujących różne klucze, użytkowników, agregaty lub partycje danych. Wewnątrz jednej partycji zachowujemy prosty model sekwencyjny, a równoległość uzyskujemy między partycjami.
 
 Minusem jest konieczność pracy z `Future`, `CompletableFuture`, callbackami albo komunikatami. Błędy mogą przenieść się z poziomu data race na poziom projektowania przepływu asynchronicznego: niewłaściwa obsługa wyjątków, brak timeoutów, blokowanie wątku executora przez długie operacje I/O, niekontrolowany wzrost kolejki albo deadlock logiczny, gdy zadanie czeka na inne zadanie zaplanowane do tego samego jednowątkowego executora.
+
+## Virtual threads w Javie 21
+
+Virtual threads pozwalają zachować model thread-per-request dla dużej liczby
+blokujących operacji I/O bez przypisywania każdemu requestowi osobnego wątku
+systemowego. Zmieniają koszt reprezentowania oczekującego zadania, ale nie
+zwiększają liczby rdzeni CPU ani przepustowości bazy, API lub puli połączeń.
+
+W praktyce trzeba oddzielić trzy pytania: ile zadań może istnieć, ile pracy CPU
+może rzeczywiście wykonywać się równolegle oraz ile operacji przyjmuje chroniony
+downstream. Virtual threads pomagają w pierwszym obszarze; CPU i limity zasobów
+nadal wymagają osobnej kontroli. Ważne są także kooperacyjne anulowanie,
+propagacja kontekstu oraz diagnostyka pinningu w kodzie blokującym pod monitorem.
+Wykonywalne przykłady i trade-offy znajdują się w
+[`virtual_threads`](virtual_threads/README.md).
 
 ## Race condition
 

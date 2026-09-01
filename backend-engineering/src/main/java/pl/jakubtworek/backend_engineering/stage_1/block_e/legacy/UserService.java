@@ -5,6 +5,11 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 
+/**
+ * Intentionally problematic baseline for the refactoring exercise.
+ * Returning null, field injection, static time and mixed side effects are kept
+ * here so characterization tests can contrast it with the refactored use case.
+ */
 @Service
 public class UserService {
 

@@ -1,4 +1,83 @@
-# SQL vs NoSQL — porównanie i wybór technologii
+# Stage 1D — dane, persystencja i wyszukiwanie
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** Stage 1D — dane, persystencja i wyszukiwanie.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „Stage 1D — dane, persystencja i wyszukiwanie” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=PostgreSqlConcurrencyContainerTest,RedisAtomicCounterContainerTest,ConditionalDocumentStoreTest" test`
+> - **Role klas:** `NaiveSearchProjection` = `naive`; `AtomicFixedWindowRateLimiter` = `correct`; `QuorumConfiguration` = `production-boundary`.
+> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+<!-- material-card:end -->
+
+## SQL vs NoSQL — porównanie i wybór technologii
+
+
+
+## Mapa materiału
+
+| Ścieżka | Zawartość | Jak pracować |
+|---|---|---|
+| `sql/workload` | schemat bazowego workloadu | uruchom jako pierwszy |
+| `sql/EXECUTABLE_LAB.md` | Testcontainers: Flyway, plany, paginacja, izolacja, locking i constrainty | uruchom jako automatyczną specyfikację PostgreSQL |
+| `sql/index` | indeksy pojedyncze i złożone | porównuj `EXPLAIN (ANALYZE, BUFFERS)` |
+| `sql/execution_plan` | czytanie planów wykonania | porównuj estymacje z rzeczywistymi wierszami |
+| `sql/transaction` | izolacja i anomalie | użyj dwóch niezależnych sesji |
+| `sql/lock` | blokady i deadlocki | wykonuj kroki zgodnie z komentarzami sesji A/B |
+| `sql/n_plus_one` | koszt wielu round-tripów | porównaj N+1 z joinem i batchingiem |
+| `sql/pagination` | offset i keyset pagination | porównaj płytką i głęboką stronę |
+| `sql/migration` | kompatybilne migracje expand–migrate–contract | przejdź przez wdrożenie i rollback krok po kroku |
+| `sql/connection_pool` | globalny budżet i dobór puli | połącz obliczenia z metrykami oraz load testem |
+| `sql/scale` | replikacja i partycjonowanie | traktuj jako analizę decyzji |
+| `nosql/*` | access patterns, CAS, quorum, replication lag, TTL i partycjonowanie | uruchom testy modeli gwarancji |
+| [`search_engine`](search_engine/README.md) | inverted index, wersjonowanie, tombstones, ranking i `search_after` | `VersionedSearchIndexTest` |
+
+Pliki SQL są laboratoriami dla PostgreSQL, nie migracjami uruchamianymi przy
+starcie aplikacji. Fragmenty dotyczące blokad i izolacji celowo wymagają kilku
+sesji i nie powinny być wykonywane bezrefleksyjnie jako jeden skrypt. Katalog
+`sql/migration` jest wykonywany przez Flyway wyłącznie w celowanej suite
+Testcontainers; dzięki temu ćwiczenie pokazuje historię migracji bez podpinania
+edukacyjnego schematu do aplikacji.
+
+Laboratorium wyszukiwania traktuje indeks jako odtwarzalny read model i pokazuje
+ochronę przed starym zdarzeniem, tombstone oraz stabilny kursor. Produkcyjny
+adapter może używać OpenSearch albo Elasticsearch, ale model projekcji,
+wersjonowania i naprawy danych pozostaje niezależny od produktu.
+
+## Jak podejmować decyzję o modelu danych
+
+Nie zaczynaj od pytania „SQL czy NoSQL?”. Najpierw zapisz:
+
+1. niezmienniki biznesowe, których nie wolno naruszyć,
+2. operacje zapisu i ich wymagania transakcyjne,
+3. access patterny odczytu wraz z sortowaniem i paginacją,
+4. oczekiwany wolumen, rozkład kluczy i dopuszczalne opóźnienie,
+5. wymagania read-your-writes oraz tolerancję na stary odczyt,
+6. sposób naprawy danych po częściowej awarii.
+
+Dopiero potem dobieraj model. Zamówienie i płatność mogą pozostać w relacyjnym
+źródle prawdy, podczas gdy ich projekcja wyszukiwawcza, cache i historia zdarzeń
+trafią do innych magazynów. To nie oznacza, że wszystkie magazyny są równorzędnym
+źródłem prawdy. Każda projekcja potrzebuje właściciela, wersji danych, sposobu
+odbudowy oraz jawnej semantyki opóźnienia.
+
+## Co pokazuje kod, a co pokazują skrypty
+
+- Klasy dokumentów pokazują kształt danych, defensive copies i granice agregatów.
+  Obok nich małe modele wykonawcze pokazują CAS, quorum, replication lag,
+  bucketing i atomową decyzję rate limitera.
+- Modele in-memory nie emulują MongoDB, Redis, Cassandry ani Neo4j. Pokazują
+  semantykę, którą produkcyjnie musi zagwarantować operacja konkretnego silnika.
+- Granica TTL jest domknięta: wartość jest nieważna dokładnie w chwili
+  `expiresAt`, a nie dopiero chwilę później.
+- Pliki SQL pokazują mechanizm PostgreSQL i wymagają obserwacji planu, blokad,
+  czasu oraz liczby buforów. Sam poprawny rezultat zapytania nie dowodzi, że plan
+  jest dobry.
+
+Nie przenoś wyników jednego silnika bezpośrednio na inny. Poziomy izolacji,
+blokady, indeksy, plany wykonania i gwarancje transakcji mają implementacyjne
+różnice nawet wtedy, gdy używają podobnych nazw.
 
 SQL i NoSQL nie powinny być traktowane jako konkurujące hasła marketingowe, tylko jako różne podejścia do modelowania danych i budowania systemów. SQL daje silny, relacyjny model danych, transakcje, integralność, joiny i dużą elastyczność zapytań. NoSQL daje możliwość dopasowania modelu danych do konkretnych access patternów, często łatwiejsze skalowanie horyzontalne, wysoką wydajność dla prostych odczytów i zapisów oraz modele lepiej pasujące do dokumentów, grafów, cache albo danych rozproszonych. Dobra decyzja polega na zrozumieniu kompromisów, a nie na wybraniu technologii, która jest popularniejsza.
 

@@ -9,6 +9,12 @@ package pl.jakubtworek.backend_engineering.stage_2.block_b.kafka.partitioning;
 public record MessageKey(
         String value
 ) {
+    public MessageKey {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException("Kafka message key cannot be empty");
+        }
+    }
+
     /**
      * Creates a message key based on orderId.
      *

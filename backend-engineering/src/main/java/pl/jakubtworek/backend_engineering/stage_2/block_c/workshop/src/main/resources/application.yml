@@ -26,3 +26,10 @@ app:
   bind-address: ${BIND_ADDRESS:0.0.0.0}
   image-tag: ${IMAGE_TAG:dev}
   commit-sha: ${COMMIT_SHA:local}
+  shutdown-timeout: ${SHUTDOWN_TIMEOUT:25s}
+  mounted-config-path: ${MOUNTED_CONFIG_PATH:/etc/app/app.yaml}
+  scratch-directory: ${SCRATCH_DIRECTORY:/tmp/demo-api}
+  persistent-directory: ${PERSISTENT_DIRECTORY:/data/demo-api}
+
+secret:
+  db-dsn: ${DB_DSN:}

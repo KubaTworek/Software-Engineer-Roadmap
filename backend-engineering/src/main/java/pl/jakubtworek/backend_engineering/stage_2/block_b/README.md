@@ -1,10 +1,110 @@
-# Architektura event-driven dla e-commerce z użyciem Apache Kafka
+# Stage 2B — event-driven, messaging i kanały live
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `praktyka-produkcyjna`
+> - **Uczy:** Stage 2B — event-driven, messaging i kanały live.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „Stage 2B — event-driven, messaging i kanały live” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=OnlineProjectionBackfillTest,PoisonRecordPartitionTest,ReconciliationAndRepairTest" test`
+> - **Role klas:** `NaiveUnboundedSession` = `naive`; `BoundedSessionBuffer` = `correct`, `FencedRegister` = `correct`, `IdempotentEventProcessor` = `correct` (+2); `InMemoryCdcSource` = `simulation`, `InMemoryLeaseCoordinator` = `simulation`; `AlertPublisher` = `production-boundary`, `ConsoleAlertPublisher` = `production-boundary`, `ConsumerConfiguration` = `production-boundary` (+8).
+> - **Granica:** Laboratorium pokazuje kontrakt i failure modes; nie zastępuje pełnego testu end-to-end ani operacyjnej konfiguracji środowiska.
+<!-- material-card:end -->
+
+## Architektura event-driven dla e-commerce z użyciem Apache Kafka
+
+
 
 ## Wprowadzenie
 
 Ten dokument opisuje teoretyczne założenia projektowania systemu e-commerce opartego na architekturze event-driven. Przykładowy proces biznesowy obejmuje przepływ od utworzenia zamówienia, przez obsługę płatności, aż po wysyłkę produktu. W takim modelu poszczególne części systemu, takie jak Order Service, Payment Service czy Shipping Service, nie komunikują się ze sobą bezpośrednio przez synchroniczne wywołania HTTP. Zamiast tego wymieniają się zdarzeniami publikowanymi do brokera komunikatów, którym w tym przypadku jest Apache Kafka.
 
 Architektura event-driven dobrze pasuje do systemów rozproszonych, w których poszczególne usługi powinny być możliwie niezależne, skalowalne i odporne na chwilowe awarie innych komponentów. Zdarzenie reprezentuje fakt, który już wystąpił w domenie biznesowej, na przykład `OrderCreated`, `PaymentAuthorized`, `PaymentFailed` albo `ShipmentCreated`. Ważne jest, aby odróżniać zdarzenia od komend. Komenda oznacza żądanie wykonania jakiejś akcji, natomiast zdarzenie informuje, że dana akcja została już wykonana lub dany stan został osiągnięty.
+
+## Mapa laboratoriów
+
+- `domain` — agregaty Order, Payment i Shipment oraz emitowane przez nie eventy,
+- `kafka` — topic, partycjonowanie, producer, consumer group i bezpieczny commit offsetu,
+- `consumer` — deduplikacja, retry, DLQ i kontrolowany replay,
+- [`cdc_reconciliation`](cdc_reconciliation/README.md) — Debezium kontra relay,
+  snapshot→stream, projekcje, poison records, drift, replay i online backfill,
+- [`websocket`](websocket/README.md) — lifecycle długiego połączenia, heartbeat, reconnect,
+  replay, kolejność per kanał i bounded outbound buffer,
+- `failure_semantics` — niejednoznaczny timeout, retry z kluczem idempotencji oraz lease z fencing tokenem,
+- `versioning` — zgodność schematów i bezpieczna ewolucja kontraktów,
+- `observability` — metryki, lag, tracing, outbox, DLQ i reguły alertowe,
+- testowy pakiet `stage_2/block_b/testing` — szybkie fake'i oraz celowana suite
+  Testcontainers z prawdziwymi Kafka i PostgreSQL.
+
+WebSocket należy do Stage 2B jako kanał dostarczania zdarzeń do długowiecznego
+klienta. Laboratorium wykonuje replay po sekwencji, wykrywa utratę okna retencji
+i chroni proces przed wolnym konsumentem. Fundamenty TCP/HTTP pozostają w Stage
+1F, a skalowanie połączeń w Stage 3A.
+
+## Model gwarancji przepływu
+
+Szczegółowy model awarii znajduje się w `failure_semantics/README.md`. Najważniejsze rozróżnienie brzmi: brak odpowiedzi nie jest odpowiedzią negatywną. Po timeoutcie zewnętrzna operacja może mieć stan `UNKNOWN`, dlatego retry komendy wykonującej efekt uboczny musi używać tego samego klucza idempotencji.
+
+| Sygnał | Czy retry domyślnie ma sens? | Warunek bezpieczeństwa |
+|---|---|---|
+| timeout po wysłaniu komendy | czasem | ten sam klucz idempotencji albo odczyt statusu operacji |
+| jawne odrzucenie biznesowe | nie | retry dopiero po zmianie danych lub decyzji biznesowej |
+| błąd walidacji/schematu | nie | naprawa producenta lub kontrolowany replay z DLQ |
+| przejściowa niedostępność | tak | limit prób, deadline, backoff i jitter |
+| nieznany `RuntimeException` | nie automatycznie | jawna klasyfikacja; błąd programu nie powinien tworzyć retry storm |
+
+Przykłady zakładają `at-least-once`, ponieważ jest to bezpieczniejszy model
+mentalny niż obietnica „exactly once”. Pojedynczy rekord przechodzi przez:
+
+1. odczyt z partycji,
+2. próbę rejestracji `eventId`,
+3. lokalny efekt biznesowy,
+4. opcjonalny outbox kolejnego zdarzenia,
+5. commit lokalnej transakcji,
+6. commit offsetu.
+
+Kroki 2–4 muszą należeć do jednej lokalnej transakcji. Klasa
+`DefaultIdempotentEventProcessor` pokazuje protokół i klasyfikację wyniku, ale
+sam interfejs repozytorium nie otwiera transakcji. Jeżeli marker zostanie zapisany
+osobno od efektu biznesowego, crash może pozostawić marker bez efektu albo efekt
+bez markera.
+
+Po błędzie przejściowym marker jest usuwany, aby retry mógł ponowić próbę. Po
+błędzie trwałym przykład również go usuwa, ponieważ wiadomość trafia do DLQ i
+może zostać świadomie naprawiona oraz odtworzona. W realnym systemie warto
+przechowywać osobny stan `FAILED` wraz z fingerprintem błędu zamiast usuwać całą
+historię próby.
+
+Publikacja do DLQ i commit offsetu tworzą kolejny dual-write. Jeżeli DLQ musi być
+bezstratne, należy użyć transakcji Kafka dla operacji Kafka→Kafka albo trwałego
+zapisu pośredniego. Samo wywołanie dwóch metod po kolei nie daje atomowości.
+
+## Uwaga o sprawdzaniu schematów
+
+`SchemaEvolutionReview` klasyfikuje zmiany na poziomie ogólnych heurystyk.
+`SimpleSchemaCompatibilityChecker` sprawdza jedynie tożsamość event type i
+monotoniczność numeru wersji. Dla trybów `BACKWARD`, `FORWARD` i `FULL` celowo
+zwraca wynik negatywny „not verified”, ponieważ bez parsera Avro/Protobuf nie
+może uczciwie potwierdzić zgodności. Pozytywną bramkę wdrożeniową powinien dawać
+Schema Registry albo checker konkretnego formatu.
+
+Testy odporności i kontraktów można uruchomić z katalogu `backend-engineering`:
+
+```shell
+mvn --batch-mode --no-transfer-progress "-Dtest=DefaultIdempotentEventProcessorTest,KafkaEventConsumerTest,RetryConfigurationTest,KafkaConfigurationTest,SchemaEvolutionTest,AlertRulesTest,CompensationTest,ConsumerCrashTest,IdempotencyTest,OutboxBrokerFailureTest" test
+```
+
+Rzeczywistą semantykę partycji, redelivery, offsetów, idempotencji SQL, retry/DLQ
+i duplikacji outboxa sprawdza `KafkaPostgresSemanticsTest`. Wymaga działającego
+Dockera:
+
+```shell
+mvn --batch-mode --no-transfer-progress -Pinfrastructure-tests "-Dtest=KafkaPostgresSemanticsTest" test
+```
+
+Suite ma tag `infrastructure`; zwykłe `verify` jej nie wybiera. Profil
+`infrastructure-tests` nie pomija testu bez Dockera, lecz kończy build błędem,
+dlatego jego zielony wynik potwierdza zachowanie Kafki i PostgreSQL.
 
 W systemie e-commerce oznacza to, że usługa zamówień może opublikować zdarzenie o utworzeniu zamówienia, a usługa płatności może na nie zareagować bez konieczności bezpośredniego wywoływania Order Service. Dzięki temu usługi są luźniej powiązane. Każda z nich posiada własną logikę biznesową, własny model danych i własną odpowiedzialność. Broker komunikatów pełni rolę pośrednika, który umożliwia asynchroniczną wymianę informacji.
 

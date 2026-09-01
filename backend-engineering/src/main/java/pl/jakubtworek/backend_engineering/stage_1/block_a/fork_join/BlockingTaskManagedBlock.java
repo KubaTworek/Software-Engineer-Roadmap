@@ -21,6 +21,7 @@ public class BlockingTaskManagedBlock extends RecursiveAction {
     private final long blockMillis;
 
     public BlockingTaskManagedBlock(int depth, int maxDepth, long blockMillis) {
+        validateArguments(depth, maxDepth, blockMillis);
         this.depth = depth;
         this.maxDepth = maxDepth;
         this.blockMillis = blockMillis;
@@ -58,12 +59,9 @@ public class BlockingTaskManagedBlock extends RecursiveAction {
                 private boolean done = false;
 
                 @Override
-                public boolean block() {
+                public boolean block() throws InterruptedException {
                     if (!done) {
-                        try {
-                            // Simulated blocking operation
-                            Thread.sleep(ms);
-                        } catch (InterruptedException ignored) {}
+                        Thread.sleep(ms);
                         done = true;
                     }
                     return true;
@@ -76,7 +74,17 @@ public class BlockingTaskManagedBlock extends RecursiveAction {
                 }
             });
 
-        } catch (InterruptedException ignored) {
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private static void validateArguments(int depth, int maxDepth, long blockMillis) {
+        if (depth < 0 || maxDepth < depth) {
+            throw new IllegalArgumentException("depth must satisfy 0 <= depth <= maxDepth");
+        }
+        if (blockMillis < 0) {
+            throw new IllegalArgumentException("blockMillis must not be negative");
         }
     }
 }

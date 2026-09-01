@@ -9,6 +9,12 @@ package pl.jakubtworek.backend_engineering.stage_2.block_b.kafka.consumer;
 public record ConsumerGroup(
         String groupId
 ) {
+    public ConsumerGroup {
+        if (groupId == null || groupId.isBlank()) {
+            throw new IllegalArgumentException("Consumer group id cannot be empty");
+        }
+    }
+
     /**
      * Creates a consumer group for Payment Service.
      */

@@ -27,18 +27,29 @@ public class RefreshToken {
     private String username;
 
     @Column(nullable = false)
+    private String familyId;
+
+    @Column(nullable = false)
     private Instant expiresAt;
 
     @Column(nullable = false)
     private boolean revoked;
 
+    private String revocationReason;
+
     protected RefreshToken() {
         // Required by JPA
     }
 
-    public RefreshToken(String tokenHash, String username, Instant expiresAt) {
+    public RefreshToken(
+            String tokenHash,
+            String username,
+            String familyId,
+            Instant expiresAt
+    ) {
         this.tokenHash = tokenHash;
         this.username = username;
+        this.familyId = familyId;
         this.expiresAt = expiresAt;
         this.revoked = false;
     }
@@ -51,15 +62,24 @@ public class RefreshToken {
         return username;
     }
 
-    public boolean isExpired() {
-        return Instant.now().isAfter(expiresAt);
+    public String getFamilyId() {
+        return familyId;
+    }
+
+    public String getRevocationReason() {
+        return revocationReason;
+    }
+
+    public boolean isExpired(Instant now) {
+        return !now.isBefore(expiresAt);
     }
 
     public boolean isRevoked() {
         return revoked;
     }
 
-    public void revoke() {
+    public void revoke(String reason) {
         this.revoked = true;
+        this.revocationReason = reason;
     }
 }

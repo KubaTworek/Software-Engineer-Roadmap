@@ -1,3 +1,16 @@
+# Race condition i utrata aktualizacji
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** Race condition i utrata aktualizacji.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „Race condition i utrata aktualizacji” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=TicketStoreConcurrencyTest" test`
+> - **Role klas:** `BrokenTicketStore` = `naive`; `AtomicTicketStore` = `correct`.
+> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+<!-- material-card:end -->
+
 Współbieżność i kontrola dostępu do współdzielonego stanu w Javie
 ==================================================
 

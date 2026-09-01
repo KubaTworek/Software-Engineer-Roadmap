@@ -19,7 +19,7 @@ public class RetryAspect {
     /**
      * Retries failed method execution.
      */
-    @Around("@annotation(demo.aop.retry.RetryableOperation)")
+    @Around("@annotation(pl.jakubtworek.backend_engineering.stage_1.block_c.aspect.RetryableOperation)")
     public Object retry(
             ProceedingJoinPoint proceedingJoinPoint
     ) throws Throwable {

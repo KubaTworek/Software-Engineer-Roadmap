@@ -1,8 +1,8 @@
-package pl.jakubtworek.backend_engineering.stage_2.block_c.workshop.src.main.java.com.example.demoapi.lifecycle;
+package com.example.demoapi.lifecycle;
 
 import jakarta.annotation.PreDestroy;
 import org.springframework.stereotype.Component;
-import pl.jakubtworek.backend_engineering.stage_2.block_c.workshop.src.main.java.com.example.demoapi.health.ApplicationHealthState;
+import com.example.demoapi.health.ApplicationHealthState;
 
 @Component
 public class ShutdownCoordinator {

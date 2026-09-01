@@ -1,4 +1,19 @@
-# Alerting i runbooki w systemie observability
+# alerts
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `temat-zaawansowany`
+> - **Uczy:** alerts.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „alerts” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Role klas:** brak klasy-kontrprzykładu; pozostałe typy są minimalnymi modelami pojęć opisanych niżej.
+> - **Granica:** Model weryfikuje nazwany niezmiennik; nie implementuje produkcyjnego protokołu rozproszonego ani infrastruktury dostawcy.
+<!-- material-card:end -->
+
+## Alerting i runbooki w systemie observability
+
+
 
 ## Cel dokumentu
 

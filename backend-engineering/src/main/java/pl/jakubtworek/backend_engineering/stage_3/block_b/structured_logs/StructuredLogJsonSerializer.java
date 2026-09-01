@@ -3,6 +3,8 @@ package pl.jakubtworek.backend_engineering.stage_3.block_b.structured_logs;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
+import java.util.Objects;
+
 /**
  * Serializes structured log events to JSON.
  *
@@ -14,10 +16,11 @@ public final class StructuredLogJsonSerializer {
     private final ObjectMapper objectMapper;
 
     public StructuredLogJsonSerializer(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
+        this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
     }
 
     public String toJson(StructuredLogEvent event) {
+        Objects.requireNonNull(event, "event must not be null");
         try {
             return objectMapper.writeValueAsString(event.toMap());
         } catch (JacksonException exception) {

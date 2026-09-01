@@ -1,4 +1,19 @@
-# Case 12 — BigDecimal w hot loop: koszt obiektowy i arytmetyczny
+# big decimal
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** big decimal.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „big decimal” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=BigDecimalBenchmarkCorrectnessTest,MoneyAsScaledLongTest" test`
+> - **Role klas:** brak klasy-kontrprzykładu; pozostałe typy są minimalnymi modelami pojęć opisanych niżej.
+> - **Granica:** Wynik eksperymentu opisuje tę maszynę i workload; nie jest uniwersalną liczbą produkcyjną.
+<!-- material-card:end -->
+
+## Case 12 — BigDecimal w hot loop: koszt obiektowy i arytmetyczny
+
+
 
 ## Wprowadzenie
 
@@ -27,7 +42,7 @@ To właśnie ten case pokazuje:
 
 ---
 
-# Dlaczego `BigDecimal` jest ciężki
+## Dlaczego `BigDecimal` jest ciężki
 
 `BigDecimal` nie jest prymitywem.
 
@@ -52,7 +67,7 @@ To:
 
 ---
 
-# Immutability — fundamentalny koszt
+## Immutability — fundamentalny koszt
 
 `BigDecimal` jest:
 ## immutable
@@ -79,7 +94,7 @@ W hot loop:
 
 ---
 
-# Allocation pressure
+## Allocation pressure
 
 To jeden z najważniejszych aspektów tego case’u.
 
@@ -97,7 +112,7 @@ I właśnie dlatego:
 
 ---
 
-# CPU cost — nie tylko alokacje
+## CPU cost — nie tylko alokacje
 
 To bardzo ważne.
 
@@ -125,7 +140,7 @@ To oznacza:
 
 ---
 
-# `setScale()` w hot loop
+## `setScale()` w hot loop
 
 To klasyczny anty-pattern wydajnościowy.
 
@@ -145,7 +160,7 @@ W praktyce:
 
 ---
 
-# Granica domeny vs hot path
+## Granica domeny vs hot path
 
 To jedna z najważniejszych intuicji praktycznych.
 
@@ -166,7 +181,7 @@ Ale:
 
 ---
 
-# Reprezentacja skalowana (`long`)
+## Reprezentacja skalowana (`long`)
 
 Bardzo częstą optymalizacją jest:
 ## scaled integer representation
@@ -196,7 +211,7 @@ To daje ogromne korzyści:
 
 ---
 
-# Dlaczego `long` jest tak szybki
+## Dlaczego `long` jest tak szybki
 
 `long`:
 - jest prymitywem,
@@ -214,7 +229,7 @@ Dla hot loop:
 
 ---
 
-# Boundary conversion
+## Boundary conversion
 
 Bardzo często najlepszym kompromisem jest:
 
@@ -232,7 +247,7 @@ To jeden z najbardziej praktycznych wzorców projektowych dla high-throughput sy
 
 ---
 
-# Wrappery immutable też mogą kosztować
+## Wrappery immutable też mogą kosztować
 
 To ważna obserwacja.
 
@@ -256,7 +271,7 @@ Czyli:
 
 ---
 
-# `new BigDecimal(double)` — klasyczny problem
+## `new BigDecimal(double)` — klasyczny problem
 
 To jeden z najbardziej znanych błędów.
 
@@ -281,7 +296,7 @@ To również:
 
 ---
 
-# `BigDecimal.valueOf()` — lepszy wybór
+## `BigDecimal.valueOf()` — lepszy wybór
 
 Znacznie lepszym rozwiązaniem jest:
 
@@ -299,7 +314,7 @@ To:
 
 ---
 
-# Dlaczego GC zaczyna dominować
+## Dlaczego GC zaczyna dominować
 
 W przypadku intensywnego użycia `BigDecimal`:
 - GC często zaczyna zbierać ogromne ilości krótkotrwałych obiektów.
@@ -316,7 +331,7 @@ I właśnie dlatego:
 
 ---
 
-# JMH jest tutaj konieczny
+## JMH jest tutaj konieczny
 
 Benchmarki `BigDecimal`:
 - są bardzo podatne na błędy.
@@ -341,7 +356,7 @@ który:
 
 ---
 
-# Dlaczego nie należy wyciągać złych wniosków
+## Dlaczego nie należy wyciągać złych wniosków
 
 To bardzo ważne.
 
@@ -361,7 +376,7 @@ Problem pojawia się dopiero wtedy, gdy:
 
 ---
 
-# Najważniejsza intuicja praktyczna
+## Najważniejsza intuicja praktyczna
 
 Najbardziej praktyczny wniosek brzmi:
 
@@ -373,7 +388,7 @@ I właśnie dlatego:
 
 ---
 
-# Najważniejsze wnioski
+## Najważniejsze wnioski
 
 Najbardziej użyteczny model mentalny wygląda tak:
 
@@ -387,3 +402,8 @@ Najbardziej użyteczny model mentalny wygląda tak:
 - immutable wrappery nadal mogą generować allocation churn,
 - `new BigDecimal(double)` jest problematyczne semantycznie i wydajnościowo,
 - JMH jest konieczny do wiarygodnego benchmarkowania kosztu `BigDecimal`.
+
+Test `MoneyAsScaledLongTest` najpierw chroni semantykę najmniejszej jednostki i
+overflow. Dopiero benchmark porównuje koszt reprezentacji. `long` nie jest
+automatycznie poprawnym zamiennikiem: wymaga jednej waluty, jawnej skali, kontroli
+przepełnienia i konwersji na granicy systemu.

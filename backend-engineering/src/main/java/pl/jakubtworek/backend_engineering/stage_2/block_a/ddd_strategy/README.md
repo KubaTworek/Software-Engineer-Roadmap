@@ -1,4 +1,19 @@
-# DDD strategiczne – bounded contexts i mapa kontekstów w architekturze e-commerce
+# ddd strategy
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `praktyka-produkcyjna`
+> - **Uczy:** ddd strategy.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „ddd strategy” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Role klas:** `LegacyOrderAcl` = `naive`, `LegacyOrderDto` = `naive`, `LegacyOrderLineDto` = `naive`; `BoundedContext` = `correct`; `IntegrationEventPublisher` = `production-boundary`.
+> - **Granica:** Laboratorium pokazuje kontrakt i failure modes; nie zastępuje pełnego testu end-to-end ani operacyjnej konfiguracji środowiska.
+<!-- material-card:end -->
+
+## DDD strategiczne – bounded contexts i mapa kontekstów w architekturze e-commerce
+
+
 
 ## Wprowadzenie
 
@@ -10,7 +25,7 @@ W praktyce bounded contexts stanowią fundament nowoczesnych architektur modular
 
 ---
 
-# Bounded Context – podstawowa jednostka strategicznego DDD
+## Bounded Context – podstawowa jednostka strategicznego DDD
 
 Bounded Context jest logiczną granicą modelu domenowego. Wewnątrz tej granicy wszystkie pojęcia mają jedno, spójne znaczenie. Poza nią to samo pojęcie może oznaczać coś zupełnie innego.
 
@@ -39,7 +54,7 @@ Każdy z tych kontekstów odpowiada za inny fragment biznesu i posiada własny m
 
 ---
 
-# Różne znaczenia tych samych pojęć
+## Różne znaczenia tych samych pojęć
 
 Jednym z najważniejszych powodów istnienia bounded contexts jest fakt, że te same pojęcia biznesowe mają różne znaczenie w różnych częściach organizacji.
 
@@ -75,7 +90,7 @@ DDD zakłada, że każdy bounded context powinien posiadać własną reprezentac
 
 ---
 
-# Ubiquitous Language
+## Ubiquitous Language
 
 Każdy bounded context posiada własny ubiquitous language, czyli wspólny język używany zarówno przez programistów, jak i ekspertów domenowych.
 
@@ -102,7 +117,7 @@ nie niosą znaczenia biznesowego i utrudniają zrozumienie domeny.
 
 ---
 
-# Konteksty w systemie e-commerce
+## Konteksty w systemie e-commerce
 
 ## Sales Context
 
@@ -153,7 +168,7 @@ Billing posiada własny model płatności i nie powinien współdzielić encji z
 
 ---
 
-# Context Map
+## Context Map
 
 Context Map opisuje relacje między bounded contexts.
 
@@ -179,7 +194,7 @@ Context Map pozwala zrozumieć:
 
 ---
 
-# Typy relacji między kontekstami
+## Typy relacji między kontekstami
 
 ## Published Language
 
@@ -237,7 +252,7 @@ Dzięki temu nowa domena pozostaje czysta i niezależna.
 
 ---
 
-# Komunikacja między bounded contexts
+## Komunikacja między bounded contexts
 
 Komunikacja między kontekstami powinna odbywać się wyłącznie przez jawne kontrakty.
 
@@ -264,7 +279,7 @@ Zamiast tego przekazujemy:
 
 ---
 
-# Zdarzenia domenowe i integracyjne
+## Zdarzenia domenowe i integracyjne
 
 W systemach event-driven bounded contexts komunikują się przez zdarzenia.
 
@@ -302,7 +317,7 @@ Sales reaguje wtedy zmianą statusu zamówienia.
 
 ---
 
-# Własność danych
+## Własność danych
 
 Jedną z najważniejszych zasad bounded contexts jest własność danych.
 
@@ -328,7 +343,7 @@ W modularnym monolicie możliwe jest stosowanie jednej fizycznej bazy, ale z log
 
 ---
 
-# Organizacja zespołów
+## Organizacja zespołów
 
 Bounded context bardzo często odpowiada również granicy organizacyjnej.
 
@@ -349,7 +364,7 @@ Takie podejście bardzo dobrze skaluje organizacje.
 
 ---
 
-# Typowe błędy
+## Typowe błędy
 
 ## Wspólny model domenowy
 
@@ -397,7 +412,7 @@ Powoduje to:
 
 ---
 
-# Strategia ewolucyjna
+## Strategia ewolucyjna
 
 Najlepszym podejściem jest budowanie systemu stopniowo.
 
@@ -415,7 +430,7 @@ Najważniejsze jest to, że granice domenowe powinny istnieć wcześniej niż gr
 
 ---
 
-# Podsumowanie
+## Podsumowanie
 
 Bounded contexts są fundamentem strategicznego Domain-Driven Design. Pozwalają ograniczyć złożoność systemu poprzez podział domeny na autonomiczne obszary odpowiedzialności. Dzięki temu:
 - modele pozostają spójne,

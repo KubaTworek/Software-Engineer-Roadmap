@@ -1,5 +1,32 @@
-Fork/Join Framework w Javie -- Notatka techniczna
-================================================
+# fork join
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** fork join.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „fork join” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=ForkJoinPoolTest" test`
+> - **Role klas:** brak klasy-kontrprzykładu; pozostałe typy są minimalnymi modelami pojęć opisanych niżej.
+> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+<!-- material-card:end -->
+
+## Fork/Join Framework w Javie
+
+
+
+## Mapa przykładu
+
+- `ArraySumTask` pokazuje divide-and-conquer, próg pracy sekwencyjnej oraz wzorzec `fork` jednej gałęzi i bezpośredniego obliczenia drugiej.
+- `BlockingTaskNoManagedBlock` pokazuje blokowanie workera bez poinformowania puli.
+- `BlockingTaskManagedBlock` używa `ForkJoinPool.managedBlock`, aby pula mogła kompensować blokadę.
+- `ForkJoinPoolTest` sprawdza wynik, walidację zakresów i poprawne zakończenie obu wariantów bez testów wydajności zależnych od maszyny.
+
+Porównanie wydajności `managedBlock` z bezpośrednim blokowaniem należy wykonywać jako osobny benchmark, a nie jako asercję czasową w teście jednostkowym.
+
+```shell
+mvn --batch-mode --no-transfer-progress -Dtest=ForkJoinPoolTest test
+```
 
 Fork/Join Framework jest jednym z kluczowych mechanizmów współbieżności w Javie, zaprojektowanym z myślą o efektywnym wykonywaniu obliczeń równoległych na wielu rdzeniach procesora. Został wprowadzony w Java 7 jako część pakietu `java.util.concurrent`. Jego głównym celem jest maksymalne wykorzystanie dostępnych zasobów CPU poprzez dynamiczne dzielenie pracy na mniejsze zadania oraz ich równoległe wykonywanie przez pulę wątków roboczych.
 

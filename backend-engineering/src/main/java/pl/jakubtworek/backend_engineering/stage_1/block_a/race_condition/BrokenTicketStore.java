@@ -1,5 +1,8 @@
 package pl.jakubtworek.backend_engineering.stage_1.block_a.race_condition;
 
+import java.util.Objects;
+import java.util.concurrent.atomic.AtomicInteger;
+
 /**
  * Deliberately incorrect implementation used to demonstrate a race condition.
  * Multiple threads can pass the same check and modify shared state concurrently.
@@ -12,8 +15,20 @@ public class BrokenTicketStore implements TicketStore {
     // Initial number of tickets used for validation or reporting
     private final int initial = 1;
 
-    // Counter of sold tickets (also not thread-safe)
-    private int sold = 0;
+    // Atomic only so the example isolates the broken check-then-act operation.
+    private final AtomicInteger sold = new AtomicInteger();
+
+    private final Runnable afterAvailabilityRead;
+
+    public BrokenTicketStore() {
+        this(Thread::yield);
+    }
+
+    /** Allows a test to force both buyers past the availability check. */
+    public BrokenTicketStore(Runnable afterAvailabilityRead) {
+        this.afterAvailabilityRead = Objects.requireNonNull(
+                afterAvailabilityRead, "afterAvailabilityRead must not be null");
+    }
 
     @Override
     public void buy() {
@@ -24,15 +39,13 @@ public class BrokenTicketStore implements TicketStore {
             // Local copy of the current value
             int tmp = available;
 
-            // Hint to the scheduler to switch threads here,
-            // increasing the probability of a race condition
-            Thread.yield();
+            afterAvailabilityRead.run();
 
             // Write back the decremented value
             available = tmp - 1;
 
             // Increase number of sold tickets
-            sold++;
+            sold.incrementAndGet();
         }
     }
 
@@ -45,7 +58,7 @@ public class BrokenTicketStore implements TicketStore {
     @Override
     public int getSold() {
         // Returns number of tickets recorded as sold
-        return sold;
+        return sold.get();
     }
 
     @Override

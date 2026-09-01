@@ -1,4 +1,19 @@
-# Case 1 — Heap vs Stack
+# heap vs stack
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** heap vs stack.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „heap vs stack” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Role klas:** `HeapVsStackDemo` = `simulation`.
+> - **Granica:** Wynik eksperymentu opisuje tę maszynę i workload; nie jest uniwersalną liczbą produkcyjną.
+<!-- material-card:end -->
+
+## Case 1 — Heap vs Stack
+
+
 
 ## Wprowadzenie
 
@@ -20,13 +35,13 @@ To właśnie referencje powodują najwięcej nieporozumień.
 
 ---
 
-# Runtime Data Areas — mental model JVM
+## Runtime Data Areas — mental model JVM
 
 JVM dzieli pamięć runtime na kilka obszarów. W kontekście tego eksperymentu interesują nas głównie dwa:
 
 ## Stack Memory
 
-Każdy wątek posiada własny stos (*Java Stack*).  
+Każdy wątek posiada własny stos (*Java Stack*).
 Dla każdego wywołania metody tworzony jest osobny *stack frame*.
 
 W stack frame znajdują się między innymi:
@@ -63,7 +78,7 @@ Każde `new` zwykle oznacza alokację na heapie.
 
 ---
 
-# Co naprawdę dzieje się w przykładzie
+## Co naprawdę dzieje się w przykładzie
 
 W eksperymencie:
 
@@ -108,7 +123,7 @@ To bardzo ważne rozróżnienie:
 
 ---
 
-# Dlaczego metoda modyfikuje obiekt
+## Dlaczego metoda modyfikuje obiekt
 
 W przykładzie:
 
@@ -147,7 +162,7 @@ To jedna z najczęściej źle rozumianych rzeczy w Javie.
 
 ---
 
-# Dlaczego primitive się nie zmienia
+## Dlaczego primitive się nie zmienia
 
 W przypadku:
 
@@ -179,7 +194,7 @@ nadal wypisuje:
 
 ---
 
-# Istotna intuicja pod Garbage Collector
+## Istotna intuicja pod Garbage Collector
 
 GC interesują wyłącznie obiekty na heapie.
 
@@ -200,7 +215,7 @@ Kiedy metoda kończy działanie:
 
 ---
 
-# Fundament pod Escape Analysis
+## Fundament pod Escape Analysis
 
 To rozróżnienie jest również niezbędne do zrozumienia Escape Analysis.
 
@@ -224,7 +239,7 @@ Logicznie model nadal jest poprawny, ale fizyczna implementacja może zostać zo
 
 ---
 
-# Najważniejsze wnioski
+## Najważniejsze wnioski
 
 Najbardziej użyteczny model mentalny wygląda tak:
 

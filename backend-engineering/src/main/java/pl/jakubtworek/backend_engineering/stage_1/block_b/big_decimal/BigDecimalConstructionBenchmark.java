@@ -1,10 +1,13 @@
 package pl.jakubtworek.backend_engineering.stage_1.block_b.big_decimal;
 
 import org.openjdk.jmh.annotations.*;
+import pl.jakubtworek.backend_engineering.stage_1.block_b.benchmarking.BenchmarkDimension;
+import pl.jakubtworek.backend_engineering.stage_1.block_b.benchmarking.Measures;
 
 import java.math.BigDecimal;
 import java.util.concurrent.TimeUnit;
 
+@Measures(BenchmarkDimension.ALLOCATION)
 @BenchmarkMode(Mode.Throughput)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 @Warmup(iterations = 5, time = 1)
@@ -16,7 +19,6 @@ public class BigDecimalConstructionBenchmark {
     private static final int SIZE = 10_000;
 
     private String[] decimalStrings;
-    private double[] decimalDoubles;
     private long[] cents;
 
     @Setup
@@ -24,15 +26,13 @@ public class BigDecimalConstructionBenchmark {
         // Inputs are prepared once.
         // The benchmark methods measure construction strategy cost.
         decimalStrings = new String[SIZE];
-        decimalDoubles = new double[SIZE];
         cents = new long[SIZE];
 
         for (int i = 0; i < SIZE; i++) {
             long value = 1_000 + i;
 
             cents[i] = value;
-            decimalStrings[i] = (value / 100) + "." + (value % 100);
-            decimalDoubles[i] = value / 100.0;
+            decimalStrings[i] = BigDecimal.valueOf(value, 2).toPlainString();
         }
     }
 
@@ -43,23 +43,6 @@ public class BigDecimalConstructionBenchmark {
         BigDecimal total = BigDecimal.ZERO;
 
         for (String value : decimalStrings) {
-            total = total.add(new BigDecimal(value));
-        }
-
-        return total;
-    }
-
-    @Benchmark
-    public BigDecimal constructFromDouble() {
-        // This is intentionally shown as a bad practice for money-like values.
-        //
-        // new BigDecimal(double) uses the exact binary floating-point value,
-        // which often produces surprising decimal representations.
-        //
-        // It can also create expensive BigDecimal values with large internal precision.
-        BigDecimal total = BigDecimal.ZERO;
-
-        for (double value : decimalDoubles) {
             total = total.add(new BigDecimal(value));
         }
 

@@ -1,4 +1,19 @@
-# Graph databases
+# graph
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** graph.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „graph” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Role klas:** brak klasy-kontrprzykładu; pozostałe typy są minimalnymi modelami pojęć opisanych niżej.
+> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+<!-- material-card:end -->
+
+## Graph databases
+
+
 
 Graph database to baza danych zaprojektowana wokół relacji. W SQL relacje też istnieją, ale zwykle są reprezentowane przez klucze obce i joiny między tabelami. W graph DB relacje są obiektami pierwszej klasy. Dane składają się z node’ów, czyli węzłów, oraz edge’y, czyli krawędzi łączących węzły. Przykładami baz grafowych są Neo4j, JanusGraph i Amazon Neptune.
 

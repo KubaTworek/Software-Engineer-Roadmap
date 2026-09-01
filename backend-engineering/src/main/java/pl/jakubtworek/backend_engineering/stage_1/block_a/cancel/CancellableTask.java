@@ -8,26 +8,15 @@ public class CancellableTask implements Runnable {
      */
     @Override
     public void run() {
-
         try {
-            // loop runs until an interrupt signal is detected
             while (!Thread.currentThread().isInterrupted()) {
-
-                // simulate blocking work
+                // A blocking method is also an interruption checkpoint.
                 Thread.sleep(100);
-
-                // additional computation could happen here
             }
-
         } catch (InterruptedException e) {
-
-            // sleep() throws InterruptedException when the thread is interrupted
-            // and clears the interrupt flag
-            // restoring the flag preserves the interruption information
+            // InterruptedException clears the flag. Restore it before leaving so
+            // callers higher in the stack do not lose the cancellation signal.
             Thread.currentThread().interrupt();
         }
-
-        // task exits cleanly after interruption
-        System.out.println("Task stopped cooperatively.");
     }
 }

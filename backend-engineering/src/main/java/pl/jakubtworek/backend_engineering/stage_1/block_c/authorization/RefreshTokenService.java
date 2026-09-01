@@ -2,11 +2,14 @@ package pl.jakubtworek.backend_engineering.stage_1.block_c.authorization;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.security.MessageDigest;
 import java.security.SecureRandom;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.UUID;
 
 /**
  * Handles refresh tokens.
@@ -21,10 +24,22 @@ import java.util.Base64;
 public class RefreshTokenService {
 
     private final RefreshTokenRepository repository;
-    private final SecureRandom secureRandom = new SecureRandom();
+    private final SecureRandom secureRandom;
+    private final Clock clock;
 
+    @Autowired
     public RefreshTokenService(RefreshTokenRepository repository) {
+        this(repository, Clock.systemUTC(), new SecureRandom());
+    }
+
+    RefreshTokenService(
+            RefreshTokenRepository repository,
+            Clock clock,
+            SecureRandom secureRandom
+    ) {
         this.repository = repository;
+        this.clock = clock;
+        this.secureRandom = secureRandom;
     }
 
     /**
@@ -36,18 +51,7 @@ public class RefreshTokenService {
     @Transactional
     public String createRefreshToken(String username) {
 
-        String rawToken = generateSecureRandomToken();
-        String tokenHash = hash(rawToken);
-
-        RefreshToken refreshToken = new RefreshToken(
-                tokenHash,
-                username,
-                Instant.now().plusSeconds(7 * 24 * 60 * 60)
-        );
-
-        repository.save(refreshToken);
-
-        return rawToken;
+        return issueToken(username, UUID.randomUUID().toString());
     }
 
     /**
@@ -57,30 +61,47 @@ public class RefreshTokenService {
      * it should be rejected because it is revoked.
      */
     @Transactional
-    public String rotateRefreshToken(String rawToken) {
+    public RotatedRefreshToken rotateRefreshToken(String rawToken) {
 
         String tokenHash = hash(rawToken);
 
         RefreshToken existingToken = repository.findByTokenHash(tokenHash)
-                .orElseThrow(() -> new IllegalArgumentException("Invalid refresh token"));
+                .orElseThrow(InvalidRefreshTokenException::new);
 
         if (existingToken.isRevoked()) {
-            throw new IllegalStateException("Refresh token already revoked");
+            repository.findAllByFamilyId(existingToken.getFamilyId())
+                    .forEach(token -> token.revoke("REUSE_DETECTED"));
+            throw new RefreshTokenReuseException();
         }
 
-        if (existingToken.isExpired()) {
-            throw new IllegalStateException("Refresh token expired");
+        if (existingToken.isExpired(clock.instant())) {
+            existingToken.revoke("EXPIRED");
+            throw new InvalidRefreshTokenException();
         }
 
         /**
          * Revoke old token before issuing a new one.
          */
-        existingToken.revoke();
+        existingToken.revoke("ROTATED");
 
         /**
          * Issue a new token for the same user.
          */
-        return createRefreshToken(existingToken.getUsername());
+        String username = existingToken.getUsername();
+        String rawSuccessor = issueToken(username, existingToken.getFamilyId());
+        return new RotatedRefreshToken(rawSuccessor, username);
+    }
+
+    private String issueToken(String username, String familyId) {
+        String rawToken = generateSecureRandomToken();
+        RefreshToken refreshToken = new RefreshToken(
+                hash(rawToken),
+                username,
+                familyId,
+                clock.instant().plusSeconds(7 * 24 * 60 * 60)
+        );
+        repository.save(refreshToken);
+        return rawToken;
     }
 
     private String generateSecureRandomToken() {
@@ -98,7 +119,7 @@ public class RefreshTokenService {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
 
-            byte[] hash = digest.digest(rawToken.getBytes());
+            byte[] hash = digest.digest(rawToken.getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
             return Base64.getEncoder().encodeToString(hash);
         } catch (Exception exception) {

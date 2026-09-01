@@ -35,6 +35,16 @@ public final class RouteTemplate {
             throw new IllegalArgumentException("route template must start with '/'");
         }
 
+        if (value.contains("?") || value.contains("#")) {
+            throw new IllegalArgumentException("route template must not contain query string or fragment");
+        }
+
+        for (String segment : value.split("/")) {
+            if (segment.matches("\\d+") || segment.matches("[0-9a-fA-F]{8}-[0-9a-fA-F-]{27,}")) {
+                throw new IllegalArgumentException("route must use a placeholder instead of a concrete identifier");
+            }
+        }
+
         return value;
     }
 }

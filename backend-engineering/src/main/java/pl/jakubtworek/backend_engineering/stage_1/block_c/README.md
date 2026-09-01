@@ -1,14 +1,53 @@
-# Zaawansowany Spring i mikroserwisy — teoria, architektura i pułapki projektowe
+# Stage 1C — Spring pod maską
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** Stage 1C — Spring pod maską.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „Stage 1C — Spring pod maską” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=PaymentServiceAopTest,AuthApiContractTest,AuthServiceTest" test`
+> - **Role klas:** `CorrectSelfInvocationSolutionService` = `correct`, `ValidatedExternalApiProperties` = `correct`; `AuthController` = `production-boundary`, `OrderController` = `production-boundary`, `PageController` = `production-boundary` (+3).
+> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+<!-- material-card:end -->
+
+## Spring pod maską — mechanizmy, granice i pułapki projektowe
+
+
 
 ## Executive Summary
 
-Ten dokument omawia zaawansowane zagadnienia Spring Framework, Spring Boot oraz architektury mikroserwisowej z naciskiem na teorię, mechanizmy działania i decyzje projektowe. Celem nie jest przedstawienie katalogu adnotacji ani gotowych fragmentów kodu do kopiowania, lecz zbudowanie solidnego modelu mentalnego: jak działa kontener IoC, kiedy powstają beany, jak Spring tworzy proxy, dlaczego transakcje czasem nie działają mimo obecności `@Transactional`, gdzie kończy się wygoda Spring Boota, a zaczyna świadoma architektura systemu.
+Ten dokument omawia zaawansowane zagadnienia Spring Framework i Spring Boot z naciskiem na teorię, mechanizmy działania i decyzje projektowe. Celem nie jest przedstawienie katalogu adnotacji ani gotowych fragmentów kodu do kopiowania, lecz zbudowanie solidnego modelu mentalnego: jak działa kontener IoC, kiedy powstają beany, jak Spring tworzy proxy, dlaczego transakcje czasem nie działają mimo obecności `@Transactional`, gdzie kończy się wygoda Spring Boota, a zaczyna świadoma architektura systemu.
 
 Spring jest przede wszystkim kontenerem zarządzającym zależnościami i cyklem życia obiektów. Jego siła polega na odwróceniu kontroli, konfiguracji deklaratywnej, automatyzacji typowych wzorców infrastrukturalnych oraz integracji z ogromnym ekosystemem bibliotek. Jednocześnie ta wygoda ma koszt: wiele zachowań odbywa się pośrednio, przez refleksję, proxy, auto-konfigurację, interceptory i kontekst aplikacji. Programista pracujący na poziomie senior powinien rozumieć nie tylko to, że dana adnotacja „działa”, ale również kiedy, dlaczego i w jakich warunkach przestaje działać.
 
 Mikroserwisy nie są prostym sposobem na podzielenie dużej aplikacji na kilka mniejszych. Są modelem organizacji systemu rozproszonego, w którym zyskujemy niezależność wdrożeń, autonomię zespołów i skalowanie wybranych komponentów, ale płacimy za to złożonością komunikacji, obserwowalności, odporności, spójności danych, wersjonowania kontraktów i bezpieczeństwa. Dlatego mikroserwisy powinny być odpowiedzią na konkretne problemy organizacyjne i techniczne, a nie domyślnym stylem architektury.
 
 Najważniejsza zasada brzmi: Spring upraszcza implementację infrastruktury, ale nie zwalnia z rozumienia architektury. `@Transactional` nie zastępuje myślenia o granicach transakcji. `@Async` nie rozwiązuje automatycznie problemu równoległości. `@Retryable` nie czyni systemu odpornym. Gateway nie gwarantuje bezpieczeństwa. Service discovery nie rozwiązuje problemów domenowych. Każde narzędzie musi być użyte w świadomym kontekście.
+
+## Mapa laboratoriów i granica bloku
+
+| Laboratorium | Pytanie, na które odpowiada |
+|---|---|
+| `bean` | dokładna kolejność lifecycle, wybór JDK/CGLIB i granica self-invocation |
+| `configuration` | precedence źródeł, typowany binding, fail-fast i właściwe użycie profili |
+| `aspect` | które wywołania przechodzą przez proxy, a które je omijają |
+| `transactional` | gdzie naprawdę zaczyna się transakcja i kiedy następuje rollback |
+| `jpa` | jak persistence context, flush i fetch strategy wpływają na SQL |
+| `mvc` | jak pipeline MVC realizuje kontrakt HTTP, idempotencję i zapis warunkowy |
+| `exception` | jak oddzielić błędy domenowe, walidacyjne i techniczne w jednym formacie Problem Details |
+| `authorization` | jak zweryfikować token, egzekwować ownership i bezpiecznie zarządzać sesją |
+| `test` | które ryzyko wymaga unit, slice, pełnego HTTP albo prawdziwej infrastruktury |
+
+Sekcje o mikroserwisach pokazują konsekwencje użycia Springa na granicy
+procesu, ale nie są osobnym tutorialem architektury rozproszonej. DDD i granice
+usług rozwija Stage 2A, messaging i delivery semantics — Stage 2B, a wdrożenia
+i Kubernetes — Stage 2C. Dzięki temu ten blok pozostaje skupiony na tym, co
+Spring robi wewnątrz procesu i gdzie kończą się jego gwarancje.
+
+Czytając kod, porównuj trzy rzeczy: zwykły obiekt utworzony przez `new`, bean
+zarządzany przez kontener oraz proxy zwrócone klientowi. Wiele pozornych
+sprzeczności Springa wynika z pomieszania właśnie tych trzech poziomów.
 
 ## Spring jako kontener IoC
 
@@ -177,6 +216,12 @@ Deployment mikroserwisów wymaga automatyzacji. Ręczne wdrożenia wielu usług 
 ## Testowanie aplikacji Spring
 
 Testowanie w Springu powinno mieć kilka poziomów. Testy jednostkowe sprawdzają logikę klas bez uruchamiania całego kontekstu. Są szybkie, precyzyjne i powinny stanowić podstawę dla logiki domenowej. Testy integracyjne ze Springiem sprawdzają konfigurację, transakcje, repozytoria, serializację, security i współpracę komponentów. Testy kontraktowe sprawdzają zgodność API między usługami. Testy end-to-end powinny być ograniczone do kluczowych ścieżek, ponieważ są kosztowne i kruche.
+
+Osobne [laboratorium strategii testowania](test/README.md) rozszerza ten podział
+o property-based testing ze shrinkingiem, modelowe testowanie sekwencji stanów,
+consumer-driven contract oraz mutation testing. Techniki te nie zastępują
+poziomów testów: pomagają ocenić większą przestrzeń wejść i sprawdzić, czy
+asercje rzeczywiście chronią deklarowany kontrakt.
 
 `@SpringBootTest` jest wygodne, ale często nadużywane. Uruchomienie całego kontekstu dla każdego prostego testu spowalnia suite i utrudnia diagnozę. Lepsze jest używanie test slices, takich jak testy warstwy web, repozytoriów lub konfiguracji, jeśli pełny kontekst nie jest potrzebny. Test powinien uruchamiać tylko tyle infrastruktury, ile jest konieczne do sprawdzenia danego zachowania.
 

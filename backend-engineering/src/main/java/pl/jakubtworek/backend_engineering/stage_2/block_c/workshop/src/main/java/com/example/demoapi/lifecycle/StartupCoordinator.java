@@ -1,10 +1,10 @@
-package pl.jakubtworek.backend_engineering.stage_2.block_c.workshop.src.main.java.com.example.demoapi.lifecycle;
+package com.example.demoapi.lifecycle;
 
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
-import pl.jakubtworek.backend_engineering.stage_2.block_c.workshop.src.main.java.com.example.demoapi.config.AppProperties;
-import pl.jakubtworek.backend_engineering.stage_2.block_c.workshop.src.main.java.com.example.demoapi.health.ApplicationHealthState;
+import com.example.demoapi.config.AppProperties;
+import com.example.demoapi.health.ApplicationHealthState;
 
 @Component
 public class StartupCoordinator {

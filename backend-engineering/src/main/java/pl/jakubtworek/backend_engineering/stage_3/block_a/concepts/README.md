@@ -1,12 +1,55 @@
-# System Design: skalowanie i odporność
+# concepts
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `temat-zaawansowany`
+> - **Uczy:** concepts.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „concepts” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=CacheAsideAndCircuitBreakerTest,CapacityAndDegradationTest,ConsistentHashAndIdGenerationTest" test`
+> - **Role klas:** `NaiveCounterStore` = `naive`; `FencedRegister` = `correct`, `IdempotentCounterStore` = `correct`, `IdempotentQueueWorker` = `correct`; `DeterministicRetrySimulation` = `simulation`, `InMemoryLeaseCoordinator` = `simulation`, `InMemoryTtlCache` = `simulation`.
+> - **Granica:** Model weryfikuje nazwany niezmiennik; nie implementuje produkcyjnego protokołu rozproszonego ani infrastruktury dostawcy.
+<!-- material-card:end -->
+
+## System Design: skalowanie i odporność
+
+
 
 ## Cel dokumentu
 
-Ten dokument opisuje teoretyczne podstawy skalowania i odporności systemów rozproszonych na przykładzie zestawu klas Java przygotowanych dla takich pojęć jak modelowanie pojemności, autoscaling, cache, Redis, rate limiting, circuit breaker, retry, timeouty, przełączniki operacyjne oraz scenariusze testów obciążeniowych. Kod nie powinien być traktowany jako gotowy framework produkcyjny. Jego wartość polega raczej na tym, że porządkuje najważniejsze mechanizmy system designu w postaci prostych, nazwanych abstrakcji.
+Ten dokument opisuje teoretyczne podstawy skalowania i odporności systemów rozproszonych na przykładzie zestawu klas Java przygotowanych dla takich pojęć jak modelowanie pojemności, autoscaling, cache, Redis, koordynacja rozproszona, rate limiting, circuit breaker, retry, timeouty, przełączniki operacyjne oraz scenariusze testów obciążeniowych. Kod nie powinien być traktowany jako gotowy framework produkcyjny. Jego wartość polega raczej na tym, że porządkuje najważniejsze mechanizmy system designu w postaci prostych, nazwanych abstrakcji.
+
+## Granica pakietu
+
+`concepts` jest kanonicznym katalogiem małych mechanizmów i ich kontraktów. Każdy
+przykład można uruchomić i testować osobno, ale nie reprezentuje on całej ścieżki
+produkcyjnej. Pakiet `implementation` importuje te klasy i odpowiada za ich składanie;
+nie utrzymuje alternatywnych kopii `CircuitBreaker`, `RetryExecutor`, cache, limitera
+ani workera kolejki. Zależność biegnie w jedną stronę:
+
+```text
+implementation  --->  concepts
+      kompozycja       kontrakty i mechanizmy
+```
+
+Przykładowo `Fallback<T>` definiuje minimalny kontrakt wyniku zastępczego, ale decyzja,
+gdzie umieścić fallback względem timeoutu, retry i circuit breakera, należy już do
+kompozycji w `implementation`.
+
+`coordination` pozostaje na tym samym poziomie abstrakcji. `InMemoryLeaseCoordinator`
+nie udaje etcd ani protokołu konsensusu: pokazuje atomowy przydział lease'a i kolejnego
+termu. `FencedRegister` pokazuje osobną odpowiedzialność downstreamu za odrzucenie
+starego właściciela. Leader election, clock skew, generowanie ID i consistent hashing
+są opisane wraz z failure modes w [`coordination/README.md`](coordination/README.md).
+
+`correctness` pokazuje, jak te gwarancje testować na poziomie historii, a nie tylko
+pojedynczego wyniku. W [`correctness/README.md`](correctness/README.md) znajdują się
+deterministyczne przeploty, timeout po commit, idempotentne retry, rozdzielenie
+safety/liveness oraz ograniczony checker liniowalności pojedynczego rejestru.
 
 W projektowaniu skalowalnych systemów najważniejsze nie jest samo rozpoznawanie popularnych wzorców architektonicznych. Znacznie ważniejsza jest umiejętność przewidzenia, który komponent jako pierwszy osiągnie limit, dlaczego właśnie on stanie się bottleneckiem oraz jak potwierdzić tę hipotezę metrykami i testem obciążeniowym. W praktyce oznacza to przejście od ogólnych haseł typu „dodaj cache”, „skaluj horyzontalnie” albo „użyj retry” do mierzalnego modelu: jaka jest przepustowość, jaka jest latencja, ile mamy równoległości, gdzie znajduje się limit połączeń, jaki jest koszt pojedynczego requestu i jak system zachowa się po przekroczeniu bezpiecznego zakresu pracy.
 
-Przygotowane klasy Java są więc sposobem opakowania teorii w pojęcia, które można łatwo nazwać i omówić. `CapacityModel` reprezentuje podstawowe wzory pojemnościowe. `CapacityReport` pokazuje, jak opisać limit konkretnego komponentu. `AutoscalingConfig` rozdziela minimalną i maksymalną liczbę replik oraz metrykę skalowania. Klasy związane z cache pokazują ideę cache-aside, TTL, eviction policy i ochrony przed cache stampede. Rate limitery pokazują różnicę między token bucket a sliding window. Circuit breaker, retry policy i timeout budget reprezentują podstawowy zestaw mechanizmów odpornościowych dla zależności zdalnych. Operational levers opisują natomiast dźwignie awaryjne, które pozwalają szybko degradować system bez wdrażania nowego kodu.
+Przygotowane klasy Java są więc sposobem opakowania teorii w pojęcia, które można łatwo nazwać i omówić. `CapacityPlan`, `CapacityCalculator` i `BottleneckAnalyzer` opisują pierwsze przybliżenie pojemności. Klasy związane z cache pokazują cache-aside, TTL, eviction policy i ochronę przed stampede. `TokenBucketRateLimiter` pokazuje kontrolę burstów. `TimeoutConfig`, `TimeoutExecutor`, `RetryExecutor` i `CircuitBreaker` reprezentują podstawowy zestaw granic dla zależności zdalnych. `EmergencyLeverRegistry` opisuje dźwignie awaryjne, które pozwalają degradować funkcje bez wdrażania nowego kodu.
 
 ## Myślenie pojemnościowe
 
@@ -14,9 +57,9 @@ Punktem wyjścia dla skalowania jest model pojemności. System nie staje się sk
 
 Najprostszy model zaczyna się od prawa Little’a, które w kontekście usług sieciowych można zapisać jako zależność między przepustowością, latencją i równoległością. Jeżeli system obsługuje określoną liczbę requestów na sekundę, a każdy request trwa średnio określony czas, to w każdej chwili w systemie musi znajdować się pewna liczba requestów równoległych. To pozwala szybko oszacować, czy problemem będzie CPU, pula połączeń, kolejka, liczba workerów czy limit zależności zewnętrznej.
 
-W klasie `CapacityModel` ta idea jest reprezentowana przez metody liczące concurrency, throughput ograniczony przez CPU, throughput ograniczony przez pulę połączeń oraz liczbę wymaganych replik. Takie wzory są uproszczeniem, ale właśnie o to chodzi na pierwszym etapie projektowania. Model ma wskazać prawdopodobny bottleneck i rząd wielkości limitu. Dopiero później model trzeba zweryfikować testem typu step test, obserwując, czy p95 i p99 latency rosną zgodnie z przewidywaniami.
+W klasie `CapacityCalculator` ta idea jest reprezentowana przez metody liczące concurrency oraz throughput ograniczony przez CPU, pulę połączeń i zapisy do bazy. Takie wzory są uproszczeniem, ale właśnie o to chodzi na pierwszym etapie projektowania. Model ma wskazać prawdopodobny bottleneck i rząd wielkości limitu. Dopiero później model trzeba zweryfikować testem typu step test, obserwując, czy p95 i p99 latency rosną zgodnie z przewidywaniami.
 
-W praktyce każdy krytyczny komponent powinien dać się opisać przez kilka pytań. Jaki jest wzór pojemności dla tego komponentu? Jaki parametr trzeba zmierzyć, żeby wzór miał sens? Jaki jest aktualny limit? Która metryka potwierdzi, że komponent faktycznie jest nasycony? `CapacityReport` jest prostą reprezentacją takiego myślenia. Nie chodzi o formalizm sam dla siebie, ale o wymuszenie dyscypliny: zamiast mówić „baza może być problemem”, trzeba powiedzieć „baza stanie się problemem przy około X RPS, ponieważ pula połączeń ma rozmiar Y, średnia latencja zapytania wynosi Z, a metryką potwierdzającą będzie rosnący pool wait oraz p95 zapytań”.
+W praktyce każdy krytyczny komponent powinien dać się opisać przez kilka pytań. Jaki jest wzór pojemności dla tego komponentu? Jaki parametr trzeba zmierzyć, żeby wzór miał sens? Jaki jest aktualny limit? Która metryka potwierdzi, że komponent faktycznie jest nasycony? `Bottleneck` jest prostą reprezentacją takiego myślenia. Nie chodzi o formalizm sam dla siebie, ale o wymuszenie dyscypliny: zamiast mówić „baza może być problemem”, trzeba powiedzieć „baza stanie się problemem przy około X RPS, ponieważ pula połączeń ma rozmiar Y, średnia latencja zapytania wynosi Z, a metryką potwierdzającą będzie rosnący pool wait oraz p95 zapytań”.
 
 ## Skalowanie pionowe i poziome
 
@@ -24,7 +67,7 @@ Skalowanie pionowe, czyli zwiększanie zasobów pojedynczej maszyny lub instancj
 
 Skalowanie poziome polega na dodawaniu kolejnych replik usługi. Daje większą elastyczność, lepszą odporność na awarie pojedynczych instancji i umożliwia stopniowe zwiększanie capacity. W zamian wymaga jednak, aby aplikacja była możliwie stateless. Jeżeli request może trafić do dowolnej repliki, to replika nie może przechowywać krytycznego stanu wyłącznie w pamięci lokalnej. Sesje, pliki, kolejki i dane biznesowe muszą zostać wyniesione do backing services, takich jak baza danych, cache, object storage albo system kolejkowy.
 
-W klasach Java ta różnica pojawia się pośrednio w `AutoscalingConfig` i `ScalingMetric`. Sama liczba replik nie wystarczy. Trzeba jeszcze wiedzieć, według jakiej metryki system ma się skalować. Dla workloadów CPU-bound skalowanie po CPU może być wystarczające. Dla workloadów IO-bound często jest mylące, ponieważ proces może mieć niskie zużycie CPU, a jednocześnie cierpieć na przeciążoną bazę danych, długi czas oczekiwania na pulę połączeń albo wysoką latencję zależności zewnętrznej. Dlatego lepszymi sygnałami bywają concurrency, in-flight requests, queue depth, dependency p95 latency albo pool wait.
+Sama liczba replik nie wystarczy. Trzeba jeszcze wiedzieć, według jakiej metryki system ma się skalować. Dla workloadów CPU-bound skalowanie po CPU może być wystarczające. Dla workloadów IO-bound często jest mylące, ponieważ proces może mieć niskie zużycie CPU, a jednocześnie cierpieć na przeciążoną bazę danych, długi czas oczekiwania na pulę połączeń albo wysoką latencję zależności zewnętrznej. Dlatego lepszymi sygnałami bywają concurrency, in-flight requests, queue depth, dependency p95 latency albo pool wait. Konkretne strategie skalowania są modelowane w sąsiednim pakiecie `metrics/scaling`.
 
 Ważnym elementem autoscalingu są limity minimalne i maksymalne. Minimalna liczba replik zmniejsza wpływ cold startu i pomaga utrzymać SLO przy niskim, ale wrażliwym ruchu. Maksymalna liczba replik jest bezpiecznikiem. Bez niej autoscaler może próbować ratować przeciążoną aplikację przez tworzenie coraz większej liczby instancji, które następnie przeciążą bazę danych, Redisa albo zewnętrzne API. Dobry autoscaling nie polega więc na bezwarunkowym dodawaniu replik, lecz na kontrolowanym zwiększaniu capacity w granicach, które są bezpieczne dla całego systemu.
 
@@ -68,7 +111,7 @@ Rate limiting służy do kontrolowania liczby requestów wykonywanych przez okre
 
 Limit per IP jest przydatny na brzegu systemu, zwłaszcza dla publicznych endpointów, logowania, ochrony przed brute force albo prostym scrapingiem. Ma jednak poważne ograniczenie: wiele rzeczywistych użytkowników może znajdować się za tym samym NAT-em, proxy albo siecią firmową. Wtedy limit per IP może fałszywie karać wielu użytkowników naraz. Limit per API key, user lub tenant jest zwykle lepszy dla systemów biznesowych, bo odpowiada faktycznemu klientowi lub planowi taryfowemu.
 
-`TokenBucketRateLimiter` reprezentuje token bucket. W tym algorytmie bucket ma określoną pojemność, a tokeny są uzupełniane z określoną szybkością. Request może przejść, jeżeli dostępny jest co najmniej jeden token. Ten algorytm dobrze obsługuje krótkie bursty, zachowując średni limit w dłuższym czasie. `SlidingWindowRateLimiter` reprezentuje sliding window, w którym liczona jest liczba requestów w ostatnim przesuwającym się przedziale czasu. Sliding window ogranicza problem nagłych skoków na granicy okna, ale wymaga więcej stanu niż prosty fixed window.
+`TokenBucketRateLimiter` reprezentuje token bucket. W tym algorytmie bucket ma określoną pojemność, a tokeny są uzupełniane z określoną szybkością. Request może przejść, jeżeli dostępny jest co najmniej jeden token. Ten algorytm dobrze obsługuje krótkie bursty, zachowując średni limit w dłuższym czasie. Sliding window i fixed window są ważnymi alternatywami, ale nie mają w tym katalogu osobnej implementacji; fixed window w Redisie pokazuje dopiero `stage_3/block_c`.
 
 Gdy request zostanie odrzucony przez limiter, API powinno zwrócić informację, że klient przekroczył limit. W praktyce oznacza to zwykle HTTP 429 oraz opcjonalny nagłówek `Retry-After`. Klasa `RateLimitDecision` modeluje tę decyzję przez pole `allowed` i czas, po którym klient może spróbować ponownie. To rozdzielenie jest istotne, bo limiter nie powinien sam znać szczegółów HTTP. Powinien tylko podjąć decyzję domenową, a warstwa transportowa powinna przetłumaczyć ją na odpowiedź protokołu.
 
@@ -76,7 +119,7 @@ Gdy request zostanie odrzucony przez limiter, API powinno zwrócić informację,
 
 Timeout jest jednym z najprostszych i najważniejszych mechanizmów odpornościowych. Bez timeoutu request do zależności zewnętrznej może wisieć zbyt długo, zajmując wątek, połączenie, slot w puli albo pamięć. W skrajnym przypadku brak timeoutów powoduje, że awaria jednej zależności zamienia się w awarię całej aplikacji. Dlatego każde zdalne wywołanie powinno mieć jawny connection timeout, request timeout oraz budżet czasu dla ewentualnych retry.
 
-`TimeoutBudget` reprezentuje tę ideę. Connection timeout ogranicza czas zestawiania połączenia. Request timeout ogranicza czas oczekiwania na odpowiedź. Total retry budget ogranicza łączny czas, jaki operacja może spędzić na ponawianiu prób. Bez takiego budżetu retry mogą wydłużyć request ponad sensowne granice, pogarszając doświadczenie użytkownika i zwiększając obciążenie systemu.
+`TimeoutConfig` rozdziela connection timeout i request timeout. Pierwszy należy przekazać do klienta HTTP podczas zestawiania połączenia, a `TimeoutExecutor` demonstruje ograniczenie czasu pojedynczej próby przez request timeout. Łączny retry budget nie jest implementowany przez tę prostą klasę i musi być narzucony przez warstwę wyżej albo bibliotekę produkcyjną. Bez takiego budżetu retry mogą wydłużyć request ponad sensowne granice, pogarszając doświadczenie użytkownika i zwiększając obciążenie systemu.
 
 Timeouty powinny być dobierane świadomie względem SLO. Jeżeli endpoint ma odpowiadać w 300 ms, to zależność zewnętrzna nie może mieć domyślnego timeoutu 30 sekund. Timeout powinien być krótszy niż maksymalny akceptowalny czas odpowiedzi i powinien zostawiać miejsce na fallback albo kontrolowaną degradację. Jednocześnie zbyt agresywne timeouty mogą sztucznie zwiększać liczbę błędów, zwłaszcza przy zależnościach o naturalnie zmiennej latencji. Dlatego timeouty trzeba stroić na podstawie percentyli, a nie tylko średniej.
 
@@ -84,7 +127,7 @@ Timeouty powinny być dobierane świadomie względem SLO. Jeżeli endpoint ma od
 
 Retry jest użyteczne tylko wtedy, gdy błąd jest przejściowy i operacja może zostać bezpiecznie powtórzona. Jeżeli operacja ma efekt uboczny, na przykład tworzy płatność, wysyła wiadomość albo składa zamówienie, retry bez idempotency key może doprowadzić do duplikacji. Dlatego reguła jest prosta: retry dla operacji idempotentnych albo dla operacji zabezpieczonych tokenem idempotencyjnym.
 
-`RetryPolicy` pokazuje retry z exponential backoff i jitter. Exponential backoff zwiększa odstęp między kolejnymi próbami, dzięki czemu system nie uderza natychmiast ponownie w przeciążoną zależność. Jitter dodaje losowość, aby wiele klientów nie ponawiało requestów dokładnie w tym samym momencie. Bez jittera retry mogą zsynchronizować się i utworzyć kolejną falę obciążenia.
+`RetryExecutor` pokazuje retry z exponential backoff i jitter. `RetryClassifier` wymusza rozróżnienie błędu przejściowego od trwałego. Exponential backoff zwiększa odstęp między kolejnymi próbami, dzięki czemu system nie uderza natychmiast ponownie w przeciążoną zależność. Jitter dodaje losowość, aby wiele klientów nie ponawiało requestów dokładnie w tym samym momencie. Bez jittera retry mogą zsynchronizować się i utworzyć kolejną falę obciążenia.
 
 Największym ryzykiem retry jest retry storm. Jeżeli wiele warstw systemu ma własne retry, pojedynczy request użytkownika może zostać zwielokrotniony wielokrotnie. Gateway ponawia request do API, API ponawia request do serwisu, serwis ponawia request do bazy lub zewnętrznego API. W efekcie chwilowa awaria zamienia się w lawinę dodatkowego ruchu. Dlatego retry powinny być ograniczone liczbą prób, budżetem czasu, typem błędu oraz miejscem w architekturze. Zwykle lepiej mieć retry w jednej świadomej warstwie niż przypadkowo w każdej.
 
@@ -100,7 +143,7 @@ Dobór progów circuit breakera jest trudny i zależy od charakteru ruchu. Zbyt 
 
 Odporność systemu nie oznacza, że wszystko zawsze działa w pełnym zakresie. Dojrzały system potrafi celowo ograniczyć funkcjonalność, aby zachować najważniejsze ścieżki biznesowe. Graceful degradation polega na tym, że funkcje mniej krytyczne mogą zostać wyłączone, spowolnione lub zastąpione prostszą wersją, gdy zależności są przeciążone albo niedostępne.
 
-`OperationalLever` reprezentuje takie przełączniki operacyjne. Przykładem może być wyłączenie rekomendacji, wyłączenie personalizacji, tryb read-only, ograniczenie kosztownych endpointów, redukcja concurrency do zależności, wyłączenie enrichmentów albo odrzucanie ruchu niskiego priorytetu. Takie mechanizmy powinny być przygotowane przed incydentem. Przełącznik awaryjny, którego nikt nigdy nie testował, jest tylko złudzeniem bezpieczeństwa.
+`EmergencyLever` i `EmergencyLeverRegistry` reprezentują takie przełączniki operacyjne. Przykładem może być wyłączenie rekomendacji, wyłączenie personalizacji, tryb read-only, ograniczenie kosztownych endpointów, redukcja concurrency do zależności, wyłączenie enrichmentów albo odrzucanie ruchu niskiego priorytetu. Takie mechanizmy powinny być przygotowane przed incydentem. Przełącznik awaryjny, którego nikt nigdy nie testował, jest tylko złudzeniem bezpieczeństwa.
 
 Najważniejsza zasada brzmi: zależności krytyczne i opcjonalne powinny być rozróżnione. Checkout może być krytyczny, rekomendacje zwykle nie. Logowanie może być krytyczne, enrichment profilu użytkownika zwykle nie. Gdy system zaczyna się degradować, powinien chronić najważniejszą funkcję, nawet kosztem ograniczenia mniej ważnych elementów doświadczenia użytkownika.
 
@@ -124,6 +167,6 @@ Metryki powinny być powiązane z decyzjami operacyjnymi. Jeżeli nie wiadomo, j
 
 System jest dobrze przygotowany do skalowania i awarii wtedy, gdy dla każdej krytycznej ścieżki można odpowiedzieć na kilka pytań. Jaki komponent stanie się pierwszym bottleneckiem przy rosnącym ruchu? Przy jakim RPS lub concurrency to nastąpi? Jaka metryka to potwierdzi? Co stanie się po przesunięciu tego limitu? Który komponent będzie następny? Jak system zachowa się przy awarii zależności? Czy requesty będą czekać bez końca, czy zadziałają timeouty? Czy retry pomogą, czy wywołają burzę? Czy circuit breaker odetnie chorą zależność? Czy istnieją przełączniki operacyjne pozwalające zachować najważniejszą funkcję?
 
-Przygotowane klasy Java są mapą tych pytań. Nie rozwiązują problemu same z siebie, ale pomagają nazwać właściwe obszary projektowania. `CapacityModel` przypomina, że capacity trzeba policzyć. `AutoscalingConfig` przypomina, że skalowanie wymaga właściwej metryki i limitów. `CachePolicy` przypomina, że cache wymaga TTL, eviction i ochrony przed stampede. `RateLimiter` przypomina, że system musi kontrolować wejściowy ruch. `TimeoutBudget`, `RetryPolicy` i `CircuitBreaker` przypominają, że zależności zdalne muszą mieć granice. `OperationalLever` przypomina, że incydenty wymagają prostych dźwigni. `LoadTestScenario` przypomina, że teoria musi zostać sprawdzona.
+Przygotowane klasy Java są mapą tych pytań. Nie rozwiązują problemu same z siebie, ale pomagają nazwać właściwe obszary projektowania. `CapacityCalculator` przypomina, że capacity trzeba policzyć. `CacheAsideService` i `TtlJitter` przypominają, że cache wymaga TTL, invalidacji i ochrony przed stampede. `RateLimiter` przypomina, że system musi kontrolować wejściowy ruch. `TimeoutConfig`, `RetryExecutor` i `CircuitBreaker` przypominają, że zależności zdalne muszą mieć granice. `EmergencyLever` przypomina, że incydenty wymagają prostych dźwigni. Scenariusze obciążeniowe znajdują się w sąsiednim katalogu `implementation` i przypominają, że teoria musi zostać sprawdzona.
 
 Najkrótsze kryterium dojrzałości brzmi: dla każdej krytycznej ścieżki systemu potrafimy powiedzieć, przy jakim obciążeniu pierwszy padnie konkretny komponent, dlaczego właśnie on, jak to zmierzymy, co zrobimy po przekroczeniu limitu oraz jak system zdegraduje się bez kaskadowej awarii. Bez tej odpowiedzi architektura może wyglądać nowocześnie, ale jej odporność pozostaje nieudowodniona.

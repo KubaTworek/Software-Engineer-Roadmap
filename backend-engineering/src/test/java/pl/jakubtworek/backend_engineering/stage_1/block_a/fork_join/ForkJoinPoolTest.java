@@ -1,64 +1,82 @@
 package pl.jakubtworek.backend_engineering.stage_1.block_a.fork_join;
 
 import org.junit.jupiter.api.Test;
-import pl.jakubtworek.backend_engineering.stage_1.block_a.fork_join.ArraySumTask;
-import pl.jakubtworek.backend_engineering.stage_1.block_a.fork_join.BlockingTaskManagedBlock;
-import pl.jakubtworek.backend_engineering.stage_1.block_a.fork_join.BlockingTaskNoManagedBlock;
 
+import java.util.Arrays;
 import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ForkJoinPoolTest {
 
     @Test
-    void cpuBoundTask_shouldComputeCorrectSum() {
-        int[] arr = new int[1_000_000];
-        for (int i = 0; i < arr.length; i++) arr[i] = 1;
-
-        ForkJoinPool pool = new ForkJoinPool(); // default parallelism ~ cores
-        long sum = pool.invoke(new ArraySumTask(arr, 0, arr.length));
-
-        assertEquals(arr.length, sum);
-        pool.shutdown();
+    void cpuBoundTaskShouldComputeCorrectSum() {
+        int[] values = new int[1_000_000];
+        Arrays.fill(values, 1);
+        ForkJoinPool pool = new ForkJoinPool();
+        try {
+            assertEquals(values.length, pool.invoke(new ArraySumTask(values, 0, values.length)));
+        } finally {
+            shutdown(pool);
+        }
     }
 
-    /**
-     * Demonstration test:
-     * Blocking tasks in ForkJoinPool without managedBlock can starve the pool.
-     *
-     * We use very small parallelism (1) to make starvation easy to observe.
-     * Test uses timeout to avoid hanging the build.
-     */
     @Test
-    void blockingWithoutManagedBlock_canStall() throws InterruptedException {
-        ForkJoinPool pool = new ForkJoinPool(1); // intentionally small
+    void shouldRejectInvalidArrayRange() {
+        int[] values = new int[10];
 
-        pool.execute(new BlockingTaskNoManagedBlock(0, 10, 200));
-
-        // If it completes quickly, ok — environment may be different.
-        // If it doesn't, we demonstrate stalling behavior.
-        boolean finished = pool.awaitQuiescence(1, TimeUnit.SECONDS);
-
-        pool.shutdownNow();
-
-        // We do NOT assert finished == false always (it can be flaky by nature).
-        // Instead we assert that it is isAllowed to stall:
-        assertTrue(true, "Demonstration test (may stall depending on environment)");
+        assertThrows(IllegalArgumentException.class,
+                () -> new ArraySumTask(values, -1, values.length));
+        assertThrows(IllegalArgumentException.class,
+                () -> new ArraySumTask(values, 5, 4));
+        assertThrows(IllegalArgumentException.class,
+                () -> new ArraySumTask(values, 0, values.length + 1));
     }
 
-    /**
-     * With managedBlock, ForkJoinPool can compensate for blocking workers.
-     * We still keep parallelism=1 to stress the scenario.
-     */
     @Test
-    void blockingWithManagedBlock_shouldMakeProgress() {
+    void unmanagedBlockingExampleShouldFinishAndReleasePool() {
         ForkJoinPool pool = new ForkJoinPool(1);
+        try {
+            Future<?> task = pool.submit(new BlockingTaskNoManagedBlock(0, 3, 5));
+            assertDoesNotThrow(() -> task.get(2, TimeUnit.SECONDS));
+        } finally {
+            shutdown(pool);
+        }
+    }
 
-        pool.invoke(new BlockingTaskManagedBlock(0, 8, 50));
+    @Test
+    void managedBlockingExampleShouldFinishAndReleasePool() {
+        ForkJoinPool pool = new ForkJoinPool(1);
+        try {
+            Future<?> task = pool.submit(new BlockingTaskManagedBlock(0, 3, 5));
+            assertDoesNotThrow(() -> task.get(2, TimeUnit.SECONDS));
+        } finally {
+            shutdown(pool);
+        }
+    }
 
-        pool.shutdown();
-        assertTrue(true, "ManagedBlock version should complete");
+    @Test
+    void blockingTasksShouldValidateConfiguration() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new BlockingTaskNoManagedBlock(-1, 1, 1));
+        assertThrows(IllegalArgumentException.class,
+                () -> new BlockingTaskManagedBlock(2, 1, 1));
+        assertThrows(IllegalArgumentException.class,
+                () -> new BlockingTaskManagedBlock(0, 1, -1));
+    }
+
+    private static void shutdown(ForkJoinPool pool) {
+        pool.shutdownNow();
+        try {
+            assertTrue(pool.awaitTermination(1, TimeUnit.SECONDS));
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("Interrupted while awaiting pool termination", exception);
+        }
     }
 }

@@ -14,13 +14,17 @@ import java.util.concurrent.ExecutorService;
  * - it does not manage queues
  * - it does not define rejection policies
  *
- * Its responsibility is only to submit tasks and wait
- * until all of them complete.
+ * Its responsibility is only to submit tasks and wait until all of them
+ * complete. The owner of the executor remains responsible for shutdown.
  */
 public class TaskProcessor {
 
     public void processTasks(ExecutorService executor, int tasks)
             throws InterruptedException {
+
+        if (tasks < 0) {
+            throw new IllegalArgumentException("tasks must not be negative");
+        }
 
         // Latch is used to wait until all submitted tasks finish execution.
         // Each task decrements the counter when it completes.
@@ -30,12 +34,12 @@ public class TaskProcessor {
         // The executor decides when and on which thread they run.
         for (int i = 0; i < tasks; i++) {
             executor.execute(() -> {
-
-                // Simulated workload executed by worker threads
-                simulateWork();
-
-                // Signal that one task has finished
-                latch.countDown();
+                try {
+                    simulateWork();
+                } finally {
+                    // Completion must be signalled even if task logic fails.
+                    latch.countDown();
+                }
             });
         }
 
@@ -43,10 +47,6 @@ public class TaskProcessor {
         // meaning all submitted tasks completed.
         latch.await();
 
-        // Initiates an orderly shutdown:
-        // - no new tasks are accepted
-        // - already submitted tasks are allowed to finish
-        executor.shutdown();
     }
 
     /**
@@ -61,8 +61,8 @@ public class TaskProcessor {
     private void simulateWork() {
         try {
             Thread.sleep(1);
-        } catch (InterruptedException ignored) {
-            // interruption is ignored in this experiment
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
         }
     }
 }

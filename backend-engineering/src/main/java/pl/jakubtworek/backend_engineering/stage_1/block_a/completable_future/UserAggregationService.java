@@ -1,129 +1,118 @@
 package pl.jakubtworek.backend_engineering.stage_1.block_a.completable_future;
 
-import java.util.concurrent.*;
+import java.time.Duration;
+import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
-public class UserAggregationService {
+/**
+ * Demonstrates composition of independent and dependent asynchronous calls.
+ *
+ * <p>The service deliberately returns {@link CompletableFuture} from its API.
+ * Blocking with {@code join()} belongs at an explicit application boundary,
+ * not in the middle of an asynchronous pipeline.</p>
+ */
+public final class UserAggregationService implements AutoCloseable {
 
-    // Fixed thread pool used to execute async service calls
-    private final ExecutorService executor =
-            Executors.newFixedThreadPool(3);
+    private final ExecutorService executor;
+    private final ServiceFetcher fetcher;
+    private final Duration timeout;
 
-    /**
-     * Runs three independent service calls in parallel and aggregates results.
-     *
-     * Key points in this example:
-     * - each supplyAsync() schedules work on the executor
-     * - allOf() waits until all futures complete
-     * - join() retrieves results after completion
-     */
-    public AggregatedResponse fetchAll(int userId) {
-
-        // async call fetching user data
-        CompletableFuture<User> userF =
-                CompletableFuture.supplyAsync(
-                        () -> ServiceFetcher.fetchUser(userId), executor);
-
-        // async call fetching orders
-        CompletableFuture<Orders> ordersF =
-                CompletableFuture.supplyAsync(
-                        () -> ServiceFetcher.fetchOrders(userId), executor);
-
-        // async call fetching payments
-        CompletableFuture<Payments> paymentsF =
-                CompletableFuture.supplyAsync(
-                        () -> ServiceFetcher.fetchPayments(userId), executor);
-
-        // wait for all futures to complete and then aggregate their results
-        return CompletableFuture.allOf(userF, ordersF, paymentsF)
-                .thenApply(v ->
-                        new AggregatedResponse(
-                                userF.join(),
-                                ordersF.join(),
-                                paymentsF.join()
-                        )
-                )
-                .join();
+    public UserAggregationService() {
+        this(Executors.newFixedThreadPool(3), new ServiceFetcher(), Duration.ofSeconds(1));
     }
 
+    public UserAggregationService(
+            ExecutorService executor,
+            ServiceFetcher fetcher,
+            Duration timeout
+    ) {
+        this.executor = Objects.requireNonNull(executor, "executor must not be null");
+        this.fetcher = Objects.requireNonNull(fetcher, "fetcher must not be null");
+        this.timeout = requirePositive(timeout);
+    }
 
-    /**
-     * Combines results step-by-step using thenCombine.
-     *
-     * In this example:
-     * - first combines user and orders
-     * - then combines that intermediate result with payments
-     */
-    public AggregatedResponse fetchWithThenCombine(int userId) {
+    /** Runs three independent calls concurrently and aggregates them with allOf. */
+    public CompletableFuture<AggregatedResponse> fetchAllAsync(int userId) {
+        CompletableFuture<User> userFuture =
+                CompletableFuture.supplyAsync(() -> fetcher.fetchUser(userId), executor);
+        CompletableFuture<Orders> ordersFuture =
+                CompletableFuture.supplyAsync(() -> fetcher.fetchOrders(userId), executor);
+        CompletableFuture<Payments> paymentsFuture =
+                CompletableFuture.supplyAsync(() -> fetcher.fetchPayments(userId), executor);
 
-        CompletableFuture<User> userF =
-                CompletableFuture.supplyAsync(
-                        () -> ServiceFetcher.fetchUser(userId), executor);
+        return CompletableFuture.allOf(userFuture, ordersFuture, paymentsFuture)
+                .thenApply(ignored -> new AggregatedResponse(
+                        userFuture.join(),
+                        ordersFuture.join(),
+                        paymentsFuture.join()
+                ));
+    }
 
-        CompletableFuture<Orders> ordersF =
-                CompletableFuture.supplyAsync(
-                        () -> ServiceFetcher.fetchOrders(userId), executor);
+    /** Combines independent results without untyped intermediate arrays. */
+    public CompletableFuture<AggregatedResponse> fetchWithThenCombineAsync(int userId) {
+        CompletableFuture<User> userFuture =
+                CompletableFuture.supplyAsync(() -> fetcher.fetchUser(userId), executor);
+        CompletableFuture<Orders> ordersFuture =
+                CompletableFuture.supplyAsync(() -> fetcher.fetchOrders(userId), executor);
+        CompletableFuture<Payments> paymentsFuture =
+                CompletableFuture.supplyAsync(() -> fetcher.fetchPayments(userId), executor);
 
-        CompletableFuture<Payments> paymentsF =
-                CompletableFuture.supplyAsync(
-                        () -> ServiceFetcher.fetchPayments(userId), executor);
-
-        return userF
-                // combine user + orders
-                .thenCombine(ordersF,
-                        (user, orders) -> new Object[]{user, orders})
-
-                // combine previous result with payments
-                .thenCombine(paymentsF,
-                        (partial, payments) ->
-                                new AggregatedResponse(
-                                        (User) partial[0],
-                                        (Orders) partial[1],
-                                        payments))
-                .join();
+        return userFuture
+                .thenCombine(ordersFuture, UserWithOrders::new)
+                .thenCombine(paymentsFuture, (partial, payments) ->
+                        new AggregatedResponse(partial.user(), partial.orders(), payments));
     }
 
     /**
-     * Demonstrates timeout handling with fallback value.
-     *
-     * In this example:
-     * - fetchSlowService() may take longer than expected
-     * - completeOnTimeout provides default value if timeout occurs
-     * - exceptionally handles unexpected failures
+     * Demonstrates thenCompose for a dependent call: orders cannot be requested
+     * until the user lookup has completed successfully.
      */
-    public String fetchWithTimeoutFallback() {
-
+    public CompletableFuture<Orders> fetchOrdersForExistingUserAsync(int userId) {
         return CompletableFuture
-                .supplyAsync(ServiceFetcher::fetchSlowService, executor)
-
-                // if execution takes longer than 1 second, return fallback
-                .completeOnTimeout("fallback", 1, TimeUnit.SECONDS)
-
-                // handle any other exception
-                .exceptionally(ex -> "fallback-error")
-
-                .join();
+                .supplyAsync(() -> fetcher.fetchUser(userId), executor)
+                .thenCompose(user -> CompletableFuture.supplyAsync(
+                        () -> fetcher.fetchOrders(user.id()), executor));
     }
 
-    /**
-     * Demonstrates simple exception recovery.
-     *
-     * In this example:
-     * - fetchFailingService() throws an exception
-     * - exceptionally converts failure into a normal result
-     */
-    public String fetchWithErrorHandling() {
-
+    /** Converts a slow response into a normal fallback value. */
+    public CompletableFuture<String> fetchWithTimeoutFallbackAsync() {
         return CompletableFuture
-                .supplyAsync(ServiceFetcher::fetchFailingService, executor)
-
-                // convert exception into fallback value
-                .exceptionally(ex -> "recovered")
-
-                .join();
+                .supplyAsync(fetcher::fetchSlowService, executor)
+                .completeOnTimeout("fallback", timeout.toMillis(), TimeUnit.MILLISECONDS)
+                .exceptionally(failure -> "fallback-error");
     }
 
-    // shutdown executor after finishing async operations
-    public void shutdown() {
+    /** Converts a failed downstream call into an explicit recovery value. */
+    public CompletableFuture<String> fetchWithErrorHandlingAsync() {
+        return CompletableFuture
+                .supplyAsync(fetcher::fetchFailingService, executor)
+                .exceptionally(failure -> "recovered");
+    }
+
+    @Override
+    public void close() {
         executor.shutdown();
+        try {
+            if (!executor.awaitTermination(1, TimeUnit.SECONDS)) {
+                executor.shutdownNow();
+            }
+        } catch (InterruptedException exception) {
+            executor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private static Duration requirePositive(Duration duration) {
+        Objects.requireNonNull(duration, "timeout must not be null");
+        if (duration.isZero() || duration.isNegative()) {
+            throw new IllegalArgumentException("timeout must be positive");
+        }
+        return duration;
+    }
+
+    private record UserWithOrders(User user, Orders orders) {
     }
 }

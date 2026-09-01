@@ -18,5 +18,9 @@ public record RunbookStep(
         if (instruction == null || instruction.isBlank()) {
             throw new IllegalArgumentException("instruction must not be blank");
         }
+
+        if (instruction.indexOf('\n') >= 0 || instruction.indexOf('\r') >= 0) {
+            throw new IllegalArgumentException("instruction must be a single line");
+        }
     }
 }

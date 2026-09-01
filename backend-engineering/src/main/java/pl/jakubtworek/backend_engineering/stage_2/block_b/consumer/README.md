@@ -1,4 +1,36 @@
-# Konsument zdarzeń: idempotencja, deduplikacja, retry i odtwarzanie
+# consumer
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `praktyka-produkcyjna`
+> - **Uczy:** consumer.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „consumer” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=DefaultIdempotentEventProcessorTest,KafkaEventConsumerTest,RetryConfigurationTest" test`
+> - **Role klas:** `IdempotentEventProcessor` = `correct`; `DeadLetterPublisher` = `production-boundary`, `KafkaDeadLetterPublisher` = `production-boundary`, `KafkaEventConsumer` = `production-boundary`.
+> - **Granica:** Laboratorium pokazuje kontrakt i failure modes; nie zastępuje pełnego testu end-to-end ani operacyjnej konfiguracji środowiska.
+<!-- material-card:end -->
+
+## Konsument zdarzeń: idempotencja, deduplikacja, retry i odtwarzanie
+
+
+
+## Jak czytać kod
+
+Przepływ zaczyna się w `KafkaEventConsumer`, który pobiera raport z
+`RetryingEventProcessor`. Wynik `RETRIES_EXHAUSTED` oznacza, że błąd był uznany
+za przejściowy, lecz nie ustąpił w budżecie. `NON_RETRYABLE_FAILURE` oznacza
+poison message albo nieznany błąd, którego nie wolno bezrefleksyjnie ponawiać.
+Oba wyniki trafiają do DLQ z innym kodem i rzeczywistą liczbą prób, a offset
+jest zatwierdzany dopiero po udanej publikacji do DLQ.
+
+`RetrySleeper` oddziela politykę retry od blokującego mechanizmu oczekiwania.
+Domyślna implementacja śpi w bieżącym wątku wyłącznie dla prostoty laboratorium.
+W produkcyjnym konsumencie dłuższe opóźnienia lepiej realizować retry topicami
+albo schedulerem, aby nie blokować poll loopa i nie wywoływać rebalansów.
+
+Niejednoznaczny wynik wywołania synchronicznego i fencing tokeny są rozwinięte
+w `../failure_semantics/README.md`.
 
 W architekturze event-driven konsument jest elementem, który reaguje na zdarzenia opublikowane przez inne części systemu. W przykładowym systemie e-commerce rolę konsumentów pełnią między innymi `Payment Service` oraz `Shipping Service`. Serwis płatności może reagować na zdarzenie `OrderPlaced`, aby rozpocząć autoryzację płatności, natomiast serwis wysyłki może reagować na `PaymentAuthorized`, aby rozpocząć proces realizacji zamówienia. Na poziomie biznesowym wygląda to jak prosty przepływ, ale technicznie wymaga bardzo ostrożnego projektowania, ponieważ komunikacja przez broker wiadomości nie daje takich samych gwarancji jak lokalne wywołanie metody czy pojedyncza transakcja bazodanowa.
 

@@ -2,6 +2,8 @@ package pl.jakubtworek.backend_engineering.stage_1.block_c.mvc;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
@@ -15,6 +17,10 @@ import org.springframework.web.servlet.HandlerInterceptor;
 @Component
 public class RequestLoggingInterceptor implements HandlerInterceptor {
 
+    private static final Logger log = LoggerFactory.getLogger(RequestLoggingInterceptor.class);
+    private static final String START_NANOS_ATTRIBUTE =
+            RequestLoggingInterceptor.class.getName() + ".startNanos";
+
     /**
      * Executed before controller method.
      *
@@ -26,9 +32,9 @@ public class RequestLoggingInterceptor implements HandlerInterceptor {
             HttpServletResponse response,
             Object handler
     ) {
-        System.out.println(
-                "Incoming request: " + request.getMethod() + " " + request.getRequestURI()
-        );
+        request.setAttribute(START_NANOS_ATTRIBUTE, System.nanoTime());
+        log.debug("HTTP request started method={} path={}",
+                request.getMethod(), request.getRequestURI());
 
         return true;
     }
@@ -46,7 +52,8 @@ public class RequestLoggingInterceptor implements HandlerInterceptor {
             Object handler,
             org.springframework.web.servlet.ModelAndView modelAndView
     ) {
-        System.out.println("Controller executed successfully");
+        // Response body conversion can still fail after postHandle, so the final
+        // status and duration are logged in afterCompletion.
     }
 
     /**
@@ -61,6 +68,18 @@ public class RequestLoggingInterceptor implements HandlerInterceptor {
             Object handler,
             Exception exception
     ) {
-        System.out.println("Request completed with status: " + response.getStatus());
+        Object start = request.getAttribute(START_NANOS_ATTRIBUTE);
+        long durationMillis = start instanceof Long startNanos
+                ? (System.nanoTime() - startNanos) / 1_000_000
+                : -1;
+        String outcome = response.getStatus() >= 500
+                ? "server_error"
+                : response.getStatus() >= 400 ? "client_error" : "success";
+        log.info("HTTP request completed method={} path={} status={} durationMs={} outcome={}",
+                request.getMethod(),
+                request.getRequestURI(),
+                response.getStatus(),
+                durationMillis,
+                exception == null ? outcome : "unhandled_error");
     }
 }

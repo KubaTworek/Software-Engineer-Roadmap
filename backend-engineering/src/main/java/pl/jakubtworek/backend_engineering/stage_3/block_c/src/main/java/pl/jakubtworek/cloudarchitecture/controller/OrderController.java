@@ -1,10 +1,10 @@
-package pl.jakubtworek.backend_engineering.stage_3.block_c.src.main.java.pl.jakubtworek.cloudarchitecture.controller;
+package pl.jakubtworek.cloudarchitecture.controller;
 
-import pl.jakubtworek.backend_engineering.stage_3.block_c.src.main.java.pl.jakubtworek.cloudarchitecture.dto.CreateOrderRequest;
-import pl.jakubtworek.backend_engineering.stage_3.block_c.src.main.java.pl.jakubtworek.cloudarchitecture.dto.OrderCreatedResponse;
-import pl.jakubtworek.backend_engineering.stage_3.block_c.src.main.java.pl.jakubtworek.cloudarchitecture.service.IdempotencyService;
-import pl.jakubtworek.backend_engineering.stage_3.block_c.src.main.java.pl.jakubtworek.cloudarchitecture.service.OrderService;
-import pl.jakubtworek.backend_engineering.stage_3.block_c.src.main.java.pl.jakubtworek.cloudarchitecture.service.RateLimiterService;
+import pl.jakubtworek.cloudarchitecture.dto.CreateOrderRequest;
+import pl.jakubtworek.cloudarchitecture.dto.OrderCreatedResponse;
+import pl.jakubtworek.cloudarchitecture.service.IdempotencyService;
+import pl.jakubtworek.cloudarchitecture.service.OrderService;
+import pl.jakubtworek.cloudarchitecture.service.RateLimiterService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -42,6 +42,7 @@ public class OrderController {
         rateLimiterService.checkLimit(userId);
         OrderCreatedResponse response = idempotencyService.executeOnce(
                 idempotencyKey,
+                idempotencyService.fingerprint(request),
                 OrderCreatedResponse.class,
                 () -> orderService.createOrder(request)
         );

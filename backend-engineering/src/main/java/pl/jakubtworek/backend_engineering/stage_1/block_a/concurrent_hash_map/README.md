@@ -1,3 +1,16 @@
+# ConcurrentHashMap i atomowe ładowanie cache
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** ConcurrentHashMap i atomowe ładowanie cache.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „ConcurrentHashMap i atomowe ładowanie cache” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=ConcurrentHashMapTest" test`
+> - **Role klas:** `BrokenCache` = `naive`; `AtomicCache` = `correct`.
+> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+<!-- material-card:end -->
+
 Kolekcje współbieżne w Javie
 ============================
 

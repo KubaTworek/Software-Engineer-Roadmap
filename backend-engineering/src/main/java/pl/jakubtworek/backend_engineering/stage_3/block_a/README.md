@@ -1,4 +1,95 @@
-# System Design: skalowanie i odporność
+# Stage 3A — system design i systemy rozproszone
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `temat-zaawansowany`
+> - **Uczy:** Stage 3A — system design i systemy rozproszone.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „Stage 3A — system design i systemy rozproszone” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=CacheAsideAndCircuitBreakerTest,CapacityAndDegradationTest,ConsistentHashAndIdGenerationTest" test`
+> - **Role klas:** `NaiveCounterStore` = `naive`; `BoundedRequestExecutor` = `correct`, `FencedRegister` = `correct`, `IdempotentCounterStore` = `correct` (+1); `DeterministicRetrySimulation` = `simulation`, `InMemoryLeaseCoordinator` = `simulation`, `InMemoryTtlCache` = `simulation` (+1).
+> - **Granica:** Model weryfikuje nazwany niezmiennik; nie implementuje produkcyjnego protokołu rozproszonego ani infrastruktury dostawcy.
+<!-- material-card:end -->
+
+## System Design: skalowanie i odporność
+
+
+
+## Mapa bloku
+
+Blok prowadzi od modelu pojemności do kodu i sygnałów operacyjnych. Katalogi nie są osobnymi modułami Maven — są częścią głównego projektu `backend-engineering`, dlatego testy uruchamia się z jego katalogu przez `mvn test`.
+
+| Katalog | Rola | Najważniejsze zagadnienia |
+| --- | --- | --- |
+| `concepts` | małe, izolowane modele mechanizmów | capacity, cache-aside, koordynacja rozproszona, historia operacji, safety/liveness, liniowalność, kolejki, rate limiting, timeout, retry, circuit breaker i degradacja |
+| `implementation` | złożenie mechanizmów w przykładową ścieżkę aplikacyjną | API produktu, klient zdalny, overload control, izolacja tenantów i cykl życia danych |
+| `metrics` | pomiar hipotez architektonicznych | bottlenecki, Redis, retry amplification, kolejki, alerty i wybór strategii skalowania |
+
+Granica między `concepts` i `implementation` jest częścią przykładu. `concepts` jest
+jedynym kanonicznym miejscem dla kontraktów i izolowanych mechanizmów (cache, limiter,
+kolejka, timeout, retry, circuit breaker i degradacja). `implementation` nie kopiuje
+tych klas: importuje je i pokazuje pełną ścieżkę aplikacyjną. Dzięki temu poprawka
+algorytmu albo doprecyzowanie gwarancji nie musi być synchronizowane w dwóch pakietach.
+
+Kanoniczne złożenie wywołania zdalnego ma postać:
+
+```text
+fallback(circuit-breaker(retry(timeout(dependency-call))))
+```
+
+Timeout ogranicza każdą fizyczną próbę, retry działa tylko dla jawnie sklasyfikowanych
+błędów, circuit breaker ocenia wynik jednego logicznego żądania, a fallback uruchamia
+się dopiero po końcowej porażce lub odrzuceniu fail-fast. Szczegóły i kontrprzykład
+retry umieszczonego na zewnątrz circuit breakera opisuje `implementation/README.md`.
+Pełny przepływ kontroli przeciążenia znajduje się w
+[`implementation/overload`](implementation/overload/README.md): łączy ograniczoną
+kolejkę, deadline, retry budget, osobne bulkheady i kooperacyjne anulowanie.
+Warstwę produkcyjnego SaaS rozwija
+[`implementation/saas`](implementation/saas/README.md): pokazuje tenant-scoped dane,
+cache i audyt, per-tenant quota, bezpieczne wymiary metryk oraz idempotentny przepływ
+anonimizacji przez cache, eventy i ochronę odtworzeń z backupu.
+Przejście od mikrobenchmarku do pomiaru usługi opisuje
+[`implementation/tests`](implementation/tests/README.md): łączy hipotezę capacity,
+open/closed workload, korektę coordinated omission, p95/p99, guardrails, degradację i
+ocenę skuteczności autoskalowania.
+
+Zalecana kolejność pracy:
+
+1. Policz przewidywane limity w `capacity`.
+2. Przejdź przez mechanizmy ochronne w `cache`, `coordination`, `ratelimit`, `queue` i `resilience`.
+3. Zobacz ich złożenie w `implementation`.
+4. Sprawdź, które metryki potwierdzają lub obalają założenia.
+5. Uruchom testy i dopiero potem interpretuj wyniki przykładowego load testu.
+
+Testy obejmują również granice, które często umykają w prostych przykładach: `NaN`, przepełnienia liczników, dokładny moment wygaśnięcia TTL, współbieżny cache miss, pojedynczy trial HALF_OPEN, retry po częściowej awarii, spóźnionego właściciela lease'a, cofnięcie zegara generatora ID i zachowanie całkowitego czasu scenariusza obciążeniowego.
+
+## Jak interpretować przykłady
+
+Kod w tym bloku działa na trzech poziomach, których nie należy ze sobą mylić:
+
+| Poziom | Co daje | Czego nie dowodzi |
+| --- | --- | --- |
+| model pojemności | rząd wielkości i kandydat na pierwszy bottleneck | zachowania kolejek, ogona latencji i limitu konkretnej infrastruktury |
+| mechanizm w pamięci | pokazuje algorytm i jego granice w jednym procesie | gwarancji między replikami, po restarcie ani atomowości z efektem biznesowym |
+| scenariusz obciążeniowy | porządkuje hipotezę i obserwowane sygnały | wyniku produkcyjnego bez reprezentatywnych danych, środowiska i profilu ruchu |
+
+Wzory są modelem pierwszego rzędu. Zakładają stabilny koszt requestu, niezależne zasoby i brak nieliniowego kolejkowania. Wartość `Infinity` oznacza, że dana ścieżka nie używa modelowanego zasobu, a nie że zasób ma nieskończoną pojemność. Wynik należy traktować jako hipotezę do sprawdzenia step testem, percentylami latencji i metrykami nasycenia.
+
+Lokalne implementacje cache, token bucket, circuit breakera i deduplikacji służą do pokazania mechaniki. W systemie wieloinstancyjnym potrzebne są współdzielony stan, atomowe operacje, trwałość, kontrola czasu oraz telemetryczny kontrakt. Szczególnie `IdempotentQueueWorker` deduplikuje tylko w ramach jednej JVM; pełna poprawność wymaga skoordynowania znacznika, efektu biznesowego i acknowledgementu wiadomości.
+
+Pakiet [`concepts/coordination`](concepts/coordination/README.md) pokazuje, dlaczego
+distributed lock nie jest jeszcze gwarancją poprawności. Lease ogranicza czas
+własności, fencing token porządkuje kolejne termy, a dopiero zasób docelowy
+odrzucający stary token chroni przed procesem wznowionym po pauzie. Ten sam pakiet
+zawiera leader election, wpływ clock skew, Snowflake-style ID oraz consistent
+hashing z pomiarem zakresu kluczy przenoszonych po zmianie klastra.
+
+Pakiet [`concepts/correctness`](concepts/correctness/README.md) przenosi uwagę z
+pojedynczej asercji na historię całego wykonania. Deterministyczny scheduler,
+kontrolowany zegar i powtarzalny plan awarii pokazują timeout po commit, retry oraz
+różnicę między safety i liveness. Mały checker rejestru demonstruje również, dlaczego
+liniowalność ocenia się przez istnienie legalnego uporządkowania historii, a nie
+wyłącznie przez wartość końcową.
 
 ## Streszczenie zarządcze
 

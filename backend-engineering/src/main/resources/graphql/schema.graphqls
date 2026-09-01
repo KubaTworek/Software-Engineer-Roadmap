@@ -1,0 +1,11 @@
+type Query {
+    product(id: ID!): Product
+}
+
+type Product {
+    id: ID!
+    ownerId: ID!
+    name: String!
+    internalMarginPercent: Int!
+    version: Int!
+}

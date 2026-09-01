@@ -8,6 +8,9 @@ public final class ReusableBuffer {
     private int length;
 
     public ReusableBuffer(int capacity) {
+        if (capacity <= 0) {
+            throw new IllegalArgumentException("capacity must be greater than zero");
+        }
         // This byte array represents the expensive payload.
         // Pooling this object keeps both the wrapper and internal array alive.
         this.data = new byte[capacity];

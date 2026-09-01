@@ -2,44 +2,38 @@ package pl.jakubtworek.backend_engineering.stage_2.block_a.use_case.infrastructu
 
 import pl.jakubtworek.backend_engineering.stage_2.block_a.use_case.application.port.DomainEventPublisher;
 import pl.jakubtworek.backend_engineering.stage_2.block_a.use_case.domain.event.DomainEvent;
-import pl.jakubtworek.backend_engineering.stage_2.block_a.use_case.domain.event.OrderPlacedEvent;
-
-import java.time.Instant;
-import java.util.UUID;
+import pl.jakubtworek.backend_engineering.stage_2.block_a.use_case.integration.event.DomainEventToIntegrationEventMapper;
+import pl.jakubtworek.backend_engineering.stage_2.block_a.use_case.integration.event.IntegrationEvent;
 
 // Domain event publisher implemented with the transactional outbox pattern.
 // Instead of sending immediately to Kafka, it stores the event in the outbox table.
 public final class OutboxEventPublisher implements DomainEventPublisher {
 
     private final OutboxMessageRepository outboxRepository;
-    private final DomainEventSerializer serializer;
+    private final DomainEventToIntegrationEventMapper eventMapper;
+    private final IntegrationEventSerializer serializer;
 
     public OutboxEventPublisher(
             OutboxMessageRepository outboxRepository,
-            DomainEventSerializer serializer
+            DomainEventToIntegrationEventMapper eventMapper,
+            IntegrationEventSerializer serializer
     ) {
         this.outboxRepository = outboxRepository;
+        this.eventMapper = eventMapper;
         this.serializer = serializer;
     }
 
     @Override
     public void publish(DomainEvent event) {
+        IntegrationEvent integrationEvent = eventMapper.map(event);
         OutboxMessage message = new OutboxMessage(
-                UUID.randomUUID().toString(),
-                extractAggregateId(event),
-                event.eventType(),
-                serializer.serialize(event),
-                Instant.now()
+                integrationEvent.messageId(),
+                integrationEvent.aggregateId(),
+                integrationEvent.eventType(),
+                serializer.serialize(integrationEvent),
+                integrationEvent.occurredAt()
         );
 
         outboxRepository.save(message);
-    }
-
-    private String extractAggregateId(DomainEvent event) {
-        if (event instanceof OrderPlacedEvent orderPlaced) {
-            return orderPlaced.orderId().value();
-        }
-
-        throw new IllegalArgumentException("Unsupported event type: " + event.eventType());
     }
 }

@@ -1,22 +1,118 @@
-Przerywanie wątków i kooperacyjne anulowanie zadań w Javie
---------------------------------------------------
+# cancel
 
-W systemach wielowątkowych jednym z kluczowych zagadnień jest **bezpieczne zatrzymywanie zadań wykonywanych w tle**. W Javie standardowym mechanizmem realizującym ten cel jest **interruption**, czyli sygnał przerwania wątku. Mechanizm ten został zaprojektowany jako sposób umożliwiający zakończenie pracy wątku w sposób kontrolowany, bez ryzyka naruszenia spójności danych lub pozostawienia zasobów w niepoprawnym stanie.
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** cancel.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „cancel” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=CancelTest" test`
+> - **Role klas:** brak klasy-kontrprzykładu; pozostałe typy są minimalnymi modelami pojęć opisanych niżej.
+> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+<!-- material-card:end -->
 
-Istotne jest zrozumienie, że wywołanie `Thread.interrupt()` **nie zatrzymuje wątku natychmiast**. Metoda ta jedynie ustawia wewnętrzną flagę przerwania w obiekcie wątku. Sam wątek musi następnie zdecydować, w jaki sposób zareaguje na ten sygnał. W praktyce oznacza to, że poprawnie zaprojektowany kod wielowątkowy powinien **okresowo sprawdzać stan przerwania i w odpowiednim momencie zakończyć swoje działanie**. Taki model określa się jako **kooperacyjne anulowanie zadań (cooperative cancellation)**.
+## Kooperacyjne anulowanie zadań
 
-Każdy wątek w Javie posiada **wewnętrzną flagę przerwania**, która przechowuje informację o tym, czy został wysłany sygnał anulowania. Stan tej flagi można sprawdzić poprzez metodę `Thread.currentThread().isInterrupted()`. W przeciwieństwie do metody `Thread.interrupted()`, która dodatkowo czyści flagę, `isInterrupted()` pozwala jedynie odczytać jej stan. W większości implementacji stosuje się właśnie tę metodę, ponieważ pozwala zachować informację o przerwaniu w dalszym przebiegu programu.
 
-Mechanizm interruption jest szczególnie istotny w kontekście operacji blokujących. Wiele metod w standardowej bibliotece Javy --- takich jak `Thread.sleep()`, `Object.wait()` czy `Thread.join()` --- reaguje na przerwanie poprzez zgłoszenie wyjątku `InterruptedException`. Jest to sygnał informujący, że operacja blokująca została przerwana i wątek powinien rozważyć zakończenie pracy.
 
-Istnieje przy tym istotna właściwość tego mechanizmu: **w momencie rzucenia `InterruptedException` flaga przerwania zostaje wyczyszczona**. Oznacza to, że informacja o przerwaniu może zostać utracona, jeśli wyjątek zostanie przechwycony i zignorowany. Z tego powodu w wielu implementacjach stosuje się praktykę **ponownego ustawienia flagi przerwania** poprzez wywołanie `Thread.currentThread().interrupt()`. Dzięki temu informacja o przerwaniu pozostaje dostępna dla wyższych warstw systemu, które mogą podjąć decyzję o dalszym postępowaniu.
+## Cel przykładu
 
-Kooperacyjne anulowanie polega więc na tym, że zadanie wykonujące pracę w pętli **regularnie sprawdza stan przerwania** lub reaguje na `InterruptedException`. W momencie wykrycia sygnału anulowania wątek powinien zakończyć swoje działanie w sposób uporządkowany. Może to obejmować zamknięcie zasobów, zapisanie wyników pośrednich lub zwolnienie blokad synchronizacyjnych. Dzięki temu system pozostaje w stanie spójnym nawet wtedy, gdy praca zostaje przerwana w trakcie wykonywania.
+Ten pakiet pokazuje, że `Thread.interrupt()` nie zatrzymuje wątku siłowo. Jest sygnałem anulowania, na który kod zadania musi świadomie odpowiedzieć.
 
-Poprawna obsługa interruption ma szczególne znaczenie w aplikacjach wykorzystujących **pule wątków**, takie jak `ExecutorService`. W takich środowiskach zadania są wykonywane przez współdzielone wątki zarządzane przez framework. Anulowanie zadania odbywa się zazwyczaj poprzez metodę `Future.cancel(true)`, która wysyła sygnał przerwania do wątku wykonującego zadanie. Jeżeli kod zadania nie reaguje na interruption, wątek może kontynuować pracę mimo próby anulowania, co prowadzi do problemów z zarządzaniem cyklem życia aplikacji.
+Porównaj:
 
-Z tego powodu projektując kod wielowątkowy należy unikać kilku typowych błędów. Jednym z nich jest **ignorowanie `InterruptedException`**, które skutkuje utratą informacji o przerwaniu. Innym problemem jest wykonywanie długotrwałych operacji w pętli bez żadnych punktów sprawdzania stanu przerwania. W takich sytuacjach zadanie staje się praktycznie niemożliwe do anulowania, co może blokować proces zamykania systemu lub powodować niekontrolowane zużycie zasobów.
+- `CancellableTask` — kończy pracę po przerwaniu i zachowuje informację o przerwaniu,
+- `BadCancellableTask` — połyka `InterruptedException`, przez co traci sygnał i działa bez końca,
+- `CancelTest` — deterministycznie sprawdza obydwa zachowania bez pozostawiania niedaemonowego wątku.
 
-Warto również zauważyć, że Java celowo nie oferuje bezpiecznego mechanizmu **siłowego zatrzymywania wątków**. Historycznie istniały metody takie jak `Thread.stop()`, jednak zostały one wycofane, ponieważ mogły przerwać wątek w środku sekcji krytycznej, pozostawiając dane w niespójnym stanie lub blokady w niepoprawnej konfiguracji. Mechanizm interruption został zaprojektowany jako bezpieczna alternatywa, która wymaga współpracy kodu aplikacji, ale pozwala zachować kontrolę nad stanem systemu.
+## Jak działa przerwanie
 
-Podsumowując, interruption stanowi fundament zarządzania cyklem życia zadań w Javie. Jego poprawne wykorzystanie pozwala budować systemy wielowątkowe, które potrafią reagować na sygnały anulowania, zwalniać zasoby w kontrolowany sposób i współpracować z infrastrukturą zarządzającą wykonaniem zadań. W praktyce oznacza to, że każde zadanie działające w osobnym wątku powinno być projektowane z myślą o możliwości przerwania i zakończenia pracy w przewidywalnym momencie.
+Każdy wątek ma flagę przerwania. Wywołanie:
+
+```java
+worker.interrupt();
+```
+
+ustawia tę flagę. Nie gwarantuje natychmiastowego zakończenia pracy. Zadanie powinno:
+
+1. okresowo sprawdzać `Thread.currentThread().isInterrupted()`, albo
+2. korzystać z metod blokujących reagujących przez `InterruptedException`.
+
+Do takich metod należą m.in. `Thread.sleep`, `Object.wait`, `Thread.join` oraz blokujące operacje kolejek z `java.util.concurrent`.
+
+## `isInterrupted()` a `interrupted()`
+
+- `Thread.currentThread().isInterrupted()` odczytuje flagę bez jej czyszczenia,
+- `Thread.interrupted()` odczytuje i czyści flagę bieżącego wątku.
+
+Przypadkowe użycie `Thread.interrupted()` może sprawić, że dalszy kod nie zobaczy żądania anulowania.
+
+## Dlaczego przywracamy flagę
+
+Gdy metoda blokująca rzuca `InterruptedException`, flaga przerwania zostaje wyczyszczona. Jeśli metoda nie może przekazać wyjątku wyżej, typowym rozwiązaniem jest jej przywrócenie:
+
+```java
+try {
+    queue.take();
+} catch (InterruptedException exception) {
+    Thread.currentThread().interrupt();
+    return;
+}
+```
+
+Dzięki temu wyższa warstwa nadal może rozpoznać, że praca została anulowana. Jeżeli sygnatura metody na to pozwala, często lepiej przekazać `InterruptedException` wyżej zamiast podejmować lokalną decyzję.
+
+## `Future.cancel(true)`
+
+W przypadku zadania uruchomionego przez `ExecutorService` wywołanie:
+
+```java
+future.cancel(true);
+```
+
+próbuje przerwać wątek wykonujący zadanie. Parametr `true` nie oznacza „zatrzymaj na pewno”. Zadanie nadal musi współpracować z mechanizmem interruption.
+
+Samo anulowanie `Future` oznacza również, że wynik nie będzie już dostępny przez `get()`. Nie jest to dowód, że kod zadania faktycznie zakończył wykonywanie.
+
+## Sprzątanie zasobów
+
+Zadanie powinno opuszczać pracę przez kontrolowaną ścieżkę i zwalniać zasoby w `finally` albo przez `try-with-resources`:
+
+```java
+try (Resource resource = openResource()) {
+    while (!Thread.currentThread().isInterrupted()) {
+        processNextItem(resource);
+    }
+}
+```
+
+Nie należy używać przestarzałego `Thread.stop()`. Może ono przerwać kod w środku sekcji krytycznej i pozostawić współdzielony stan w niespójnej postaci.
+
+## Typowe błędy
+
+- pusty `catch (InterruptedException ignored)`,
+- długa pętla obliczeniowa bez punktów sprawdzania flagi,
+- uznanie `Future.isCancelled()` za dowód zakończenia zadania,
+- wywołanie `shutdownNow()` i założenie, że wszystkie zadania już się zatrzymały,
+- czyszczenie flagi przez `Thread.interrupted()` bez świadomego powodu,
+- logowanie przerwania i kontynuowanie tej samej pracy.
+
+## Jak uruchomić test
+
+Z katalogu `backend-engineering`:
+
+```shell
+mvn --batch-mode --no-transfer-progress -Dtest=CancelTest test
+```
+
+Test wadliwego zadania używa wątku daemon. Jest to wyłącznie zabezpieczenie testu: celowo błędne zadanie nie oferuje poprawnej drogi zakończenia i nie może blokować zamknięcia JVM testowej.
+
+## Kryteria ukończenia
+
+Po przejściu przykładu powinieneś umieć:
+
+- wyjaśnić, dlaczego interruption jest mechanizmem kooperacyjnym,
+- wskazać różnicę między `isInterrupted()` i `interrupted()`,
+- poprawnie obsłużyć `InterruptedException`,
+- wyjaśnić ograniczenia `Future.cancel(true)` i `shutdownNow()`,
+- zaprojektować test anulowania, który nie pozostawia wiszących wątków.

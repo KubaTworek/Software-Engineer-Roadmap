@@ -1,3 +1,16 @@
+# Widoczność pamięci i happens-before
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** Widoczność pamięci i happens-before.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „Widoczność pamięci i happens-before” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=VisibilityExampleTest" test`
+> - **Role klas:** brak klasy-kontrprzykładu; pozostałe typy są minimalnymi modelami pojęć opisanych niżej.
+> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+<!-- material-card:end -->
+
 Współdzielenie stanu i widoczność pamięci w programach wielowątkowych (Java)
 ==================================================
 

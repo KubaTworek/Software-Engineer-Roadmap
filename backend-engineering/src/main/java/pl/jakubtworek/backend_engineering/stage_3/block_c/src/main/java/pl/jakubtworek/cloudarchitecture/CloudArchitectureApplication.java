@@ -1,7 +1,11 @@
-package pl.jakubtworek.backend_engineering.stage_3.block_c.src.main.java.pl.jakubtworek.cloudarchitecture;
+package pl.jakubtworek.cloudarchitecture;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableScheduling;
+import org.springframework.context.annotation.Bean;
+
+import java.time.Clock;
 
 /**
  * Main Spring Boot entry point.
@@ -11,7 +15,14 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * stop, or replace instances at any time.
  */
 @SpringBootApplication
+@EnableScheduling
 public class CloudArchitectureApplication {
+    /** Shared UTC clock keeps time-dependent domain code explicit and testable. */
+    @Bean
+    Clock applicationClock() {
+        return Clock.systemUTC();
+    }
+
     public static void main(String[] args) {
         SpringApplication.run(CloudArchitectureApplication.class, args);
     }

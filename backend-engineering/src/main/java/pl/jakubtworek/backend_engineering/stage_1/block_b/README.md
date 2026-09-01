@@ -1,4 +1,19 @@
-# Wydajność aplikacji Java — teoria, diagnostyka i praktyczne zasady optymalizacji
+# Stage 1B — wydajność JVM i metodologia pomiaru
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** Stage 1B — wydajność JVM i metodologia pomiaru.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „Stage 1B — wydajność JVM i metodologia pomiaru” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=CollectionBenchmarkCorrectnessTest,JmhConfigurationTest,JmhSmokeTest" test`
+> - **Role klas:** `NaiveBenchmark` = `naive`; `AtomicCounter` = `correct`; `BimorphicCallSiteDemo` = `simulation`, `DirectCallDemo` = `simulation`, `HeapVsStackDemo` = `simulation` (+5).
+> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+<!-- material-card:end -->
+
+## Wydajność aplikacji Java — teoria, diagnostyka i praktyczne zasady optymalizacji
+
+
 
 ## Podsumowanie wykonawcze
 
@@ -161,3 +176,67 @@ Wydajność aplikacji Java jest efektem świadomego projektowania, pomiaru i wer
 Najpierw należy mierzyć. Potem ustalić, czy problem dotyczy CPU, GC, alokacji, blokad, I/O, bazy danych czy architektury. Następnie warto optymalizować algorytmy, struktury danych i przepływ pracy. Dopiero na końcu należy stroić JVM, jeśli profil i metryki wskazują, że to rzeczywiście właściwy kierunek. Zmiana z O(n²) na O(n log n), ograniczenie niepotrzebnych alokacji albo usunięcie zbędnego zapytania do bazy zwykle daje więcej niż najbardziej efektowna flaga JVM.
 
 Dobra optymalizacja nie polega na pisaniu sprytnego kodu. Polega na usunięciu niepotrzebnej pracy, zachowaniu poprawności i potwierdzeniu efektu danymi.
+
+## Kontrakt wykonywalnych laboratoriów
+
+Benchmark nie jest testem poprawności. Najpierw test jednostkowy potwierdza, że
+porównywane warianty realizują ten sam kontrakt i używają równoważnych danych;
+dopiero później JMH mierzy różnicę kosztu. W szczególności benchmark nie może
+porównywać sumowania z materializacją kolekcji ani dwóch algorytmów zwracających
+inne wyniki.
+
+Każdy benchmark deklaruje jawnie:
+
+- warmup, aby nie mieszać rozgrzewania JIT z pomiarem,
+- osobne measurement iterations,
+- fork, aby izolować stan JVM,
+- tryb `Throughput`, `AverageTime` albo `SampleTime`,
+- jednostkę wyniku,
+- jedną główną hipotezę: throughput, latency lub allocation.
+
+Konfigurację sprawdza `JmhConfigurationTest`, a poprawność workloadów — testy
+`*CorrectnessTest`. Szybka kontrola mechaniki JMH jest dostępna przez profil:
+
+```powershell
+.\mvnw.cmd --batch-mode --no-transfer-progress -Pjmh-smoke test
+```
+
+Profil smoke nie dostarcza wiarygodnych liczb wydajnościowych. Jego zadaniem jest
+wykrycie błędnej konfiguracji, wyjątków i benchmarków, których JMH nie potrafi
+uruchomić.
+
+Zwykłe `verify` nie buduje uber-JAR-a i nie miesza zależności całej aplikacji z
+artefaktem benchmarków. Runner powstaje wyłącznie na żądanie:
+
+```powershell
+.\mvnw.cmd --batch-mode --no-transfer-progress -Pjmh-runner -DskipTests package
+java -jar target\benchmarks.jar -l
+```
+
+## Jak interpretować wynik bez „magicznych liczb”
+
+Nie przechowujemy oczekiwania typu „metoda musi wykonać się w 12 ns”. Wynik zależy
+od CPU, systemu, JDK, governorów energii i procesów w tle. Interpretacja powinna
+odpowiadać na pytania:
+
+1. Czy oba warianty liczą dokładnie to samo?
+2. Czy przedziały błędu pozwalają mówić o różnicy?
+3. Czy profiler potwierdza postulowany mechanizm — CPU, alokacje, locki lub cache?
+4. Czy różnica jest istotna dla całego requestu i jego p95/p99?
+5. Czy prostszy wariant jest wystarczający poza rzeczywistym hot path?
+
+`-prof gc` pokazuje alokację na operację, a nie retained heap po pełnym GC. JFR,
+async-profiler, logi GC i heap dump odpowiadają na inne pytania i nie są zamienne.
+
+## Scenariusz JFR i GC
+
+```powershell
+java -XX:StartFlightRecording=filename=app.jfr,dumponexit=true,duration=60s -jar target\backend-engineering-0.0.1-SNAPSHOT.jar
+java -Xlog:gc*:file=gc.log:time,uptime,level,tags -jar target\backend-engineering-0.0.1-SNAPSHOT.jar
+```
+
+Podczas analizy zapytaj: który stack zużywa CPU, gdzie powstają alokacje, czy rośnie
+live set, ile trwa safepoint, czy wątki pracują czy czekają oraz czy problem jest w
+JVM, bazie lub sieci. Wykonywalne przejście od mikrobenchmarku do load, stress,
+spike i soak testu znajduje się w
+[laboratorium wydajności systemu](../../stage_3/block_a/implementation/tests/README.md).

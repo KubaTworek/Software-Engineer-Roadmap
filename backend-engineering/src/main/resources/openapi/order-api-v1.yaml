@@ -1,0 +1,285 @@
+openapi: 3.1.0
+info:
+  title: Order API contract laboratory
+  version: 1.0.0
+  description: Executable contract for the Stage 2A API design laboratory.
+paths:
+  /api/v1/orders:
+    post:
+      operationId: createOrder
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderRequest'
+      responses:
+        '201':
+          description: Created or replayed response for the same idempotency key and payload.
+          headers:
+            Location:
+              schema: { type: string, format: uri-reference }
+            ETag:
+              schema: { type: string }
+            Idempotency-Replayed:
+              schema: { type: boolean }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/DomainRuleViolation' }
+    get:
+      operationId: listOrders
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/OrderStatus' } }
+        - { name: sort, in: query, schema: { type: string, enum: [createdAt, -createdAt], default: createdAt } }
+      responses:
+        '200':
+          description: Stable keyset page ordered by createdAt and id.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderPage' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+  /api/v1/orders/{orderId}:
+    parameters:
+      - $ref: '#/components/parameters/OrderId'
+    get:
+      operationId: getOrder
+      parameters:
+        - { name: If-None-Match, in: header, schema: { type: string } }
+      responses:
+        '200':
+          description: Current representation.
+          headers:
+            ETag: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '304': { description: Representation has not changed. }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      operationId: replaceOrder
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReplaceOrderRequest' }
+      responses:
+        '200':
+          description: Fully replaced client-controlled fields.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '412': { $ref: '#/components/responses/StaleResource' }
+        '428': { $ref: '#/components/responses/PreconditionRequired' }
+    patch:
+      operationId: patchOrder
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema: { $ref: '#/components/schemas/PatchOrderRequest' }
+      responses:
+        '200':
+          description: Partially updated client-controlled fields.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '412': { $ref: '#/components/responses/StaleResource' }
+        '428': { $ref: '#/components/responses/PreconditionRequired' }
+    delete:
+      operationId: deleteOrder
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204': { description: Deleted. }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '412': { $ref: '#/components/responses/StaleResource' }
+        '428': { $ref: '#/components/responses/PreconditionRequired' }
+  /api/v1/orders/{orderId}/cancellations:
+    parameters:
+      - $ref: '#/components/parameters/OrderId'
+    post:
+      operationId: startOrderCancellation
+      responses:
+        '202':
+          description: Cancellation accepted, but not necessarily completed.
+          headers:
+            Location: { schema: { type: string, format: uri-reference } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Operation' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/operations/{operationId}:
+    get:
+      operationId: getOperation
+      parameters:
+        - name: operationId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Current operation state.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Operation' }
+        '404': { $ref: '#/components/responses/NotFound' }
+webhooks:
+  orderCancelled:
+    post:
+      summary: At-least-once notification; deduplicate by Webhook-Delivery-Id.
+      parameters:
+        - { name: Webhook-Delivery-Id, in: header, required: true, schema: { type: string, format: uuid } }
+        - { name: Webhook-Timestamp, in: header, required: true, schema: { type: integer, format: int64 } }
+        - { name: Webhook-Signature, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [eventId, eventType, orderId, occurredAt]
+              properties:
+                eventId: { type: string, format: uuid }
+                eventType: { const: order.cancelled }
+                orderId: { type: string, format: uuid }
+                occurredAt: { type: string, format: date-time }
+      responses:
+        '204': { description: Accepted and durably deduplicated. }
+components:
+  parameters:
+    OrderId:
+      name: orderId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 128 }
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      schema: { type: string }
+  schemas:
+    LineItem:
+      type: object
+      required: [sku, quantity]
+      properties:
+        sku: { type: string, minLength: 1, maxLength: 64 }
+        quantity: { type: integer, minimum: 1, maximum: 10000 }
+    CreateOrderRequest:
+      type: object
+      additionalProperties: false
+      required: [customerEmail, items, expedited]
+      properties:
+        customerEmail: { type: string, format: email, maxLength: 254 }
+        items:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { $ref: '#/components/schemas/LineItem' }
+        expedited: { type: boolean }
+    ReplaceOrderRequest:
+      allOf:
+        - $ref: '#/components/schemas/CreateOrderRequest'
+    PatchOrderRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        customerEmail: { type: string, format: email, maxLength: 254 }
+        expedited: { type: boolean }
+    OrderStatus:
+      type: string
+      enum: [NEW, CANCELLED]
+    Order:
+      type: object
+      required: [id, customerEmail, items, expedited, status, version, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        customerEmail: { type: string, format: email }
+        items: { type: array, items: { $ref: '#/components/schemas/LineItem' } }
+        expedited: { type: boolean }
+        status: { $ref: '#/components/schemas/OrderStatus' }
+        version: { type: integer, format: int64, minimum: 1 }
+        createdAt: { type: string, format: date-time }
+    OrderPage:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Order' } }
+        nextCursor: { type: [string, 'null'] }
+    Operation:
+      type: object
+      required: [id, orderId, state, acceptedAt]
+      properties:
+        id: { type: string, format: uuid }
+        orderId: { type: string, format: uuid }
+        state: { type: string, enum: [PENDING, SUCCEEDED] }
+        acceptedAt: { type: string, format: date-time }
+        completedAt: { type: [string, 'null'], format: date-time }
+    Problem:
+      type: object
+      required: [type, title, status, detail, code]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code: { type: string }
+        violations:
+          type: array
+          items:
+            type: object
+            required: [field, message]
+            properties:
+              field: { type: string }
+              message: { type: string }
+  responses:
+    InvalidRequest:
+      description: Malformed input or validation failure.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Resource does not exist.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Conflict:
+      description: Idempotency key was reused with different input.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    DomainRuleViolation:
+      description: Syntactically valid request violates a business invariant.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    StaleResource:
+      description: If-Match does not identify the current representation.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    PreconditionRequired:
+      description: Mutation requires If-Match.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

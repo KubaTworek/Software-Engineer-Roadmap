@@ -1,48 +1,52 @@
 package pl.jakubtworek.backend_engineering.stage_1.block_a.cancel;
 
 import org.junit.jupiter.api.Test;
-import pl.jakubtworek.backend_engineering.stage_1.block_a.cancel.BadCancellableTask;
-import pl.jakubtworek.backend_engineering.stage_1.block_a.cancel.CancellableTask;
 
-import java.util.concurrent.*;
+import java.time.Duration;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CancelTest {
 
     @Test
-    void cancellableTask_shouldStopAfterCancel() throws Exception {
+    void cancellableTaskShouldStopAfterInterrupt() {
+        assertTimeoutPreemptively(Duration.ofSeconds(2), () -> {
+            Thread worker = new Thread(new CancellableTask(), "cooperative-task-test");
+            worker.start();
 
-        ExecutorService exec = Executors.newSingleThreadExecutor();
-        Future<?> future = exec.submit(new CancellableTask());
+            awaitStarted(worker);
+            worker.interrupt();
+            worker.join(1_000);
 
-        Thread.sleep(200);
-
-        future.cancel(true); // sends interrupt
-
-        exec.shutdown();
-        boolean terminated = exec.awaitTermination(2, TimeUnit.SECONDS);
-
-        assertTrue(terminated,
-                "Executor should terminate when task respects interrupt");
+            assertFalse(worker.isAlive(), "Task respecting interruption should terminate");
+        });
     }
 
     @Test
-    void badTask_shouldNotStopAfterCancel() throws Exception {
+    void taskIgnoringInterruptShouldRemainAlive() {
+        assertTimeoutPreemptively(Duration.ofSeconds(2), () -> {
+            Thread worker = new Thread(new BadCancellableTask(), "broken-task-test");
 
-        ExecutorService exec = Executors.newSingleThreadExecutor();
-        Future<?> future = exec.submit(new BadCancellableTask());
+            // The example is intentionally impossible to stop. A daemon thread
+            // demonstrates the defect without preventing the test JVM from exiting.
+            worker.setDaemon(true);
+            worker.start();
 
-        Thread.sleep(200);
+            awaitStarted(worker);
+            worker.interrupt();
+            worker.join(250);
 
-        future.cancel(true);
+            assertTrue(worker.isAlive(), "Task swallowing InterruptedException keeps running");
+        });
+    }
 
-        exec.shutdown();
-        boolean terminated = exec.awaitTermination(1, TimeUnit.SECONDS);
-
-        assertFalse(terminated,
-                "Executor should NOT terminate when task ignores interrupt");
-
-        exec.shutdownNow(); // force cleanup for test
+    private static void awaitStarted(Thread worker) throws InterruptedException {
+        long deadline = System.nanoTime() + Duration.ofSeconds(1).toNanos();
+        while (worker.getState() == Thread.State.NEW && System.nanoTime() < deadline) {
+            Thread.yield();
+        }
+        assertFalse(worker.getState() == Thread.State.NEW, "Worker should start within one second");
     }
 }

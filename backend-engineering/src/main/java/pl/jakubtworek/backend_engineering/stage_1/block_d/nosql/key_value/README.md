@@ -1,21 +1,51 @@
-# Key-value stores
+# key value
 
-Key-value store to najprostszy i jednocześnie bardzo wydajny typ bazy NoSQL. Dane są przechowywane jako para: klucz i wartość. Aplikacja zna klucz, przekazuje go do bazy, a baza zwraca przypisaną wartość. Przykładami takich rozwiązań są Redis, Memcached, Riak, a w niektórych scenariuszach również DynamoDB używane jako prosty lookup po kluczu.
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** key value.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „key value” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=AtomicFixedWindowRateLimiterTest" test`
+> - **Role klas:** `AtomicFixedWindowRateLimiter` = `correct`.
+> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+<!-- material-card:end -->
 
-Największą zaletą key-value store jest prostota dostępu. Jeśli access pattern brzmi „mam identyfikator sesji i chcę pobrać sesję”, model key-value pasuje idealnie. Klucz może wyglądać tak: `session:abc123`, a wartością może być JSON z `userId`, rolami i czasem wygaśnięcia. Baza nie musi planować złożonego query ani łączyć danych z wielu miejsc. Ma znaleźć wartość pod konkretnym kluczem. Dzięki temu odczyty i zapisy mogą być bardzo szybkie.
+## Key-value: klucz, atomowość i TTL
 
-Typowym zastosowaniem jest cache. Aplikacja może trzymać wynik kosztownego zapytania pod kluczem `user-profile-cache:{userId}`. Przy kolejnym żądaniu najpierw sprawdza cache, a dopiero jeśli nie znajdzie danych, sięga do głównej bazy. To zmniejsza obciążenie systemu źródłowego i obniża latency. Trzeba jednak pamiętać, że cache wprowadza problemy: dane mogą być stare, trzeba je unieważniać, może pojawić się cache stampede, a źle zaprojektowany cache może tylko ukrywać problem z głównym modelem danych.
 
-Drugim bardzo częstym zastosowaniem są sesje użytkowników. Redis dobrze się do tego nadaje, bo wspiera TTL, czyli automatyczne wygasanie kluczy. Sesja może być zapisana pod kluczem `session:{sessionId}`, a po określonym czasie zniknąć bez ręcznego sprzątania. To samo podejście pasuje do tokenów resetowania hasła, kodów jednorazowych, tymczasowych blokad i krótkotrwałych danych aplikacyjnych.
 
-Rate limiting to kolejny dobry przykład. Klucz może mieć postać `rate-limit:{userId}:{window}`, a wartością jest licznik requestów w danym oknie czasowym. Przy każdym żądaniu aplikacja zwiększa licznik i sprawdza, czy limit został przekroczony. TTL usuwa licznik po zakończeniu okna. Taki model jest prosty, szybki i bardzo dobrze pasuje do key-value store.
+Key-value store jest dobrym wyborem, gdy aplikacja zna pełny klucz i potrzebuje
+krótkiej, przewidywalnej operacji. `SessionCacheEntry` pokazuje wartość sesji, a
+`RateLimitEntry` jej niemutowalny model. Żaden z nich sam nie zapewnia atomowości
+rozproszonego read-modify-write.
 
-Najważniejszym elementem projektowania jest klucz. Dobry klucz powinien być jednoznaczny, przewidywalny i zgodny z access patternem. Jeżeli aplikacja będzie pobierać sesję po `sessionId`, klucz powinien zawierać `sessionId`. Jeżeli będzie pobierać profil użytkownika po `userId`, klucz powinien zawierać `userId`. Problemy zaczynają się wtedy, gdy chcemy zadawać pytania, których klucz nie wspiera.
+`AtomicFixedWindowRateLimiter` jest wykonywalnym modelem jednej operacji
+serwerowej:
 
-Key-value store nie jest dobrym wyborem do złożonych zapytań. Pytanie „daj mi wszystkie sesje użytkowników z rolą ADMIN” jest trudne, jeśli jedynym kluczem jest `session:{sessionId}`. Baza nie ma naturalnego sposobu filtrowania po roli, chyba że utrzymujemy dodatkowe struktury pomocnicze. Podobnie problematyczne są joiny, raporty, wyszukiwanie tekstowe, filtrowanie po wielu polach i ad hoc query. Jeśli takich operacji jest dużo, key-value store prawdopodobnie nie powinien być główną bazą dla tych danych.
+1. odczytaj bieżące okno,
+2. jeśli TTL wygasł, utwórz nowe okno,
+3. sprawdź limit i zwiększ licznik,
+4. zachowaj pierwotny `resetAt`,
+5. zwróć `allowed`, `remaining` i `retryAfter`.
 
-Warto też uważać z distributed lockami. Redis bywa używany do locków rozproszonych, ale to obszar, w którym łatwo o błędne poczucie bezpieczeństwa. Lock może wygasnąć, gdy proces nadal wykonuje operację. Może dojść do opóźnień sieciowych, retry albo konfliktów czasowych. W krytycznych operacjach finansowych lub magazynowych często bezpieczniej jest używać mechanizmów transakcyjnych głównej bazy danych albo specjalnie zaprojektowanych protokołów.
+W modelu atomowość zapewnia `synchronized`. W Redisie wszystkie kroki powinien
+wykonać jeden skrypt Lua albo funkcja serwerowa. Sekwencja osobnych `GET`, `SET`
+i `EXPIRE` może zgubić inkrementację albo pozostawić licznik bez czasu
+wygaśnięcia.
 
-Key-value store często jest elementem pomocniczym, a nie jedynym źródłem prawdy. Redis jako cache, warstwa sesji lub licznik jest bardzo użyteczny. Redis jako główna baza dla danych wymagających trwałych relacji, raportowania i silnych gwarancji spójności może być złym wyborem. Oczywiście wiele zależy od konfiguracji trwałości, replikacji i wymagań systemu, ale domyślnie trzeba rozdzielać rolę cache od roli primary database.
+`RedisFixedWindowScripts.INCREMENT_AND_SET_TTL` zawiera rzeczywistą operację Lua:
+`INCR` tworzy lub zwiększa licznik, a pierwsza inkrementacja ustawia `PEXPIRE`.
+Cały skrypt jest atomowy z perspektywy innych komend Redisa. Test
+`RedisAtomicCounterContainerTest` uruchamia go współbieżnie na prawdziwym Redisie
+i sprawdza zarówno końcową wartość, jak i TTL. Model in-memory nadal służy do
+szybkiego testowania reguł limitu, natomiast test kontenerowy weryfikuje gwarancję
+konkretnego silnika.
 
-Najważniejsze pytanie brzmi: czy znam klucz, po którym chcę pobrać dane? Jeśli tak, key-value store może być świetnym wyborem. Jeśli muszę często wyszukiwać, filtrować, sortować i łączyć dane według różnych kryteriów, ten model szybko stanie się ograniczeniem. Siła key-value store wynika z prostoty, ale ta sama prostota jest też jego największym ograniczeniem.
+Odrzucone żądanie nie przesuwa TTL. Dokładnie w chwili `resetAt` zaczyna się nowe
+okno. Test równoległy wysyła sto operacji i potwierdza, że przy limicie dziesięć
+zaakceptowanych zostaje dokładnie dziesięć.
+
+Fixed window jest prosty, ale pozwala na burst na granicy dwóch okien. Gdy to
+łamie wymagania, rozważ sliding log, sliding window counter lub token bucket i
+jawnie policz ich koszt pamięci oraz dokładność.

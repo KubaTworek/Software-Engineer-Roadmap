@@ -2,7 +2,7 @@ package pl.jakubtworek.backend_engineering.stage_1.block_a.deadlock;
 
 import java.util.concurrent.*;
 
-public class SingleThreadTransferService {
+public class SingleThreadTransferService implements AutoCloseable {
 
     // Executor with exactly one worker thread.
     // All submitted tasks are executed sequentially in the same thread.
@@ -26,12 +26,17 @@ public class SingleThreadTransferService {
             // Ensures that the transfer has completed when this method exits.
             future.get();
 
-        } catch (Exception e) {
-
-            // Wrap checked exceptions from Future into unchecked exception
-            // so the caller does not have to handle ExecutionException / InterruptedException.
-            throw new RuntimeException(e);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while waiting for transfer", exception);
+        } catch (ExecutionException exception) {
+            throw new IllegalStateException("Transfer task failed", exception.getCause());
         }
+    }
+
+    @Override
+    public void close() {
+        executor.shutdownNow();
     }
 
     public static class AccountData {

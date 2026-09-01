@@ -1,4 +1,19 @@
-# Case 7 — Strojenie sterty: `-Xms` / `-Xmx` i przewidywalność GC
+# heap size
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** heap size.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „heap size” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Role klas:** brak klasy-kontrprzykładu; pozostałe typy są minimalnymi modelami pojęć opisanych niżej.
+> - **Granica:** Wynik eksperymentu opisuje tę maszynę i workload; nie jest uniwersalną liczbą produkcyjną.
+<!-- material-card:end -->
+
+## Case 7 — Strojenie sterty: `-Xms` / `-Xmx` i przewidywalność GC
+
+
 
 ## Wprowadzenie
 
@@ -34,7 +49,7 @@ I właśnie ten koszt wpływa na:
 
 ---
 
-# Heap JVM nie jest statyczny
+## Heap JVM nie jest statyczny
 
 To bardzo ważna obserwacja.
 
@@ -62,7 +77,7 @@ Ale w praktyce:
 
 ---
 
-# Reserved memory vs committed memory
+## Reserved memory vs committed memory
 
 To kluczowe rozróżnienie.
 
@@ -90,7 +105,7 @@ oznacza:
 
 ---
 
-# Dlaczego heap resizing ma koszt
+## Dlaczego heap resizing ma koszt
 
 Rozszerzanie heapu nie jest darmowe.
 
@@ -111,7 +126,7 @@ W systemach low-latency:
 
 ---
 
-# Problem przewidywalności
+## Problem przewidywalności
 
 To najważniejszy aspekt tego case study.
 
@@ -135,7 +150,7 @@ To utrudnia:
 
 ---
 
-# Dlaczego równe `-Xms` i `-Xmx` pomagają
+## Dlaczego równe `-Xms` i `-Xmx` pomagają
 
 Jeżeli:
 
@@ -159,7 +174,7 @@ Dlatego:
 
 ---
 
-# To nie jest „optymalizacja throughput”
+## To nie jest „optymalizacja throughput”
 
 To ważne rozróżnienie.
 
@@ -181,7 +196,7 @@ To jest typowy tuning:
 
 ---
 
-# Dlaczego mały `-Xms` bywa problematyczny
+## Dlaczego mały `-Xms` bywa problematyczny
 
 Przy:
 
@@ -207,7 +222,7 @@ Czasem wygląda to tak, jakby:
 
 ---
 
-# Heap shrinking również ma koszt
+## Heap shrinking również ma koszt
 
 Nie tylko rozszerzanie heapu jest problemem.
 
@@ -226,7 +241,7 @@ To prowadzi do:
 
 ---
 
-# Dlaczego problem ujawnia się głównie pod loadem
+## Dlaczego problem ujawnia się głównie pod loadem
 
 W małych aplikacjach:
 - różnice mogą być prawie niewidoczne.
@@ -246,7 +261,7 @@ Właśnie dlatego:
 
 ---
 
-# G1 i dynamiczne resize’owanie
+## G1 i dynamiczne resize’owanie
 
 G1 bardzo intensywnie operuje na regionach heapu.
 
@@ -266,7 +281,7 @@ ale:
 
 ---
 
-# ZGC i duże sterty
+## ZGC i duże sterty
 
 ZGC jest bardziej przygotowany na:
 - ogromne heapy,
@@ -284,7 +299,7 @@ Szczególnie przy:
 
 ---
 
-# Koszt pamięci vs przewidywalność
+## Koszt pamięci vs przewidywalność
 
 Równe:
 
@@ -310,7 +325,7 @@ To kolejny kompromis:
 
 ---
 
-# Dlaczego eksperyment warto analizować z GC logami
+## Dlaczego eksperyment warto analizować z GC logami
 
 Same czasy wykonania często niewiele pokazują.
 
@@ -329,7 +344,7 @@ W szczególności warto obserwować:
 
 ---
 
-# Najczęstszy błąd tuningowy
+## Najczęstszy błąd tuningowy
 
 Bardzo częsty błąd wygląda tak:
 
@@ -347,7 +362,7 @@ Dynamiczny heap nie jest automatycznie „lepszy”.
 
 ---
 
-# Najważniejsza intuicja praktyczna
+## Najważniejsza intuicja praktyczna
 
 Najbardziej praktyczny wniosek brzmi:
 
@@ -361,7 +376,7 @@ To tuning:
 
 ---
 
-# Najważniejsze wnioski
+## Najważniejsze wnioski
 
 Najbardziej użyteczny model mentalny wygląda tak:
 

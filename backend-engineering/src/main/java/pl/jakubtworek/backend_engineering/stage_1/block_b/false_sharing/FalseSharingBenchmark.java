@@ -1,9 +1,12 @@
 package pl.jakubtworek.backend_engineering.stage_1.block_b.false_sharing;
 
 import org.openjdk.jmh.annotations.*;
+import pl.jakubtworek.backend_engineering.stage_1.block_b.benchmarking.BenchmarkDimension;
+import pl.jakubtworek.backend_engineering.stage_1.block_b.benchmarking.Measures;
 
 import java.util.concurrent.TimeUnit;
 
+@Measures(BenchmarkDimension.THROUGHPUT)
 @BenchmarkMode(Mode.Throughput)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 @Warmup(iterations = 5, time = 1)
@@ -61,5 +64,21 @@ public class FalseSharingBenchmark {
         for (int i = 0; i < ITERATIONS; i++) {
             padded.counter2.value++;
         }
+    }
+
+    long unpaddedCounter1Value() {
+        return unpadded.counter1;
+    }
+
+    long unpaddedCounter2Value() {
+        return unpadded.counter2;
+    }
+
+    long paddedCounter1Value() {
+        return padded.counter1.value;
+    }
+
+    long paddedCounter2Value() {
+        return padded.counter2.value;
     }
 }

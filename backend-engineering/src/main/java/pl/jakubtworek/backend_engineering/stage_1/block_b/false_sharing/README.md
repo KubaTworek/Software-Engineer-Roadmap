@@ -1,4 +1,19 @@
-# Case 9 — False sharing: walka o cache line
+# false sharing
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** false sharing.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „false sharing” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=FalseSharingBenchmarkCorrectnessTest" test`
+> - **Role klas:** brak klasy-kontrprzykładu; pozostałe typy są minimalnymi modelami pojęć opisanych niżej.
+> - **Granica:** Wynik eksperymentu opisuje tę maszynę i workload; nie jest uniwersalną liczbą produkcyjną.
+<!-- material-card:end -->
+
+## Case 9 — False sharing: walka o cache line
+
+
 
 ## Wprowadzenie
 
@@ -24,7 +39,7 @@ Problem leży głębiej:
 
 ---
 
-# Co naprawdę optymalizuje nowoczesny CPU
+## Co naprawdę optymalizuje nowoczesny CPU
 
 Współczesne procesory:
 - nie operują bezpośrednio na RAM,
@@ -45,7 +60,7 @@ I właśnie tutaj pojawia się false sharing.
 
 ---
 
-# Cache line — podstawowa jednostka synchronizacji
+## Cache line — podstawowa jednostka synchronizacji
 
 CPU nie synchronizuje pojedynczych zmiennych.
 
@@ -65,7 +80,7 @@ I to jest źródło problemu.
 
 ---
 
-# Na czym polega false sharing
+## Na czym polega false sharing
 
 Wyobraźmy sobie:
 
@@ -90,7 +105,7 @@ I mimo że pola są niezależne logicznie:
 
 ---
 
-# Cache invalidation
+## Cache invalidation
 
 To kluczowy mechanizm.
 
@@ -106,11 +121,10 @@ To prowadzi do:
 - ogromnego ruchu synchronizacyjnego.
 
 I właśnie to jest:
-## false sharing
 
 ---
 
-# Dlaczego throughput spada
+## Dlaczego throughput spada
 
 W przypadku false sharing:
 - CPU nie wykonuje użytecznej pracy,
@@ -127,7 +141,7 @@ Efekt:
 
 ---
 
-# Dlaczego problem jest trudny do zauważenia
+## Dlaczego problem jest trudny do zauważenia
 
 False sharing:
 - nie wygląda jak klasyczny bottleneck.
@@ -147,7 +161,7 @@ I właśnie dlatego:
 
 ---
 
-# `volatile` i false sharing
+## `volatile` i false sharing
 
 `volatile` bardzo często pogarsza problem.
 
@@ -168,7 +182,7 @@ Ale:
 
 ---
 
-# Dlaczego padding pomaga
+## Dlaczego padding pomaga
 
 Padding polega na:
 - sztucznym dodaniu pustych pól,
@@ -193,7 +207,7 @@ ale:
 
 ---
 
-# `@Contended`
+## `@Contended`
 
 HotSpot posiada specjalną adnotację:
 
@@ -214,7 +228,7 @@ Ale:
 
 ---
 
-# Dlaczego `LongAdder` istnieje
+## Dlaczego `LongAdder` istnieje
 
 `LongAdder` jest jednym z najbardziej znanych przykładów projektowania pod false sharing.
 
@@ -236,7 +250,7 @@ Dlatego:
 
 ---
 
-# MESI protocol
+## MESI protocol
 
 False sharing wynika bezpośrednio z:
 ## MESI protocol
@@ -256,7 +270,7 @@ nie JVM.
 
 ---
 
-# Dlaczego problem rośnie wraz z liczbą rdzeni
+## Dlaczego problem rośnie wraz z liczbą rdzeni
 
 Na:
 - 2 rdzeniach,
@@ -276,7 +290,7 @@ W systemach high-throughput:
 
 ---
 
-# JMH jest tutaj konieczny
+## JMH jest tutaj konieczny
 
 False sharing:
 - jest bardzo subtelnym problemem,
@@ -302,7 +316,7 @@ który:
 
 ---
 
-# Dlaczego problem jest trudny w Javie
+## Dlaczego problem jest trudny w Javie
 
 Java:
 - ukrywa layout pamięci,
@@ -323,7 +337,7 @@ Szczególnie przy:
 
 ---
 
-# Najważniejsza intuicja praktyczna
+## Najważniejsza intuicja praktyczna
 
 Najbardziej praktyczny wniosek brzmi:
 
@@ -335,7 +349,7 @@ I właśnie dlatego:
 
 ---
 
-# Najważniejsze wnioski
+## Najważniejsze wnioski
 
 Najbardziej użyteczny model mentalny wygląda tak:
 

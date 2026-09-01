@@ -1,4 +1,19 @@
-# Integracja i konsystencja – wspólna baza danych, sieć i eventual consistency
+# integration
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `praktyka-produkcyjna`
+> - **Uczy:** integration.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „integration” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Role klas:** `IdempotentEventConsumer` = `correct`; `IdempotentEventConsumer` = `production-boundary`, `TransactionalOutboxPublisher` = `production-boundary`.
+> - **Granica:** Laboratorium pokazuje kontrakt i failure modes; nie zastępuje pełnego testu end-to-end ani operacyjnej konfiguracji środowiska.
+<!-- material-card:end -->
+
+## Integracja i konsystencja – wspólna baza danych, sieć i eventual consistency
+
+
 
 ## Wprowadzenie
 

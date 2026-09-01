@@ -1,4 +1,19 @@
-# Observability dla inżynierów oprogramowania
+# Stage 3B — observability
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `temat-zaawansowany`
+> - **Uczy:** Stage 3B — observability.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „Stage 3B — observability” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=AlertYamlRendererTest,CollectorConfigurationTest,IncidentTriageAndRunbookTest" test`
+> - **Role klas:** `TracingConfiguration` = `production-boundary`.
+> - **Granica:** Model weryfikuje nazwany niezmiennik; nie implementuje produkcyjnego protokołu rozproszonego ani infrastruktury dostawcy.
+<!-- material-card:end -->
+
+## Observability dla inżynierów oprogramowania
+
+
 
 ## Wprowadzenie
 
@@ -7,6 +22,32 @@ Observability, czyli obserwowalność systemu, jest praktyką projektowania opro
 Najważniejsza zmiana sposobu myślenia polega na odejściu od ogólnych diagnoz typu „system jest wolny” albo „baza danych muli”. Takie stwierdzenia są zbyt nieprecyzyjne, aby prowadziły do skutecznego działania. Zamiast nich należy szukać dowodów: gdzie system zwolnił, w jakim zakresie, dla jakich użytkowników, na których endpointach, w jakiej wersji usługi, w którym regionie, od kiedy i czy problem dotyczy całego ruchu, czy tylko wybranego segmentu.
 
 W praktyce observability jest sposobem prowadzenia dochodzenia produkcyjnego. Inżynier nie powinien opierać się głównie na intuicji, lecz na hipotezach, które można potwierdzić lub obalić za pomocą danych. Metryki pomagają zauważyć, że dzieje się coś niepokojącego. Trace’y pomagają zlokalizować, w którym fragmencie przepływu request traci czas. Logi dostarczają kontekstu konkretnego zdarzenia. Runbooki skracają drogę od wykrycia problemu do pierwszej bezpiecznej mitigacji.
+
+## Mapa kodu i zakres implementacji
+
+| Katalog | Rola | Granica przykładu |
+| --- | --- | --- |
+| `structured_logs` | stabilny schemat zdarzeń, korelacja i serializacja JSON | zapis na konsolę nie zastępuje pipeline’u, retencji, redakcji i kontroli kosztu |
+| `prometheus` | nazwy metryk, histogramy, recording rules i kardynalność | klasy pokazują kontrakt instrumentacji, a nie wdrożony serwer Prometheus/Grafana |
+| `tracing` | spany, propagacja W3C, sampling i exemplars | ręczne wrappery uzupełniają auto-instrumentation; nie należy dublować spanów agenta |
+| `pipeline` | wykonywalna korelacja trace → span błędu → log → histogram | lokalny SDK i sink testowy pokazują przepływ, nie produkcyjny transport logów |
+| `collector` | konfiguracja OTLP i tail samplingu | sizing oraz topologia muszą zostać dobrane do ruchu i kompletności trace’ów |
+| `alerts` | reguły, routing Alertmanagera, runbooki i triage | wyrenderowany YAML wymaga walidacji w docelowym środowisku oraz właściciela alarmu |
+
+Kod jest częścią głównego modułu Maven `backend-engineering`. Klasy tworzą wykonywalne modele kontraktów telemetrycznych, ale pełna obserwowalność powstaje dopiero po połączeniu aplikacji z SDK/agentem, Collectorem, backendem danych, dashboardami, retencją i procesem reagowania na incydenty.
+
+`TelemetryPipelineTest` domyka drogę od modelu do eksportowanego sygnału. Używa
+prawdziwego OpenTelemetry SDK, in-memory exporterów i W3C `traceparent`, dzięki
+czemu nie ogranicza się do mockowania wywołań `Span`. Szczegółowy przepływ
+opisuje [`pipeline/README.md`](pipeline/README.md), a przykładowy Collector
+[`collector/README.md`](collector/README.md).
+
+```shell
+cd backend-engineering
+./mvnw --batch-mode --no-transfer-progress test
+```
+
+Na Windows użyj `mvnw.cmd`.
 
 ## Observability a monitoring
 

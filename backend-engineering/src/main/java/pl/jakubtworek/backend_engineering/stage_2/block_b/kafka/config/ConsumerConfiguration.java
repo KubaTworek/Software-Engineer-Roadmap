@@ -12,6 +12,18 @@ public record ConsumerConfiguration(
         boolean enableAutoCommit,
         String autoOffsetReset
 ) {
+    public ConsumerConfiguration {
+        if (bootstrapServers == null || bootstrapServers.isBlank()) {
+            throw new IllegalArgumentException("Bootstrap servers cannot be empty");
+        }
+        if (groupId == null || groupId.isBlank()) {
+            throw new IllegalArgumentException("Consumer group id cannot be empty");
+        }
+        if (!java.util.Set.of("earliest", "latest", "none").contains(autoOffsetReset)) {
+            throw new IllegalArgumentException("Unsupported auto offset reset policy: " + autoOffsetReset);
+        }
+    }
+
     /**
      * Creates a safe default configuration for manual commit consumers.
      */

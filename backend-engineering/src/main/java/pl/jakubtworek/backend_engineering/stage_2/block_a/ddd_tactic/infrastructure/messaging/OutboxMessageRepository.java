@@ -1,6 +1,6 @@
 package pl.jakubtworek.backend_engineering.stage_2.block_a.ddd_tactic.infrastructure.messaging;
 
-import pl.jakubtworek.backend_engineering.stage_2.block_a.ddd_tactic.infrastructure.persistance.OutboxMessage;
+import pl.jakubtworek.backend_engineering.stage_2.block_a.ddd_tactic.infrastructure.persistence.OutboxMessage;
 
 import java.util.List;
 

@@ -1,4 +1,19 @@
-# Case 15 — Object pooling: kiedy szkodzi bardziej niż pomaga
+# object pooling
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** object pooling.
+> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „object pooling” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Role klas:** brak klasy-kontrprzykładu; pozostałe typy są minimalnymi modelami pojęć opisanych niżej.
+> - **Granica:** Wynik eksperymentu opisuje tę maszynę i workload; nie jest uniwersalną liczbą produkcyjną.
+<!-- material-card:end -->
+
+## Case 15 — Object pooling: kiedy szkodzi bardziej niż pomaga
+
+
 
 ## Wprowadzenie
 
@@ -28,7 +43,7 @@ I właśnie dlatego:
 
 ---
 
-# Fundamentalne nieporozumienie
+## Fundamentalne nieporozumienie
 
 Największy błąd intuicyjny wygląda tak:
 
@@ -48,7 +63,7 @@ To fundamentalnie zmienia opłacalność pooling’u.
 
 ---
 
-# Young generation jest zoptymalizowana pod churn
+## Young generation jest zoptymalizowana pod churn
 
 Nowoczesne collectory JVM zakładają:
 - ogromną liczbę krótkotrwałych obiektów.
@@ -64,7 +79,7 @@ To bardzo ważna intuicja:
 
 ---
 
-# Krótkotrwałe obiekty są „tanie”
+## Krótkotrwałe obiekty są „tanie”
 
 Jeżeli obiekt:
 - powstaje,
@@ -83,7 +98,7 @@ I właśnie dlatego:
 
 ---
 
-# Co robi pooling
+## Co robi pooling
 
 Pooling zmienia:
 ## lifetime obiektów
@@ -104,7 +119,7 @@ I tutaj pojawia się kluczowy paradoks:
 
 ---
 
-# Old generation jest znacznie droższa
+## Old generation jest znacznie droższa
 
 Young GC:
 - jest zwykle szybkie,
@@ -126,7 +141,7 @@ Pooling bardzo często:
 
 ---
 
-# Pooling zmienia problem, nie usuwa go
+## Pooling zmienia problem, nie usuwa go
 
 To jedna z najważniejszych intuicji tego case’u.
 
@@ -147,7 +162,7 @@ pojawiają się:
 
 ---
 
-# Resetowanie obiektów też kosztuje
+## Resetowanie obiektów też kosztuje
 
 Pooled object:
 - musi zostać wyczyszczony,
@@ -168,7 +183,7 @@ Czasem:
 
 ---
 
-# Escape Analysis zmienia opłacalność pooling’u
+## Escape Analysis zmienia opłacalność pooling’u
 
 Nowoczesny JVM używa:
 ## Escape Analysis
@@ -187,7 +202,7 @@ To oznacza:
 
 ---
 
-# Pooling a synchronizacja
+## Pooling a synchronizacja
 
 W systemach wielowątkowych:
 - pula zwykle jest współdzielona.
@@ -205,7 +220,7 @@ I bardzo często:
 
 ---
 
-# Pool jako bottleneck skalowania
+## Pool jako bottleneck skalowania
 
 Shared pool:
 - staje się współdzielonym punktem contention.
@@ -220,7 +235,7 @@ Wtedy:
 
 ---
 
-# Locality pamięci
+## Locality pamięci
 
 Nowo zaalokowane obiekty:
 - często mają bardzo dobrą locality,
@@ -238,7 +253,7 @@ To pogarsza:
 
 ---
 
-# Stale state bugs
+## Stale state bugs
 
 Pooling zwiększa również:
 ## complexity correctness.
@@ -257,7 +272,7 @@ To bardzo ważny koszt:
 
 ---
 
-# Pooling ma sens — ale dla innych rzeczy
+## Pooling ma sens — ale dla innych rzeczy
 
 To bardzo ważne.
 
@@ -278,7 +293,7 @@ Czyli:
 
 ---
 
-# Problem z „mikrooptymalizacją pamięci”
+## Problem z „mikrooptymalizacją pamięci”
 
 Wiele poolingów powstaje dlatego, że:
 - ktoś widzi dużo alokacji,
@@ -296,7 +311,7 @@ Dlatego:
 
 ---
 
-# Allocation rate vs live set
+## Allocation rate vs live set
 
 To jedna z najważniejszych intuicji GC.
 
@@ -316,7 +331,7 @@ I bardzo często:
 
 ---
 
-# TLAB — dlaczego alokacja jest tania
+## TLAB — dlaczego alokacja jest tania
 
 JVM używa:
 ## Thread Local Allocation Buffers
@@ -334,7 +349,7 @@ To kolejny powód, dla którego:
 
 ---
 
-# Dlaczego benchmarki pooling’u bywają mylące
+## Dlaczego benchmarki pooling’u bywają mylące
 
 Na małych benchmarkach:
 - pooling czasem wygląda szybciej.
@@ -352,7 +367,7 @@ Dlatego:
 
 ---
 
-# Najczęstszy błąd architektoniczny
+## Najczęstszy błąd architektoniczny
 
 Najczęstszy błąd wygląda tak:
 
@@ -370,7 +385,7 @@ To bardzo często prowadzi do:
 
 ---
 
-# Najważniejsza intuicja praktyczna
+## Najważniejsza intuicja praktyczna
 
 Najbardziej praktyczny wniosek brzmi:
 
@@ -382,7 +397,7 @@ I właśnie dlatego:
 
 ---
 
-# Najważniejsze wnioski
+## Najważniejsze wnioski
 
 Najbardziej użyteczny model mentalny wygląda tak:
 
