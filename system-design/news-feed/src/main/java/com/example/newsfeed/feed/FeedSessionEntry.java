@@ -2,6 +2,7 @@ package com.example.newsfeed.feed;
 
 import com.example.newsfeed.common.ConflictException;
 import com.example.newsfeed.ranking.RankedFeedCandidate;
+import com.example.newsfeed.ranking.RankedCandidate;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -20,6 +21,16 @@ public record FeedSessionEntry(
                 ranked.score(),
                 ranked.reason()
         );
+    }
+
+    public static FeedSessionEntry from(RankedCandidate ranked) {
+        FeedSource source;
+        try {
+            source = FeedSource.valueOf(ranked.source());
+        } catch (IllegalArgumentException exception) {
+            source = FeedSource.RECOMMENDED;
+        }
+        return new FeedSessionEntry(ranked.post().getId(), source, ranked.score(), ranked.reason());
     }
 
     public String encode() {

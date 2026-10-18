@@ -33,6 +33,10 @@ public class User {
     @Column(nullable = false)
     private Instant updatedAt;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 30)
+    private UserRole role;
+
     protected User() {
     }
 
@@ -54,6 +58,13 @@ public class User {
         this.bio = bio;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
+        this.role = UserRole.USER;
+    }
+
+    public User(UUID id, String email, String username, String displayName, String passwordHash, String bio,
+                Instant createdAt, Instant updatedAt, UserRole role) {
+        this(id, email, username, displayName, passwordHash, bio, createdAt, updatedAt);
+        this.role = role;
     }
 
     public UUID getId() {
@@ -82,6 +93,12 @@ public class User {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    public UserRole getRole() { return role; }
+
+    public boolean canModerate() {
+        return role == UserRole.MODERATOR || role == UserRole.ADMIN;
     }
 
     public void updateProfile(String displayName, String bio) {

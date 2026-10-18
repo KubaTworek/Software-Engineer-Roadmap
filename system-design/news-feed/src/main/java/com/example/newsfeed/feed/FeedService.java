@@ -123,6 +123,8 @@ public class FeedService {
      * Dzięki temu można testować różne modele rankingu.
      */
     private final ExperimentService experimentService;
+    private final ContentAccessPolicy contentAccessPolicy;
+    private final FeedSessionService feedSessionService;
 
     /**
      * Metryka czasu budowania feedu.
@@ -148,7 +150,9 @@ public class FeedService {
     public FeedService(FeedStorage feedStorage, PostRepository postRepository, FollowRepository followRepository,
                        CelebrityService celebrityService, FeedCacheService feedCacheService,
                        RecommendationService recommendationService, LearningToRankService learningToRankService,
-                       ExperimentService experimentService, MeterRegistry meterRegistry) {
+                       ExperimentService experimentService, ContentAccessPolicy contentAccessPolicy,
+                       FeedSessionService feedSessionService,
+                       MeterRegistry meterRegistry) {
         this.feedStorage = feedStorage;
         this.postRepository = postRepository;
         this.followRepository = followRepository;
@@ -157,6 +161,8 @@ public class FeedService {
         this.recommendationService = recommendationService;
         this.learningToRankService = learningToRankService;
         this.experimentService = experimentService;
+        this.contentAccessPolicy = contentAccessPolicy;
+        this.feedSessionService = feedSessionService;
 
         /*
          * Rejestrujemy metrykę latency feedu.
@@ -221,6 +227,11 @@ public class FeedService {
              */
             int limit = normalizeLimit(requestedLimit);
 
+            Optional<FeedSessionCursor> sessionCursor = FeedSessionCursor.decode(encodedCursor);
+            if (sessionCursor.isPresent()) {
+                return readSessionPage(currentUser, sessionCursor.get(), limit);
+            }
+
             /*
              * A/B testing rankingu.
              *
@@ -259,7 +270,7 @@ public class FeedService {
             );
 
             if (cached.isPresent()) {
-                return cached.get();
+                return revalidateCachedFeed(currentUser, cached.get());
             }
 
             /*
@@ -268,8 +279,6 @@ public class FeedService {
              * Cursor mówi, od którego miejsca kontynuować odczyt feed_inbox.
              * Brak cursora oznacza pierwszą stronę.
              */
-            Optional<FeedCursor> cursor = FeedCursor.decode(encodedCursor);
-
             /*
              * Kandydaci z precomputed feed_inbox.
              *
@@ -279,19 +288,8 @@ public class FeedService {
              * Pobieramy więcej niż limit, bo część kandydatów może zostać
              * odfiltrowana przez ranking/diversity.
              */
-            List<UUID> inboxPostIds = cursor
-                    .map(c -> feedStorage.getPostIds(
-                            currentUser.getId(),
-                            c.createdAt(),
-                            c.id(),
-                            limit * 5
-                    ))
-                    .orElseGet(() -> feedStorage.getPostIds(
-                            currentUser.getId(),
-                            null,
-                            null,
-                            limit * 5
-                    ));
+            List<UUID> inboxPostIds = feedStorage.getPostIds(
+                    currentUser.getId(), null, null, limit * 5);
 
             /*
              * Pobieramy follow graph użytkownika.
@@ -353,7 +351,9 @@ public class FeedService {
              */
             List<Post> posts = candidateIds.isEmpty()
                     ? List.of()
-                    : postRepository.findFeedPostsByIds(candidateIds);
+                    : postRepository.findFeedPostsByIds(candidateIds).stream()
+                    .filter(post -> contentAccessPolicy.canView(currentUser, post))
+                    .toList();
 
             /*
              * Mapa źródła kandydata.
@@ -386,13 +386,8 @@ public class FeedService {
              * - źródła,
              * - cech z Feature Store.
              */
-            List<RankedCandidate> ranked = posts.stream()
-                    .map(p -> learningToRankService.score(
-                            currentUser.getId(),
-                            p,
-                            source.getOrDefault(p.getId(), "UNKNOWN"),
-                            variant
-                    ))
+            List<RankedCandidate> ranked = learningToRankService
+                    .scoreBatch(currentUser.getId(), posts, source, variant).stream()
                     .sorted(Comparator.comparing(RankedCandidate::score).reversed())
                     .toList();
 
@@ -404,9 +399,10 @@ public class FeedService {
              *
              * Dlatego po rankingu nakładamy proste ograniczenia jakościowe.
              */
-            List<Post> pageItems = applyDiversity(ranked, limit).stream()
-                    .map(RankedCandidate::post)
-                    .toList();
+            List<RankedCandidate> stableRanking = applyDiversity(ranked, Math.min(ranked.size(), limit * 5));
+            UUID sessionId = feedSessionService.createSession(
+                    stableRanking.stream().map(FeedSessionEntry::from).toList());
+            List<Post> pageItems = stableRanking.stream().limit(limit).map(RankedCandidate::post).toList();
 
             /*
              * Budowa nextCursor.
@@ -417,14 +413,9 @@ public class FeedService {
              * a nie na pozycji po rankingu. Dla stabilnego rankingu produkcyjnego
              * lepszy byłby feed session cursor przechowujący listę ranked IDs.
              */
-            String nextCursor = null;
-            if (!pageItems.isEmpty() && ranked.size() > limit) {
-                Post last = pageItems.get(pageItems.size() - 1);
-                nextCursor = new FeedCursor(
-                        last.getCreatedAt(),
-                        last.getId()
-                ).encode();
-            }
+            String nextCursor = stableRanking.size() > limit
+                    ? new FeedSessionCursor(sessionId, limit).encode()
+                    : null;
 
             /*
              * DTO odpowiedzi.
@@ -526,15 +517,24 @@ public class FeedService {
          * W pełnej wersji trzeba użyć FeedCursor.decode(encodedCursor)
          * oraz findNextGlobalPage(...).
          */
-        List<Post> posts = postRepository.findFirstGlobalPage(
-                org.springframework.data.domain.PageRequest.of(0, limit)
-        );
+        Optional<FeedCursor> cursor = FeedCursor.decode(encodedCursor);
+        List<Post> posts = cursor
+                .map(value -> postRepository.findNextGlobalPage(value.createdAt(), value.id(),
+                        org.springframework.data.domain.PageRequest.of(0, limit + 1)))
+                .orElseGet(() -> postRepository.findFirstGlobalPage(
+                        org.springframework.data.domain.PageRequest.of(0, limit + 1)));
+
+        boolean hasNext = posts.size() > limit;
+        List<Post> page = hasNext ? posts.subList(0, limit) : posts;
+        String next = hasNext && !page.isEmpty()
+                ? new FeedCursor(page.get(page.size() - 1).getCreatedAt(), page.get(page.size() - 1).getId()).encode()
+                : null;
 
         return new FeedResponse(
-                posts.stream()
+                page.stream()
                         .map(PostResponse::from)
                         .toList(),
-                null
+                next
         );
     }
 
@@ -626,5 +626,41 @@ public class FeedService {
         }
 
         return Math.min(requestedLimit, MAX_LIMIT);
+    }
+
+    /**
+     * Cache przyspiesza ranking, ale nie jest źródłem autoryzacji. Przed
+     * odpowiedzią ponownie hydratowane są posty i wykonywana polityka dostępu,
+     * dzięki czemu stary cache nie ujawni treści po delete/hide/block.
+     */
+    private FeedResponse revalidateCachedFeed(User viewer, FeedResponse cached) {
+        List<UUID> ids = cached.items().stream().map(PostResponse::id).toList();
+        if (ids.isEmpty()) return cached;
+        Map<UUID, Post> live = postRepository.findFeedPostsByIds(ids).stream()
+                .filter(post -> contentAccessPolicy.canView(viewer, post))
+                .collect(Collectors.toMap(Post::getId, post -> post));
+        List<PostResponse> authorized = ids.stream()
+                .map(live::get)
+                .filter(Objects::nonNull)
+                .map(PostResponse::from)
+                .toList();
+        return new FeedResponse(authorized, cached.nextCursor());
+    }
+
+    private FeedResponse readSessionPage(User viewer, FeedSessionCursor cursor, int limit) {
+        List<FeedSessionEntry> entries = feedSessionService.getPage(cursor.sessionId(), cursor.offset(), limit)
+                .orElseThrow(() -> new com.example.newsfeed.common.ConflictException(
+                        "Feed session expired; refresh the first page."));
+        List<UUID> ids = entries.stream().map(FeedSessionEntry::postId).toList();
+        Map<UUID, Post> posts = postRepository.findFeedPostsByIds(ids).stream()
+                .filter(post -> contentAccessPolicy.canView(viewer, post))
+                .collect(Collectors.toMap(Post::getId, post -> post));
+        List<PostResponse> page = ids.stream().map(posts::get).filter(Objects::nonNull)
+                .map(PostResponse::from).toList();
+        int nextOffset = cursor.offset() + entries.size();
+        String next = nextOffset < feedSessionService.size(cursor.sessionId())
+                ? new FeedSessionCursor(cursor.sessionId(), nextOffset).encode()
+                : null;
+        return new FeedResponse(page, next);
     }
 }

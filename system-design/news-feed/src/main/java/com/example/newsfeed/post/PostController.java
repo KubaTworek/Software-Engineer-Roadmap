@@ -28,12 +28,6 @@ public class PostController {
      */
     private final PostService postService;
 
-    /**
-     * Wstrzyknięcie PostService przez konstruktor.
-     *
-     * To preferowany sposób dependency injection,
-     * bo zależność jest jawna i niemutowalna.
-     */
     public PostController(PostService postService) {
         this.postService = postService;
     }
@@ -70,15 +64,13 @@ public class PostController {
      *
      * ID posta jest przekazywane w ścieżce URL jako UUID.
      *
-     * PostService powinien zadbać o to, żeby:
-     * - zwrócić tylko istniejący post,
-     * - nie zwracać posta usuniętego,
-     * - ewentualnie sprawdzić widoczność / moderację / uprawnienia,
-     *   jeśli aplikacja jest na bardziej zaawansowanym etapie.
+     * PostService odrzuca rekord usunięty i sprawdza ContentAccessPolicy dla
+     * bieżącego użytkownika. Odmowa dostępu, tak jak brak rekordu, daje 404,
+     * aby odpowiedź nie ujawniała istnienia prywatnego identyfikatora.
      */
     @GetMapping("/{id}")
-    public PostResponse getPost(@PathVariable UUID id) {
-        return postService.getPost(id);
+    public PostResponse getPost(@CurrentUser User currentUser, @PathVariable UUID id) {
+        return postService.getPost(currentUser, id);
     }
 
     /**
@@ -95,7 +87,7 @@ public class PostController {
      *
      * Zwraca HTTP 204 NO CONTENT, ponieważ operacja nie zwraca body.
      *
-     * W praktyce usunięcie powinno być soft delete, czyli ustawienie deletedAt,
+     * Usunięcie jest soft delete, czyli ustawieniem deletedAt,
      * a nie fizyczne usunięcie rekordu z bazy. Dzięki temu feed, moderacja
      * i eventy mogą nadal bezpiecznie odwoływać się do historii posta.
      */

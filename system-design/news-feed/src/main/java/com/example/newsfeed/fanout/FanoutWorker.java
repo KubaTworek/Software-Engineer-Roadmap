@@ -181,7 +181,7 @@ public class FanoutWorker {
          * Jeśli Kafka dostarczy event ponownie, processOnce powinien wykryć,
          * że eventId był już obsłużony, i nie wykonać lambdy drugi raz.
          */
-        idempotentEventProcessor.processOnce(event, () -> {
+        idempotentEventProcessor.processOnce("fanout", event, () -> {
             /*
              * ID posta znajduje się w entityId eventu.
              */
@@ -275,41 +275,28 @@ public class FanoutWorker {
                  * Produkcyjnie trzeba dodać paginację po shardzie
                  * albo emitować osobne taski fanout-shard-page.
                  */
-                List<FollowerShard> followers = followerShardRepository.findByFolloweeIdAndShardId(
-                        authorId,
-                        shard,
-                        PageRequest.of(0, batchSize)
-                );
+                UUID cursor = null;
+                while (true) {
+                    List<FollowerShard> followers = followerShardRepository.findPage(
+                            authorId, shard, cursor, PageRequest.of(0, batchSize));
+                    if (followers.isEmpty()) break;
 
-                /*
-                 * Zamieniamy followersów na wpisy feed_inbox.
-                 *
-                 * Każdy FeedInboxItem mówi:
-                 * "postId autora authorId powinien pojawić się w feedzie followerId".
-                 */
-                List<FeedInboxItem> items = followers.stream()
-                        .map(row -> new FeedInboxItem(
-                                row.getFollowerId(),
-                                postId,
-                                authorId,
-                                createdAt.toEpochMilli(),
-                                "FOLLOWING",
-                                row.getShardId(),
-                                createdAt
-                        ))
-                        .toList();
+                    List<FeedInboxItem> items = followers.stream()
+                            .map(row -> new FeedInboxItem(row.getFollowerId(), postId, authorId,
+                                    createdAt.toEpochMilli(), "FOLLOWING", row.getShardId(), createdAt))
+                            .toList();
+                    feedStorage.appendIdempotent(items);
+                    fanoutItems.increment(items.size());
 
-                /*
-                 * Idempotentny zapis do feed storage.
-                 *
-                 * Jeśli worker powtórzy fan-out, storage powinien zignorować duplikaty.
-                 */
-                feedStorage.appendIdempotent(items);
-
-                /*
-                 * Metryka liczby zapisanych elementów feedu.
-                 */
-                fanoutItems.increment(items.size());
+                    /*
+                     * Cursor po followerId gwarantuje, że shard większy niż
+                     * pojedynczy batch zostanie przetworzony w całości. Przy
+                     * awarii Kafka ponowi event od początku; idempotentny klucz
+                     * (user_id, post_id) czyni taki replay bezpiecznym.
+                     */
+                    cursor = followers.get(followers.size() - 1).getFollowerId();
+                    if (followers.size() < batchSize) break;
+                }
             }
 
             /*
@@ -343,7 +330,7 @@ public class FanoutWorker {
          *
          * Ten sam event deleted może zostać dostarczony więcej niż raz.
          */
-        idempotentEventProcessor.processOnce(event, () -> {
+        idempotentEventProcessor.processOnce("fanout", event, () -> {
             /*
              * Usuwamy post z feed storage.
              *

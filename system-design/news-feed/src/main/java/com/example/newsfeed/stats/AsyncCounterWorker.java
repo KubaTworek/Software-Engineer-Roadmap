@@ -102,6 +102,7 @@ public class AsyncCounterWorker {
          * applyCounterEvent nie powinno wykonać się ponownie.
          */
         idempotentEventProcessor.processOnce(
+                "counter-projection",
                 event,
                 () -> applyCounterEvent(event)
         );

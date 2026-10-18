@@ -11,7 +11,9 @@ public class PostFeature {
     private UUID postId;
     private double qualityScore;
     private double spamScore;
+    @Column(name = "ctr_1h")
     private double ctr1h;
+    @Column(name = "ctr_24h")
     private double ctr24h;
     private double reportRate;
     private Instant updatedAt;

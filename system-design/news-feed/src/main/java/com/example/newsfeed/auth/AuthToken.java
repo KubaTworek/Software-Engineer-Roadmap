@@ -41,10 +41,6 @@ public class AuthToken {
         return id;
     }
 
-    public String getToken() {
-        return token;
-    }
-
     public User getUser() {
         return user;
     }

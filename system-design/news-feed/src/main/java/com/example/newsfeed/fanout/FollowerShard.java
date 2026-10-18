@@ -36,6 +36,8 @@ public class FollowerShard {
         return followerId;
     }
 
+    public UUID getFolloweeId() { return followeeId; }
+
     public int getShardId() {
         return shardId;
     }

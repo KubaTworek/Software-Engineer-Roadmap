@@ -9,8 +9,8 @@ import java.util.UUID;
 @Table(name = "processed_kafka_events")
 public class ProcessedKafkaEvent {
 
-    @Id
-    private UUID eventId;
+    @EmbeddedId
+    private ProcessedKafkaEventId id;
 
     @Column(nullable = false, length = 100)
     private String eventType;
@@ -21,8 +21,8 @@ public class ProcessedKafkaEvent {
     protected ProcessedKafkaEvent() {
     }
 
-    public ProcessedKafkaEvent(UUID eventId, String eventType, Instant processedAt) {
-        this.eventId = eventId;
+    public ProcessedKafkaEvent(String consumerName, UUID eventId, String eventType, Instant processedAt) {
+        this.id = new ProcessedKafkaEventId(consumerName, eventId);
         this.eventType = eventType;
         this.processedAt = processedAt;
     }

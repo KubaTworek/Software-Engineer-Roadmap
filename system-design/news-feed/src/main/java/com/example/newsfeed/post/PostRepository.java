@@ -34,7 +34,8 @@ public interface PostRepository extends JpaRepository<Post, UUID> {
      * bo autorzy postów są pobierani razem z postami.
      */
     @Query("SELECT p FROM Post p JOIN FETCH p.author " +
-            "WHERE p.deletedAt IS NULL " +
+            "WHERE p.deletedAt IS NULL AND p.status = com.example.newsfeed.post.PostStatus.PUBLISHED " +
+            "AND p.visibility = com.example.newsfeed.post.PostVisibility.PUBLIC " +
             "ORDER BY p.createdAt DESC, p.id DESC")
     List<Post> findFirstGlobalPage(Pageable pageable);
 
@@ -48,7 +49,8 @@ public interface PostRepository extends JpaRepository<Post, UUID> {
      * Dzięki temu unikamy offset pagination.
      */
     @Query("SELECT p FROM Post p JOIN FETCH p.author " +
-            "WHERE p.deletedAt IS NULL " +
+            "WHERE p.deletedAt IS NULL AND p.status = com.example.newsfeed.post.PostStatus.PUBLISHED " +
+            "AND p.visibility = com.example.newsfeed.post.PostVisibility.PUBLIC " +
             "AND (p.createdAt < :createdAt OR (p.createdAt = :createdAt AND p.id < :id)) " +
             "ORDER BY p.createdAt DESC, p.id DESC")
     List<Post> findNextGlobalPage(Instant createdAt, UUID id, Pageable pageable);
@@ -60,7 +62,7 @@ public interface PostRepository extends JpaRepository<Post, UUID> {
      * Ta metoda zamienia ID-ki na pełne encje Post + author.
      */
     @Query("SELECT p FROM Post p JOIN FETCH p.author " +
-            "WHERE p.deletedAt IS NULL " +
+            "WHERE p.deletedAt IS NULL AND p.status = com.example.newsfeed.post.PostStatus.PUBLISHED " +
             "AND p.id IN :ids")
     List<Post> findFeedPostsByIds(Collection<UUID> ids);
 
@@ -75,7 +77,7 @@ public interface PostRepository extends JpaRepository<Post, UUID> {
      * Parametr followeeId to ID autora, którego posty pobieramy.
      */
     @Query("SELECT p FROM Post p JOIN FETCH p.author " +
-            "WHERE p.deletedAt IS NULL " +
+            "WHERE p.deletedAt IS NULL AND p.status = com.example.newsfeed.post.PostStatus.PUBLISHED " +
             "AND p.author.id = :followeeId " +
             "ORDER BY p.createdAt DESC, p.id DESC")
     List<Post> findLatestPostsByAuthor(UUID followeeId, Pageable pageable);
@@ -96,7 +98,15 @@ public interface PostRepository extends JpaRepository<Post, UUID> {
      * - score z post_features albo post_stats.
      */
     @Query("SELECT p FROM Post p JOIN FETCH p.author " +
-            "WHERE p.deletedAt IS NULL " +
+            "WHERE p.deletedAt IS NULL AND p.status = com.example.newsfeed.post.PostStatus.PUBLISHED " +
+            "AND p.visibility = com.example.newsfeed.post.PostVisibility.PUBLIC " +
             "ORDER BY p.createdAt DESC, p.id DESC")
     List<Post> findTrendingCandidates(Pageable pageable);
+
+    @Query("SELECT p FROM Post p JOIN FETCH p.author WHERE p.deletedAt IS NULL " +
+            "AND p.status = com.example.newsfeed.post.PostStatus.PUBLISHED ORDER BY p.createdAt ASC, p.id ASC")
+    List<Post> findPublishedForRebuild(Pageable pageable);
+
+    @Query("SELECT p FROM Post p JOIN FETCH p.author WHERE p.deletedAt IS NOT NULL AND p.deletedAt < :cutoff")
+    List<Post> findDeletedBefore(Instant cutoff, Pageable pageable);
 }

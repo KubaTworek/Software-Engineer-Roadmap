@@ -2,8 +2,8 @@ package com.example.newsfeed.like;
 
 import com.example.newsfeed.common.NotFoundException;
 import com.example.newsfeed.events.DomainEvent;
-import com.example.newsfeed.events.KafkaEventPublisher;
 import com.example.newsfeed.events.NewsFeedTopics;
+import com.example.newsfeed.outbox.DomainEventPublisher;
 import com.example.newsfeed.post.Post;
 import com.example.newsfeed.post.PostRepository;
 import com.example.newsfeed.user.User;
@@ -70,7 +70,7 @@ public class LikeService {
      * - rekomendacje mogą traktować lajki jako sygnał preferencji,
      * - analityka może liczyć engagement.
      */
-    private final KafkaEventPublisher eventPublisher;
+    private final DomainEventPublisher eventPublisher;
 
     /**
      * Wstrzyknięcie zależności przez konstruktor.
@@ -82,7 +82,7 @@ public class LikeService {
             PostLikeRepository postLikeRepository,
             PostRepository postRepository,
             UserRepository userRepository,
-            KafkaEventPublisher eventPublisher
+            DomainEventPublisher eventPublisher
     ) {
         this.postLikeRepository = postLikeRepository;
         this.postRepository = postRepository;

@@ -1,5 +1,28 @@
 # News Feed — System Design
 
+<!-- reading-guide:start -->
+## Ścieżki czytania
+
+| Cel czytania | Punkt wejścia |
+| --- | --- |
+| Teoria i model problemu | [5. Główne wyzwanie projektowe](#5-główne-wyzwanie-projektowe) |
+| Implementacja i jej dowody | [55. Mapa wykonywalnej implementacji](#55-mapa-wykonywalnej-implementacji) |
+| Uruchomienie i eksperymenty | [59. Strategia testów i operacje](#59-strategia-testów-i-operacje) |
+| Ograniczenia i scenariusze awarii | [66. Ewolucja architektury i granice rozwiązania](#66-ewolucja-architektury-i-granice-rozwiązania) |
+
+Wspólne mechanizmy i ich testy znajdziesz w [indeksie pojęć backend-engineering](../../backend-engineering/README.md#globalny-indeks-pojęć). Tutaj śledź ich konsekwencje dla opisywanego systemu.
+Diagramy docelowe i warianty rozwoju czytaj razem z mapą implementacji; sam opis architektury nie oznacza, że wszystkie jej komponenty są uruchamiane w laboratorium.
+<!-- reading-guide:end -->
+
+## Zacznij tutaj
+
+| Pytanie | Odpowiedź |
+| --- | --- |
+| Najważniejszy niezmiennik | Feed nie może ujawnić posta usuniętego lub niedostępnego dla użytkownika, niezależnie od opóźnienia projekcji. |
+| Krytyczny przepływ | Publikacja posta → outbox → fan-out on write/pull dla celebryty → ranking → keyset pagination → odczyt feedu. |
+| Rekomendowany test | `mvnw.cmd test` sprawdza szybkie kontrakty; `mvnw.cmd -Pinfrastructure-tests verify` potwierdza pełny przepływ oraz semantykę PostgreSQL, Kafki, Redisa, DynamoDB i OpenSearch na Testcontainers. |
+| Świadome ograniczenia | Produkcyjny model ML, CDN, skanowanie mediów, regionalny failover i fizyczne usuwanie danych z backupów pozostają granicami zewnętrznych platform. |
+
 ## Spis treści
 
 1. [Cel systemu](#1-cel-systemu)
@@ -56,6 +79,23 @@
 52. [Rekomendowana architektura końcowa](#52-rekomendowana-architektura-końcowa)
 53. [Decyzje do obrony na rozmowie System Design](#53-decyzje-do-obrony-na-rozmowie-system-design)
 54. [Finalna rekomendacja](#54-finalna-rekomendacja)
+55. [Mapa wykonywalnej implementacji](#55-mapa-wykonywalnej-implementacji)
+56. [Pojemność i koszt fan-outu](#56-pojemność-i-koszt-fan-outu)
+57. [Gwarancje dostarczania i odbudowa](#57-gwarancje-dostarczania-i-odbudowa)
+58. [Ranking jako system uczący się](#58-ranking-jako-system-uczący-się)
+59. [Strategia testów i operacje](#59-strategia-testów-i-operacje)
+60. [Granice bezpieczeństwa i retencji](#60-granice-bezpieczeństwa-i-retencji)
+61. [Model kosztowy feedu](#61-model-kosztowy-feedu)
+62. [Spójność, kolejność i niezmienniki](#62-spójność-kolejność-i-niezmienniki)
+63. [Kolejki, backpressure i przeciążenie](#63-kolejki-backpressure-i-przeciążenie)
+64. [Model danych projektowany od access patterns](#64-model-danych-projektowany-od-access-patterns)
+65. [Teoria systemu rekomendacyjnego](#65-teoria-systemu-rekomendacyjnego)
+66. [Ewolucja architektury i granice rozwiązania](#66-ewolucja-architektury-i-granice-rozwiązania)
+67. [Trust & Safety i workflow moderacji](#67-trust--safety-i-workflow-moderacji)
+68. [Rekoncyliacja, replay i naprawa projekcji](#68-rekoncyliacja-replay-i-naprawa-projekcji)
+69. [Cykl życia danych i prawo do usunięcia](#69-cykl-życia-danych-i-prawo-do-usunięcia)
+70. [Eksperyment pojemności i realistyczny rozkład ruchu](#70-eksperyment-pojemności-i-realistyczny-rozkład-ruchu)
+71. [Macierz gwarancji i testów](#71-macierz-gwarancji-i-testów)
 
 ---
 
@@ -2263,3 +2303,405 @@ Moderation i permission checks działają przy odczycie
 ```
 
 Taka architektura daje dobry kompromis między szybkością, skalowalnością, świeżością i kontrolą jakości feedu.
+
+---
+
+## 55. Mapa wykonywalnej implementacji
+
+Ten projekt nie jest wyłącznie katalogiem klas odpowiadających elementom diagramu. Poniższa tabela wskazuje kanoniczną ścieżkę i zapobiega myleniu modelu edukacyjnego z gwarancją produkcyjną.
+
+| Problem | Kanoniczna implementacja | Source of truth | Projekcja / cache |
+| --- | --- | --- | --- |
+| zapis posta | `PostService` + `outbox.DomainEventPublisher` | PostgreSQL `posts`, `domain_events` | Kafka dopiero po commicie |
+| dostarczenie zdarzenia | `OutboxWorker` z lease, retry i synchronicznym ack brokera | `domain_events` | topic Kafki |
+| idempotencja konsumenta | `IdempotentEventProcessor` | `(consumer_name, event_id)` | osobny marker dla każdej projekcji |
+| feed zwykłego autora | `FanoutWorker` przechodzący wszystkie strony shardu | post + graf follow | `feed_inbox` |
+| feed celebryty | `CelebrityService` z histerezą 100%/80% | graf follow + post | `celebrity_posts`, pull przy odczycie |
+| prywatność | `ContentAccessPolicy` po hydracji | status posta, visibility, follow, block | wpis inbox/cache nigdy nie jest autoryzacją |
+| stabilna paginacja | `FeedSessionService` + `FeedSessionCursor` | snapshot rankingu sesji | Redis z ograniczonym TTL |
+| wyszukiwanie | `SearchIndexWorker` | PostgreSQL | odtwarzalny indeks OpenSearch |
+
+Krytyczna zasada brzmi: **projekcja może być nieaktualna, ale nie może samodzielnie przyznać dostępu**. Dlatego post jest ponownie hydrowany i sprawdzany tuż przed serializacją odpowiedzi, również po cache hit.
+
+## 56. Pojemność i koszt fan-outu
+
+Przykładowe obliczenie wymusza jawne założenia zamiast „magicznych” liczb:
+
+- 20 mln DAU, średnio 2 publikacje dziennie na aktywnego autora daje około 463 postów/s średnio;
+- pik 10× oznacza około 4,6 tys. publikacji/s;
+- przy medianie 200 obserwujących czysty push tworzy około 926 tys. wpisów inbox/s w piku;
+- jeden autor z 10 mln obserwujących wygenerowałby jednorazowo 10 mln zapisów i długi ogon kolejki;
+- wpis inbox o efektywnym rozmiarze 80 B to około 74 MiB/s przed replikacją i narzutem indeksów.
+
+To uzasadnia model hybrydowy. Próg celebrity nie jest uniwersalną stałą: powinien wynikać z budżetu opóźnienia fan-outu, przepustowości partycji i kosztu dodatkowego pull/merge. Histereza zapobiega przełączaniu strategii przy oscylacji licznika. Przy democji projekcja pull jest usuwana; produkcyjnie potrzebny jest również kontrolowany backfill do inboxów albo okres przejściowy z odczytem obu źródeł.
+
+## 57. Gwarancje dostarczania i odbudowa
+
+| Awaria | Oczekiwane zachowanie | Mechanizm |
+| --- | --- | --- |
+| proces umiera po zapisie posta | event nadal oczekuje | transakcyjny outbox |
+| relay umiera po claimie | event wraca po wygaśnięciu lease | czasowy `CLAIMED` |
+| broker przyjął event, relay nie oznaczył rekordu | możliwy duplikat, nie utrata | at-least-once + idempotent consumer |
+| jedna projekcja już obsłużyła event | inne nadal mogą go obsłużyć | klucz `(consumer_name,event_id)` |
+| shard followersów ma więcej niż batch | worker czyta następne strony | keyset po `follower_id` |
+| cache zawiera usunięty/prywatny post | wynik zostaje odfiltrowany | read-time access policy |
+| indeks wyszukiwania zostaje utracony | można odtworzyć go z source of truth | replay/backfill, indeks nie jest prawdą |
+
+Kafka daje kolejność w obrębie partycji, nie globalnie. Klucz `postId` utrzymuje zdarzenia jednego posta razem. Exactly-once end-to-end nie jest tutaj obiecywane: broker, baza konsumenta i zewnętrzny indeks nie dzielą jednej transakcji. Projekt osiąga praktycznie użyteczną kombinację **at-least-once transport + idempotentne efekty**.
+
+Rekoncyliacja powinna okresowo porównywać źródło prawdy z projekcjami: brakujące wpisy odtworzyć, osierocone usunąć, a metrykę rozbieżności wystawić do alertowania. Backfill musi mieć limit przepustowości, checkpoint i możliwość wznowienia, aby nie zagłodził ruchu online.
+
+## 58. Ranking jako system uczący się
+
+Pipeline ma cztery osobne etapy: retrieval kandydatów, batchowe pobranie cech, scoring i reguły post-rankingu (deduplikacja, różnorodność, sponsored caps). Złożenie ich w jedną funkcję utrudnia pomiar recall oraz diagnozę, czy słaby wynik pochodzi z braku kandydata, czy z niewłaściwej kolejności.
+
+Offline mierzymy co najmniej recall@K, NDCG i kalibrację. Online patrzymy na CTR, dwell time, retencję oraz guardraile: hide/report rate, latency p99 i udział treści od jednego autora. Sam CTR promuje clickbait. Log treningowy musi zawierać ekspozycje, nie tylko kliknięcia; inaczej model uczy się wyłącznie z treści pokazanych przez poprzedni model. Eksploracja powinna być ograniczona, audytowalna i wyłączalna kill switchem.
+
+Snapshot sesji stabilizuje strony w czasie zmian rankingu. Ceną jest to, że bardzo świeży post nie pojawi się w środku istniejącej sesji; użytkownik zobaczy go po odświeżeniu. Cursor jest nieprzezroczystym uchwytem do snapshotu, a nie offsetem w dynamicznym zbiorze.
+
+## 59. Strategia testów i operacje
+
+```powershell
+# szybka pętla: domena, polityki, cursory, outbox oraz wiring na H2
+.\mvnw.cmd --batch-mode --no-transfer-progress clean verify
+
+# semantyka zależna od prawdziwego PostgreSQL i Kafki; wymaga Dockera
+.\mvnw.cmd --batch-mode --no-transfer-progress -Pinfrastructure-tests verify
+
+# ręczny eksperyment wydajnościowy po uruchomieniu środowiska i przygotowaniu tokenu
+k6 run -e BASE_URL=http://localhost:8080 -e AUTH_TOKEN=... load-tests/feed.js
+```
+
+Test jednostkowy dowodzi reguły lokalnej. Test kontraktu PostgreSQL dowodzi zachowania `ON CONFLICT` i migracji. Test Kafki pokazuje kolejność jednego klucza. Żaden z nich osobno nie dowodzi SLO całego systemu; do tego służą load/stress/spike/soak, metryki nasycenia i kontrolowany game day. Alerty startowe są w `ops/prometheus-alerts.yml`, a kroki diagnozy w `ops/RUNBOOK.md`.
+
+## 60. Granice bezpieczeństwa i retencji
+
+- bearer token jest przechowywany jako SHA-256; surowy sekret jest zwracany tylko przy utworzeniu;
+- Redis rate limit używa atomowego Lua `INCR` + `PEXPIRE`, a invalidacja cache korzysta ze `SCAN`, nie blokującego `KEYS`;
+- upload ogranicza MIME i rozmiar, lecz produkcyjnie wymaga kwarantanny, AV/CDR, dekodowania po stronie serwera i podpisanych URL;
+- blokada w dowolnym kierunku oraz status moderacji są sprawdzane w hot path;
+- logi nie mogą zawierać tokenów, pełnego PII ani treści prywatnych; identyfikatory powinny mieć kontrolowaną cardinality;
+- soft delete nie jest pełnym usunięciem danych. Polityka retencji musi objąć bazę, cache, indeks, media, event log, analitykę i harmonogram wygaśnięcia backupów;
+- dostęp operatora do kolejki moderacji wymaga osobnej roli, audytu i zasady najmniejszych uprawnień. Projekt celowo nie udaje gotowego panelu Trust & Safety.
+
+---
+
+## 61. Model kosztowy feedu
+
+Najważniejsza decyzja w systemie feedu nie brzmi „Kafka czy RabbitMQ”, lecz **kiedy zapłacić za złożenie timeline’u**. Koszt można przenieść na zapis, na odczyt albo rozdzielić pomiędzy oba momenty.
+
+### Fan-out on write
+
+Po publikacji tworzymy wpis w inboxie każdego obserwującego. Przybliżony koszt pojedynczego posta wynosi:
+
+```text
+write_cost(post) ≈ follower_count(author) × replication_factor × index_amplification
+```
+
+Zaletą jest tani i przewidywalny odczyt: feed jest już przygotowany. Wadą jest write amplification, szczególnie dla kont o bardzo dużej liczbie obserwujących. Koszt ponosimy także dla użytkowników nieaktywnych, którzy nigdy nie odczytają wygenerowanego wpisu.
+
+Model push jest dobry, gdy:
+
+- większość autorów ma umiarkowaną liczbę obserwujących;
+- odczytów feedu jest znacznie więcej niż publikacji;
+- wymagane jest niskie p99 odczytu;
+- eventual consistency rzędu sekund jest akceptowalna.
+
+### Fan-out on read
+
+Podczas requestu pobieramy ostatnie posty obserwowanych autorów, wykonujemy merge i ranking. Koszt odczytu rośnie w przybliżeniu wraz z liczbą obserwowanych źródeł oraz głębokością pobrania:
+
+```text
+read_cost(user) ≈ followed_sources × candidates_per_source + ranking_cost
+```
+
+Nie generujemy pracy dla nieaktywnych użytkowników, ale hot path staje się kosztowny i podatny na długi ogon opóźnień. Samo równoległe odpytanie wielu shardów nie usuwa problemu: latency całego requestu jest zbliżone do latency najwolniejszego wymagającego źródła.
+
+### Model hybrydowy
+
+Projekt stosuje push dla zwykłych autorów i pull dla celebrytów. Wyniki obu ścieżek są deduplikowane i rankingowane razem. Próg przejścia powinien uwzględniać:
+
+- liczbę zapisów, które worker może wykonać w budżecie freshness;
+- rozkład liczby obserwujących, a nie tylko średnią;
+- aktywność odbiorców;
+- koszt storage i replikacji;
+- częstotliwość publikacji autora;
+- dopuszczalny koszt merge podczas odczytu.
+
+Próg bez histerezy powoduje flapping. Dlatego autor wchodzi do modelu pull przy 100% progu, a wraca do push dopiero poniżej 80%. Zmiana strategii jest migracją danych: samo przełączenie flagi nie backfilluje brakujących inboxów.
+
+### Write amplification kontra read amplification
+
+To ogólny wzorzec systemów rozproszonych. Prekomputacja obniża koszt odczytu kosztem większej liczby zapisów, miejsca i trudniejszej invalidacji. Obliczanie na żądanie redukuje storage, lecz zwiększa latency i zależność od dostępności wielu źródeł. Feed jest szczególnym przypadkiem materialized view, a `feed_inbox` jest projekcją zoptymalizowaną pod jeden access pattern.
+
+## 62. Spójność, kolejność i niezmienniki
+
+Nie wystarczy powiedzieć, że system jest „eventually consistent”. Trzeba wskazać **które dane**, **dla kogo**, **jak długo** i **jaki błąd jest dopuszczalny**.
+
+### Rodzaje obserwowanej spójności
+
+- **read-your-writes** — autor po utworzeniu posta powinien móc go odczytać z source of truth, nawet jeśli fan-out jeszcze trwa;
+- **monotonic reads** — klient nie powinien zobaczyć nowszego stanu, a następnie starszego wskutek zmiany repliki;
+- **eventual consistency** — post może pojawić się w inboxie po kilku sekundach;
+- **strong authorization check** — aktualna blokada, widoczność lub usunięcie muszą wygrać ze starą projekcją;
+- **bounded staleness** — biznes może określić maksymalny akceptowany fan-out lag, np. 30 sekund.
+
+Z tego wynika kluczowe rozdzielenie: **świeżość feedu może być słaba, poufność nie**. Brak świeżego posta jest czasowym problemem UX. Ujawnienie prywatnego posta jest naruszeniem bezpieczeństwa.
+
+### Kolejność zdarzeń
+
+Kafka gwarantuje kolejność w partycji. Dlatego zdarzenia dotyczące tego samego agregatu powinny mieć ten sam klucz, np. `postId`. Globalna kolejność wszystkich postów nie jest potrzebna i ograniczyłaby skalowanie do jednej partycji.
+
+Nawet w jednej partycji konsument musi radzić sobie z semantyką domenową:
+
+```text
+post.created(v1) → post.updated(v2) → post.deleted(v3)
+```
+
+Jeżeli replay lub backfill dostarczy starszy stan po nowszym, projekcja powinna znać wersję agregatu albo traktować delete jako tombstone. Sama idempotencja event ID usuwa duplikaty, ale nie rozwiązuje reorderingu dwóch różnych zdarzeń.
+
+### Safety i liveness
+
+Niezmienniki dzielą się na dwie kategorie:
+
+- **safety** — coś złego nigdy nie może się wydarzyć, np. zablokowany użytkownik nie widzi posta;
+- **liveness** — coś dobrego w końcu powinno się wydarzyć, np. opublikowany post ostatecznie trafi do feedów.
+
+Outbox, retry i replay wspierają liveness. `ContentAccessPolicy`, status posta i blokady chronią safety. System może chwilowo poświęcić liveness podczas awarii, ale nie powinien osłabiać kontroli dostępu tylko po to, aby zwrócić pełniejszy feed.
+
+### CAP i PACELC w tym systemie
+
+Podział sieci zmusza do wyboru na konkretnej granicy, nie dla całej aplikacji naraz:
+
+- publikacja źródłowego posta preferuje spójność PostgreSQL;
+- cache feedu preferuje dostępność i może być nieaktualny;
+- read-time authorization preferuje poprawność — przy braku danych potrzebnych do decyzji powinien działać fail-closed;
+- rekomendacje mogą zniknąć i zdegradować się do following/trending.
+
+PACELC przypomina, że również bez awarii istnieje kompromis latency–consistency. Synchroniczne czekanie na wszystkie projekcje poprawiłoby read-your-writes feedu, ale znacząco zwiększyłoby latency publikacji i coupling.
+
+## 63. Kolejki, backpressure i przeciążenie
+
+Kafka wygładza krótkie skoki, ale nie tworzy nieograniczonej przepustowości. Jeśli tempo produkcji `λ` przez dłuższy czas przekracza tempo konsumpcji `μ`, lag rośnie bez ograniczenia:
+
+```text
+lag_growth_per_second = max(0, λ - μ)
+recovery_time ≈ accumulated_lag / (μ - λ_normal)
+```
+
+Zwiększenie retencji Kafki daje więcej czasu na naprawę, ale nie rozwiązuje braku capacity. Consumer group skaluje się maksymalnie do liczby partycji; dodatkowy konsument ponad tę liczbę pozostaje bez pracy.
+
+### Mechanizmy ochronne
+
+- bounded batch i ograniczony czas przetwarzania;
+- pauzowanie partycji zamiast pobierania kolejnych rekordów przy niedostępnym downstreamie;
+- retry z exponential backoff i jitterem;
+- retry topic lub DLT dla poison record, aby jedna wiadomość nie blokowała partycji bez końca;
+- limit współbieżności po stronie bazy i OpenSearch;
+- osobny budżet dla ruchu online oraz replay/backfill;
+- load shedding dla pracy opcjonalnej, np. rekomendacji lub kosztownego debug explanation.
+
+Retry bez limitu jest mnożnikiem obciążenia. Gdy zależność zwalnia, rośnie liczba requestów w locie, timeouty generują retry, a retry zwiększają kolejkę — powstaje retry storm. Dlatego timeout, retry, circuit breaker, bulkhead i capacity limit muszą być projektowane jako jeden mechanizm, a nie niezależne adnotacje.
+
+### Priorytety degradacji
+
+Przy przeciążeniu system powinien zachować kolejność wartości:
+
+1. kontrola dostępu i usunięcia;
+2. możliwość opublikowania źródłowego posta;
+3. podstawowy feed following;
+4. świeżość projekcji;
+5. rekomendacje, ciężki ranking, sponsored content i dodatkowe explanation.
+
+Graceful degradation nie oznacza zwracania dowolnych starych danych. Oznacza świadome wyłączenie funkcji niższego priorytetu przy zachowaniu najważniejszych niezmienników.
+
+## 64. Model danych projektowany od access patterns
+
+W systemie o tej skali nie zaczynamy od uniwersalnego diagramu encji. Najpierw zapisujemy najważniejsze zapytania, ich wolumen i wymagane sortowanie.
+
+| Access pattern | Klucz / porządek | Model |
+| --- | --- | --- |
+| pobierz następne N wpisów feedu użytkownika | `user_id`, malejąco `created_at, post_id` | `feed_inbox` |
+| pobierz najnowsze posty celebrytów obserwowanych przez użytkownika | zbiór `author_id`, malejąco `created_at` | `celebrity_posts` |
+| znajdź followersów autora partiami | `followee_id, shard_id`, rosnąco `follower_id` | `follower_shards` |
+| sprawdź ponowne przetworzenie projekcji | `consumer_name, event_id` | `processed_kafka_events` |
+| znajdź zdarzenia gotowe do publikacji | `status, next_attempt_at` | `domain_events` |
+| wyszukaj tekstowo | odwrócony indeks | OpenSearch, nie PostgreSQL feed query |
+
+Denormalizacja jest celowa. Ten sam `postId` może wystąpić w source of truth, inboxach, cache, indeksie wyszukiwania i danych rankingowych. Nie próbujemy atomowo aktualizować wszystkiego. Ustalamy właściciela danych i sposób odbudowy każdej pochodnej.
+
+### Partycjonowanie i hot partitions
+
+Partycjonowanie wyłącznie po `user_id` daje dobrą lokalność odczytu feedu, ale popularny użytkownik może stać się hot key. Shardowanie followersów rozprasza fan-out, lecz zwiększa koszt koordynacji i merge. Losowy shard dobrze rozkłada zapis, ale utrudnia uporządkowany odczyt; shard wyprowadzony z identyfikatora daje deterministyczny routing.
+
+Partycja nie powinna być ani zbyt duża, ani zbyt drobna. Za duża ogranicza równoległość i recovery, za mała zwiększa metadata overhead, liczbę połączeń i koszt merge. Dobór wymaga danych o rozkładzie, nie tylko średniej.
+
+### Indeksy i paginacja
+
+Indeks `(user_id, created_at DESC, post_id DESC)` odpowiada dokładnie keyset pagination. `post_id` rozstrzyga remisy czasu. Offset wymaga przejścia i odrzucenia wcześniejszych wierszy, a przy równoległych insertach powoduje duplikaty lub pominięcia.
+
+W rankowanym feedzie sam cursor czasowy nie wystarcza, ponieważ score może się zmienić pomiędzy requestami. Snapshot sesji zamraża kolejność na krótki okres. Produkcyjne alternatywy to podpisany cursor zawierający wersję rankingu, materialized session albo deterministic scoring oparty o wersjonowane cechy.
+
+## 65. Teoria systemu rekomendacyjnego
+
+System rekomendacyjny nie jest pojedynczym modelem sortującym wszystkie posty. Typowy pipeline zawiera:
+
+```text
+eligible corpus
+  → candidate retrieval
+  → feature hydration
+  → lightweight ranking
+  → policy filters
+  → re-ranking/diversity
+  → logging ekspozycji
+```
+
+### Retrieval
+
+Retrieval ma znaleźć kilkaset lub kilka tysięcy potencjalnie trafnych elementów z ogromnego korpusu. Źródłami mogą być graf follow, podobieństwo embeddingów, popularność w kohorcie, tematy i świeże treści. Najważniejszą metryką retrieval jest recall: ranker nie może uratować posta, którego nie otrzymał jako kandydata.
+
+### Ranking
+
+Ranker przewiduje użyteczność kandydata w konkretnym kontekście. Feature’y dzielą się na:
+
+- cechy użytkownika — zainteresowania, historia, locale;
+- cechy posta — wiek, jakość, temat, ryzyko spamu;
+- cechy relacji — affinity użytkownik–autor;
+- cechy kontekstu — pora, urządzenie, pozycja i typ sesji.
+
+Feature używany online musi mieć tę samą semantykę jak podczas treningu. Training-serving skew powstaje, gdy pipeline offline liczy cechę inaczej niż serwis online albo używa informacji z przyszłości.
+
+### Bias i pętla zwrotna
+
+Model obserwuje reakcje tylko na treści, które poprzedni model pokazał. To selection bias. Pozycja sama wpływa na prawdopodobieństwo kliknięcia, więc surowy CTR nie jest czystą oceną jakości. Potrzebne są logi ekspozycji, korekta position bias, ograniczona eksploracja i eksperymenty.
+
+Pętla zwrotna może zawężać treść do coraz bardziej podobnych elementów. Diversity, novelty i limity autora nie są kosmetyką UX, lecz częścią jakości systemu. Cel optymalizacji powinien uwzględniać negatywne sygnały oraz długoterminową satysfakcję, nie tylko natychmiastowe kliknięcie.
+
+### Eksperymenty
+
+A/B test wymaga stabilnego przypisania użytkownika, rozłącznych wariantów, z góry określonej metryki głównej i guardraili. Nie należy zatrzymywać eksperymentu dokładnie w chwili uzyskania korzystnego wyniku. Trzeba uwzględnić sezonowość, novelty effect, sample ratio mismatch oraz koszt wielokrotnego testowania hipotez.
+
+Model można wdrożyć najpierw w shadow mode: liczyć wyniki bez wpływu na użytkownika i porównywać rozkłady, latency oraz błędy. Canary ogranicza blast radius, ale automatyczny rollback powinien reagować zarówno na błędy techniczne, jak i guardraile produktowe.
+
+## 66. Ewolucja architektury i granice rozwiązania
+
+Rozsądny system nie zaczyna od docelowego zestawu technologii. Każdy etap powinien odpowiadać obserwowanemu ograniczeniu.
+
+| Etap | Architektura | Sygnał do przejścia dalej |
+| --- | --- | --- |
+| 1 | PostgreSQL, chronological pull feed | query i p99 przestają mieścić się w budżecie |
+| 2 | indeksy, keyset pagination, krótki cache | koszt składania feedu dominuje odczyt |
+| 3 | fan-out on write i outbox | asynchroniczna projekcja wymaga niezawodnego transportu |
+| 4 | Kafka, idempotentni konsumenci, retry/DLT | liczba workerów i niezależnych projekcji rośnie |
+| 5 | hybrid fan-out i shardy followersów | celebrity/hot key dominuje write amplification |
+| 6 | retrieval, ranking, eksperymenty, feature store | produkt potrzebuje personalizacji, nie tylko chronologii |
+| 7 | regionalizacja i DR | wymagania dostępności uzasadniają koszt operacyjny |
+
+Obecna implementacja jest modularnym laboratorium. Pokazuje granice i kontrakty, ale nie dowodzi automatycznie gotowości do obsługi milionów użytkowników. W szczególności:
+
+- PostgreSQL `feed_inbox` demonstruje model dostępu; DynamoDB wymaga osobnego capacity planning, retry i obsługi throttlingu;
+- lokalny scoring demonstruje pipeline; produkcyjny model potrzebuje wersjonowania, registry, monitoringu driftu i rollbacku;
+- read-time policy chroni podstawowy invariant; pełny produkt wymaga tenantów, jurysdykcji, polityk wieku i audytu decyzji;
+- outbox gwarantuje brak utraty pomiędzy bazą i brokerem przy założeniach PostgreSQL; nie daje exactly-once dla wszystkich efektów zewnętrznych;
+- deklaracja multi-region nie zastępuje testu failoveru, pomiaru RPO/RTO ani rozwiązania konfliktów zapisu;
+- test obciążeniowy jest scenariuszem startowym, a nie dowodem capacity bez realistycznych danych, cache hit ratio i infrastruktury podobnej do produkcji.
+
+Najważniejsza umiejętność System Design to nie zapamiętanie diagramu. Jest nią przejście od wymagań i niezmienników przez liczby oraz access patterns do najprostszego rozwiązania, a następnie wskazanie jego punktu załamania i bezpiecznej ścieżki ewolucji.
+
+## 67. Trust & Safety i workflow moderacji
+
+Moderacja nie jest pojedynczym filtrem tekstu. To osobny proces decyzyjny, którego wynik wpływa na source of truth, projekcje, wyszukiwarkę, cache i rekomendacje. Minimalny przepływ wygląda następująco:
+
+```text
+publikacja → automatyczna klasyfikacja → allow / review / reject
+                                      ↓
+                           kolejka decyzji operatora
+                                      ↓
+                     publikacja albo ukrycie + audyt + event
+```
+
+Klasyfikator zwraca werdykt oraz uzasadnienie. Treść wymagająca oceny otrzymuje stan `PENDING_REVIEW` i nie może być widoczna tylko dlatego, że stara projekcja pozostała w cache. Uprawniony operator podejmuje decyzję dokładnie raz; blokada pesymistyczna rekordu review zapobiega dwóm sprzecznym decyzjom. Decyzja aktualizuje post, zapisuje niezmienny audit log i publikuje event przez outbox w tej samej transakcji.
+
+### Najważniejsze pojęcia
+
+- **false positive** usuwa legalną treść i szkodzi autorowi; **false negative** przepuszcza treść szkodliwą;
+- próg klasyfikatora jest decyzją produktową i ryzykiem, a nie wyłącznie parametrem ML;
+- moderacja synchroniczna zmniejsza ekspozycję, lecz zwiększa latency publikacji; asynchroniczna skraca write path, ale wymaga stanu kwarantanny;
+- reguły powinny być wersjonowane, aby dało się wyjaśnić historyczną decyzję;
+- audit log musi wskazywać operatora, czas, decyzję i powód, ale nie powinien bez potrzeby kopiować PII;
+- odwołanie jest nową decyzją, nie edycją historii;
+- uprawnienia `MODERATOR` i `ADMIN` podlegają zasadzie najmniejszych uprawnień oraz audytowi dostępu.
+
+Implementacja obejmuje role, kolejkę review, atomową decyzję, zmianę statusu posta, invalidację feedu, event domenowy oraz audit log. Nie obejmuje panelu operatorskiego, zewnętrznego modelu ML, systemu apelacji, hash matching ani współpracy z zespołem prawnym. Te elementy należy traktować jako jawne granice Trust & Safety.
+
+## 68. Rekoncyliacja, replay i naprawa projekcji
+
+System zdarzeniowy nie może opierać poprawności wyłącznie na założeniu, że każdy event został przetworzony raz i w kolejności. Projekcja może stracić rekord wskutek błędu konsumenta, ręcznej operacji, wygaśnięcia retencji brokera albo zmiany kodu. Dlatego każda pochodna powinna mieć określone źródło prawdy i procedurę odbudowy.
+
+| Operacja | Cel | Czy wykonuje efekt biznesowy? |
+| --- | --- | --- |
+| retry | ponowić nieudaną próbę tego samego eventu | nie, efekt musi być idempotentny |
+| replay | ponownie odczytać historyczne eventy | nie |
+| rebuild | utworzyć projekcję od zera ze źródła prawdy | nie |
+| reconciliation | wykryć i naprawić różnicę source–projection | nie |
+| backfill | uzupełnić nowe pole lub nową projekcję historycznymi danymi | nie |
+| compensating action | odwrócić wcześniej zaakceptowany efekt domenowy | tak, jest nową operacją biznesową |
+
+`ReconciliationService` odbudowuje indeks wyszukiwania z opublikowanych postów oraz feed konkretnego użytkownika z grafu follow i source of truth. Najpierw czyści pochodną, potem zapisuje aktualny stan i unieważnia cache. Endpoint wymaga roli `ADMIN`, ponieważ rebuild jest kosztowną operacją operatorską.
+
+W dużym systemie rebuild nie powinien wykonywać jednego nieograniczonego zapytania. Potrzebuje keyset pagination, checkpointu, ograniczenia przepustowości, osobnego budżetu połączeń, metryk postępu i możliwości wznowienia. Bezpieczny wariant buduje nową wersję indeksu obok starej, porównuje liczbę i próbki dokumentów, a następnie atomowo przełącza alias. Naprawa nie może ponownie wysyłać powiadomień, pobierać płatności ani naliczać statystyk biznesowych.
+
+## 69. Cykl życia danych i prawo do usunięcia
+
+Retencja jest częścią modelu danych, nie nocnym skryptem porządkowym. Każdy zbiór powinien mieć właściciela, podstawę przechowywania, okres retencji, mechanizm usunięcia oraz informację, czy może zostać odbudowany.
+
+| Zbiór | Rola | Przykładowa polityka w laboratorium |
+| --- | --- | --- |
+| `feed_inbox` | odtwarzalna projekcja | 90 dni |
+| `processed_kafka_events` | marker idempotencji | dłużej niż maksymalny replay, tutaj 30 dni |
+| przetworzony outbox | historia techniczna | 30 dni |
+| upload `PENDING` | porzucona rezerwacja zasobu | 1 dzień |
+| soft-deleted post | okno na propagację tombstone | 30 dni przed fizycznym usunięciem |
+| audit moderacji | dowód decyzji | według polityki prawnej, osobno od treści |
+
+`DataRetentionService` usuwa wygasłe tokeny, stare inboxy, markery, zakończony outbox i porzucone uploady. Przed fizycznym usunięciem posta usuwa dokument wyszukiwarki. Operację można wywołać ręcznie przez endpoint administracyjny lub włączyć scheduler właściwością konfiguracyjną; domyślnie scheduler jest wyłączony, aby laboratorium nie wykonywało niejawnych destrukcyjnych operacji.
+
+Prawo do usunięcia wymaga propagacji tombstone do cache, indeksu, feature store, analityki, mediów i replik. Backup zwykle nie jest modyfikowany w miejscu: dane wygasają zgodnie z harmonogramem backupu, a po odtworzeniu trzeba ponownie zastosować dziennik usunięć. Legal hold może zatrzymać usunięcie, ale musi być jawny, ograniczony i audytowalny. Anonimizacja jest skuteczna tylko wtedy, gdy nie da się ponownie powiązać danych za pomocą innych identyfikatorów.
+
+## 70. Eksperyment pojemności i realistyczny rozkład ruchu
+
+Średni użytkownik nie reprezentuje systemu społecznościowego. Liczba obserwujących, częstotliwość publikacji i aktywność mają ciężki ogon. Generator `load-tests/generate-zipf-dataset.mjs` tworzy dane zgodne z rozkładem Zipfa, a `feed.js` wybiera użytkowników z podobnym skosem. Osobny `celebrity-spike.js` sprawdza nagły post autora o bardzo dużej liczbie followersów.
+
+Scenariusze mają różne pytania:
+
+- **load** — czy oczekiwany ruch mieści się w SLO;
+- **stress** — gdzie znajduje się punkt nasycenia i jak system degraduje się powyżej niego;
+- **spike** — czy kolejki i cache pochłaniają nagły skok bez utraty niezmienników;
+- **soak** — czy po długim czasie rosną heap, połączenia, lag albo rozmiar projekcji.
+
+Przed eksperymentem zapisujemy capacity hypothesis: RPS, mix read/write, liczbę aktywnych użytkowników, rozkład followersów, cache hit ratio, wielkość payloadu, liczbę partycji i oczekiwane p95/p99. Kryteria przerwania muszą chronić środowisko, np. error rate, lag, saturation poola lub latency przekraczające bezpieczny próg. Raport `capacity-report.json` jest wynikiem konkretnego środowiska, danych i wersji aplikacji — nie uniwersalną liczbą wydajności.
+
+Open workload model utrzymuje tempo przyjść niezależnie od czasu odpowiedzi i ujawnia narastanie kolejki. Closed model czeka na odpowiedź wirtualnego użytkownika, więc wolniejszy system automatycznie generuje mniej requestów i może ukryć przeciążenie. Dla SLO należy unikać coordinated omission: generator powinien uwzględniać requesty, które miały nadejść podczas zastoju.
+
+Szczegółowy protokół eksperymentu, metryki i szablon decyzji capacity znajdują się w `load-tests/CAPACITY_EXPERIMENT.md`.
+
+## 71. Macierz gwarancji i testów
+
+Test jest wartościowy wtedy, gdy wskazuje konkretną gwarancję oraz jej granicę. Liczba testów sama w sobie nie jest miarą jakości systemu.
+
+| Gwarancja | Test / poziom | Czego nie dowodzi |
+| --- | --- | --- |
+| prywatny, ukryty lub zablokowany post nie wycieka ze starej projekcji | szybki test `ContentAccessPolicy` i `FeedService` | zachowania wszystkich zewnętrznych cache/CDN |
+| jedna decyzja moderacji zmienia stan, audyt i event atomowo | test serwisu moderacji | jakości klasyfikatora i procesu apelacji |
+| event jest publikowany dopiero po commicie encji | test outboxa + PostgreSQL IT | exactly-once efektu zewnętrznego |
+| ten sam event nie tworzy dwóch efektów konsumenta | test idempotentnego procesora | kolejności różnych eventów bez wersji agregatu |
+| zdarzenia jednego klucza zachowują kolejność | Kafka IT | globalnej kolejności pomiędzy partycjami |
+| wpis feedu ma stabilny porządek i idempotentny zapis | PostgreSQL IT i DynamoDB IT | production capacity i throttlingu DynamoDB |
+| limiter Redis wykonuje atomowe `INCR` + TTL | Redis IT | globalnego limitu podczas partycji sieci |
+| indeks można upsertować, usunąć i odbudować | OpenSearch IT + test reconciliation | bezbłędnego mappingu dla każdego typu dokumentu |
+| cały krytyczny przepływ dociera od posta przez outbox i Kafkę do feedu | `CriticalFeedFlowInfrastructureIT` | multi-region, CDN i awarii procesu w każdym możliwym punkcie |
+| polityka retencji usuwa właściwe klasy danych | szybki test `DataRetentionService` | fizycznego wygaśnięcia backupów i legal hold |
+
+Profil szybki używa test doubles lub H2 tam, gdzie badana jest logika aplikacyjna. Profil `infrastructure-tests` uruchamia prawdziwe obrazy PostgreSQL, Kafka, Redis, DynamoDB Local i OpenSearch przez Testcontainers. Rozdzielenie profili utrzymuje szybką pętlę developerską, a jednocześnie nie udaje, że H2 potwierdza blokady PostgreSQL albo że mapa w pamięci zachowuje się jak baza partycjonowana.
+
+Pełne zaznajomienie z projektem oznacza umiejętność obrony nie tylko happy path, ale również: właściciela każdego stanu, modelu spójności, klucza partycjonowania, granicy transakcji, strategii idempotencji, zachowania przy przeciążeniu, odbudowy projekcji, retencji danych, obserwowalności i bezpiecznej degradacji. To właśnie te decyzje — nie sama lista technologii — tworzą system design feedu.

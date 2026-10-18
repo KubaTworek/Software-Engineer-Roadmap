@@ -3,8 +3,8 @@ package com.example.newsfeed.follow;
 import com.example.newsfeed.common.ConflictException;
 import com.example.newsfeed.common.NotFoundException;
 import com.example.newsfeed.events.DomainEvent;
-import com.example.newsfeed.events.KafkaEventPublisher;
 import com.example.newsfeed.events.NewsFeedTopics;
+import com.example.newsfeed.outbox.DomainEventPublisher;
 import com.example.newsfeed.fanout.FollowerShardService;
 import com.example.newsfeed.feed.FeedCacheService;
 import com.example.newsfeed.user.User;
@@ -85,7 +85,7 @@ public class FollowService {
      *
      * Dlatego po zmianie relacji publikujemy event.
      */
-    private final KafkaEventPublisher eventPublisher;
+    private final DomainEventPublisher eventPublisher;
 
     /**
      * Wstrzyknięcie zależności przez konstruktor.
@@ -101,7 +101,7 @@ public class FollowService {
             UserRepository userRepository,
             FeedCacheService feedCacheService,
             FollowerShardService followerShardService,
-            KafkaEventPublisher eventPublisher
+            DomainEventPublisher eventPublisher
     ) {
         this.followRepository = followRepository;
         this.userRepository = userRepository;

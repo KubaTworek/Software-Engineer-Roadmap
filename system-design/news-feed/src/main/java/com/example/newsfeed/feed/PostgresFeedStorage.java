@@ -49,6 +49,16 @@ public class PostgresFeedStorage implements FeedStorage {
     }
 
     @Override
+    @Transactional
+    public void removeAuthorFromUserFeed(UUID userId, UUID authorId) {
+        repository.deleteByUserIdAndAuthorId(userId, authorId);
+    }
+
+    @Override
+    @Transactional
+    public void clearUserFeed(UUID userId) { repository.deleteByUserId(userId); }
+
+    @Override
     @Transactional(readOnly = true)
     @CircuitBreaker(name = "feedStorage")
     public List<UUID> getPostIds(UUID userId, Instant beforeCreatedAt, UUID beforePostId, int limit) {

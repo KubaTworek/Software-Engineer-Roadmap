@@ -1,5 +1,8 @@
 package com.example.newsfeed.moderation;
 
+import com.example.newsfeed.auth.CurrentUser;
+import com.example.newsfeed.user.User;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -62,5 +65,11 @@ public class ModerationController {
          * ale nie zawiera logiki biznesowej moderacji.
          */
         return moderationService.queue();
+    }
+
+    @PostMapping("/{reviewId}/decision")
+    public ModerationReview decide(@CurrentUser User moderator, @PathVariable java.util.UUID reviewId,
+                                   @Valid @RequestBody ModerationDecisionRequest request) {
+        return moderationService.decide(moderator, reviewId, request);
     }
 }

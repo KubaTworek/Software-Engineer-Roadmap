@@ -34,8 +34,22 @@ public class KafkaConfig {
     }
 
     @Bean
+    public NewTopic postLikedTopic() { return topic(com.example.newsfeed.events.NewsFeedTopics.POST_LIKED); }
+    @Bean
+    public NewTopic postUnlikedTopic() { return topic(com.example.newsfeed.events.NewsFeedTopics.POST_UNLIKED); }
+    @Bean
+    public NewTopic commentCreatedTopic() { return topic(com.example.newsfeed.events.NewsFeedTopics.COMMENT_CREATED); }
+    @Bean
+    public NewTopic commentDeletedTopic() { return topic(com.example.newsfeed.events.NewsFeedTopics.COMMENT_DELETED); }
+    @Bean
+    public NewTopic followCreatedTopic() { return topic(com.example.newsfeed.events.NewsFeedTopics.FOLLOW_CREATED); }
+    @Bean
+    public NewTopic followDeletedTopic() { return topic(com.example.newsfeed.events.NewsFeedTopics.FOLLOW_DELETED); }
+
+    @Bean
     public NewTopic dlqTopic() {
-        return TopicBuilder.name("newsfeed.dlq").partitions(3).replicas(1).build();
+        // DLT ma co najmniej tyle partycji co źródła, bo recoverer zachowuje numer partycji.
+        return TopicBuilder.name("newsfeed.dlq").partitions(6).replicas(1).build();
     }
 
     @Bean
@@ -51,5 +65,9 @@ public class KafkaConfig {
         DefaultErrorHandler handler = new DefaultErrorHandler(recoverer, backOff);
         handler.addNotRetryableExceptions(IllegalArgumentException.class);
         return handler;
+    }
+
+    private NewTopic topic(String name) {
+        return TopicBuilder.name(name).partitions(6).replicas(1).build();
     }
 }

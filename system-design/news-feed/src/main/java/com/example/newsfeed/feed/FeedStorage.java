@@ -10,5 +10,10 @@ public interface FeedStorage {
 
     void removePost(UUID postId);
 
+    void removeAuthorFromUserFeed(UUID userId, UUID authorId);
+
+    /** Usuwa jedną materialized view przed deterministycznym backfillem. */
+    void clearUserFeed(UUID userId);
+
     List<UUID> getPostIds(UUID userId, Instant beforeCreatedAt, UUID beforePostId, int limit);
 }

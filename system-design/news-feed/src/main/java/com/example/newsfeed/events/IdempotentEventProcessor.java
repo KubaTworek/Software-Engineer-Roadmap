@@ -3,8 +3,6 @@ package com.example.newsfeed.events;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Instant;
-
 @Service
 public class IdempotentEventProcessor {
 
@@ -15,13 +13,17 @@ public class IdempotentEventProcessor {
     }
 
     @Transactional
-    public boolean processOnce(DomainEvent event, Runnable action) {
-        if (repository.existsById(event.eventId())) {
+    public boolean processOnce(String consumerName, DomainEvent event, Runnable action) {
+        /*
+         * Jedno atomowe INSERT ... ON CONFLICT zastępuje podatne na race
+         * exists-then-insert. Marker i efekty bazodanowe uczestniczą w tej
+         * samej transakcji i wycofują się razem po wyjątku.
+         */
+        if (repository.claim(consumerName, event.eventId(), event.eventType()) == 0) {
             return false;
         }
 
         action.run();
-        repository.save(new ProcessedKafkaEvent(event.eventId(), event.eventType(), Instant.now()));
         return true;
     }
 }

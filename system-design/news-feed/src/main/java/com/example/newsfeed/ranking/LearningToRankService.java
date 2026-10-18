@@ -95,7 +95,23 @@ public class LearningToRankService {
          * Jeśli nie ma jeszcze rekordu w Feature Store,
          * używamy wartości domyślnych.
          */
-        PostFeature pf = features.get(post.getId());
+        return scoreWithFeatures(post, source, variant, features.get(post.getId()), Instant.now());
+    }
+
+    /** Batch eliminuje N odczytów feature store dla N kandydatów. */
+    public java.util.List<RankedCandidate> scoreBatch(
+            UUID userId, java.util.List<Post> posts, Map<UUID, String> sources, String variant) {
+        Map<UUID, PostFeature> features = featureStoreService.getPostFeatures(
+                posts.stream().map(Post::getId).toList());
+        Instant now = Instant.now();
+        return posts.stream()
+                .map(post -> scoreWithFeatures(post, sources.getOrDefault(post.getId(), "UNKNOWN"),
+                        variant, features.get(post.getId()), now))
+                .toList();
+    }
+
+    private RankedCandidate scoreWithFeatures(
+            Post post, String source, String variant, PostFeature pf, Instant now) {
 
         /*
          * Wiek posta w godzinach.
@@ -105,7 +121,7 @@ public class LearningToRankService {
          */
         double ageHours = Math.max(
                 1.0,
-                Duration.between(post.getCreatedAt(), Instant.now()).toMinutes() / 60.0
+                Duration.between(post.getCreatedAt(), now).toMinutes() / 60.0
         );
 
         /*

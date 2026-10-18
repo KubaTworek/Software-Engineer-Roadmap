@@ -44,7 +44,7 @@ public class SearchIndexWorker {
             groupId = "news-feed-search-index"
     )
     public void onPostEvent(DomainEvent event, Acknowledgment acknowledgment) {
-        idempotentEventProcessor.processOnce(event, () -> {
+        idempotentEventProcessor.processOnce("search-index", event, () -> {
             try {
                 if (NewsFeedTopics.POST_CREATED.equals(event.eventType())) {
                     Post post = postRepository.findById(event.entityId())

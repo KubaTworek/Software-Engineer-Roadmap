@@ -36,4 +36,18 @@ public class DomainEventPublisher {
             throw new IllegalStateException("Could not serialize domain event payload.", exception);
         }
     }
+
+    /**
+     * Adapter przejściowy używany przez use case'y domenowe. Zamiast wysyłać
+     * bezpośrednio do Kafki zapisuje envelope w tej samej transakcji co zmiana
+     * biznesowa. Klucz partycji jest odtwarzany przez relay z actorId.
+     */
+    public void publish(String topic, String ignoredKey, com.example.newsfeed.events.DomainEvent event) {
+        Map<String, Object> envelope = new java.util.HashMap<>(event.attributes());
+        envelope.put("actorId", event.actorId().toString());
+        envelope.put("entityId", event.entityId().toString());
+        envelope.put("occurredAt", event.occurredAt().toString());
+        envelope.put("eventId", event.eventId().toString());
+        publish(topic, event.entityId(), envelope);
+    }
 }
