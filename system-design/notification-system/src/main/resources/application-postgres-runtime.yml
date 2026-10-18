@@ -1,0 +1,10 @@
+spring:
+  datasource:
+    url: ${NOTIFICATION_DB_URL:jdbc:postgresql://localhost:5432/notifications}
+    username: ${NOTIFICATION_DB_USER:notifications}
+    password: ${NOTIFICATION_DB_PASSWORD:notifications}
+  flyway:
+    enabled: true
+
+# Ten profil zastępuje rdzeń in-memory adapterami JDBC. Template'y, preferencje
+# i symulowani providerzy pozostają elementami laboratorium.

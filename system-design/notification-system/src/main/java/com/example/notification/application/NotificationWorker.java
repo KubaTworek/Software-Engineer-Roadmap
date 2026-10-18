@@ -3,12 +3,14 @@ package com.example.notification.application;
 import com.example.notification.domain.*;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.Clock;
 import java.util.Map;
 import java.util.UUID;
 
@@ -40,8 +42,13 @@ public class NotificationWorker {
     private final Ports.NotificationRepository notificationRepository;
     private final Ports.TemplateRepository templateRepository;
     private final Ports.TemplateRenderer templateRenderer;
-    private final ProviderRegistry providerRegistry;
+    private final ProviderDeliveryExecutor deliveryExecutor;
+    private final Ports.PreferenceService preferenceService;
     private final AuditService auditService;
+    private final NotificationStatusPolicy statusPolicy;
+    private final SuppressionService suppressionService;
+    private final MeterRegistry meterRegistry;
+    private final Clock clock;
 
     /**
      * Bazowe opóźnienie retry.
@@ -68,6 +75,8 @@ public class NotificationWorker {
      * Rośnie wtedy, gdy job trafia do DLQ albo ma błąd permanentny.
      */
     private final Counter failedCounter;
+    private final Counter unknownCounter;
+    private final Timer timeToSend;
 
     public NotificationWorker(
             Ports.NotificationQueue queue,
@@ -75,9 +84,13 @@ public class NotificationWorker {
             Ports.NotificationRepository notificationRepository,
             Ports.TemplateRepository templateRepository,
             Ports.TemplateRenderer templateRenderer,
-            ProviderRegistry providerRegistry,
+            ProviderDeliveryExecutor deliveryExecutor,
+            Ports.PreferenceService preferenceService,
             AuditService auditService,
+            NotificationStatusPolicy statusPolicy,
+            SuppressionService suppressionService,
             MeterRegistry meterRegistry,
+            Clock clock,
             @Value("${notification.retry.base-delay-ms:1500}") long baseDelayMs
     ) {
         this.queue = queue;
@@ -85,8 +98,13 @@ public class NotificationWorker {
         this.notificationRepository = notificationRepository;
         this.templateRepository = templateRepository;
         this.templateRenderer = templateRenderer;
-        this.providerRegistry = providerRegistry;
+        this.deliveryExecutor = deliveryExecutor;
+        this.preferenceService = preferenceService;
         this.auditService = auditService;
+        this.statusPolicy = statusPolicy;
+        this.suppressionService = suppressionService;
+        this.meterRegistry = meterRegistry;
+        this.clock = clock;
         this.baseDelayMs = baseDelayMs;
 
         /*
@@ -101,6 +119,13 @@ public class NotificationWorker {
          * Przydatny do alertów, np. gdy failure rate rośnie.
          */
         this.failedCounter = Counter.builder("notification_jobs_failed_total")
+                .register(meterRegistry);
+        this.unknownCounter = Counter.builder("notification_provider_unknown_total")
+                .description("Provider calls whose external effect is ambiguous")
+                .register(meterRegistry);
+        this.timeToSend = Timer.builder("notification_time_to_send_seconds")
+                .description("Time from durable acceptance to provider acceptance")
+                .publishPercentileHistogram()
                 .register(meterRegistry);
     }
 
@@ -166,6 +191,18 @@ public class NotificationWorker {
         }
 
         /*
+         * PROCESSING z poprzedniego lease'u oznacza crash window. Nie wiemy, czy
+         * provider wykonał efekt, więc odzyskanie nie może ponownie wysłać wiadomości.
+         */
+        if (job.getStatus() == NotificationStatus.PROCESSING) {
+            job.markUnknown("Recovered PROCESSING job after worker crash; reconcile provider operation");
+            jobRepository.save(job);
+            unknownCounter.increment();
+            refreshNotificationStatus(job);
+            return;
+        }
+
+        /*
          * Obsługa wygaśnięcia joba.
          *
          * Jeśli Notification miało expiresAt i czas minął,
@@ -176,13 +213,31 @@ public class NotificationWorker {
          * - reset hasła,
          * - krótkotrwały alert.
          */
-        if (job.isExpired()) {
+        if (job.isExpired(clock.instant())) {
             job.markExpired();
             jobRepository.save(job);
 
             /*
              * Po zmianie statusu joba trzeba przeliczyć status głównego Notification.
              */
+            refreshNotificationStatus(job);
+            return;
+        }
+
+        // Consent jest sprawdzany ponownie bezpośrednio przed efektem zewnętrznym.
+        // Dzięki temu opt-out wykonany po zakolejkowaniu blokuje marketing, ale nie
+        // obowiązkowe komunikaty bezpieczeństwa.
+        if (!preferenceService.isAllowedNow(job.getTenantId(), job.getUserId(),
+                job.getNotificationType(), job.getChannel())) {
+            job.markCancelled();
+            jobRepository.save(job);
+            refreshNotificationStatus(job);
+            return;
+        }
+        if (suppressionService.isSuppressed(job.getTenantId(), job.getChannel(),
+                job.getContactPoint().valueFor(job.getChannel()))) {
+            job.markCancelled();
+            jobRepository.save(job);
             refreshNotificationStatus(job);
             return;
         }
@@ -219,13 +274,9 @@ public class NotificationWorker {
              * Template jest kanałowy, bo EMAIL, SMS i PUSH zwykle mają inną treść.
              */
             NotificationTemplate template = templateRepository
-                    .findActiveByTypeAndChannel(
-                            job.getTenantId(),
-                            job.getNotificationType(),
-                            job.getChannel()
-                    )
+                    .findById(job.getTenantId(), job.getTemplateId())
                     .orElseThrow(() -> new Exceptions.NotificationValidationException(
-                            "Template not found"
+                            "Pinned template version not found"
                     ));
 
             /*
@@ -247,19 +298,15 @@ public class NotificationWorker {
              * - najpierw SendGrid,
              * - potem SES fallback.
              */
-            ProviderSendResult result = sendWithFallback(job, rendered);
+            ProviderDeliveryExecutor.Result delivery = deliveryExecutor.send(job, rendered);
+            ProviderSendResult result = delivery.providerResult();
 
             /*
              * Sprawdzamy, czy użyto providera zapasowego.
              *
              * Pierwszy provider z registry traktowany jest jako primary.
              */
-            String primary = providerRegistry
-                    .providersFor(job.getChannel())
-                    .get(0)
-                    .providerName();
-
-            boolean fallbackUsed = !primary.equals(result.providerName());
+            boolean fallbackUsed = delivery.fallbackUsed();
 
             /*
              * Oznaczamy job jako SENT.
@@ -273,6 +320,7 @@ public class NotificationWorker {
              */
             job.markSent(result, fallbackUsed);
             jobRepository.save(job);
+            timeToSend.record(Duration.between(job.getCreatedAt(), clock.instant()));
 
             /*
              * Aktualizujemy status głównego Notification na podstawie statusów jobów.
@@ -302,6 +350,10 @@ public class NotificationWorker {
              */
             sentCounter.increment();
 
+        } catch (PostProviderEffectProbe.SimulatedProcessCrash crash) {
+            // Celowo nie zapisujemy żadnego rozstrzygnięcia: symulujemy utratę procesu.
+            // Wygasły lease pozwoli innemu workerowi odzyskać PROCESSING jako UNKNOWN.
+            throw crash;
         } catch (Exceptions.PermanentProviderException
                  | Exceptions.NotificationValidationException ex) {
 
@@ -318,6 +370,21 @@ public class NotificationWorker {
              */
             fail(job, ex.getMessage());
 
+        } catch (Exceptions.AdmissionRejectedException ex) {
+            // Przeciążenie lokalne oznacza „spróbuj później”, a nie „uderz do
+            // kolejnego providera”. Fallback w tej sytuacji tworzyłby retry storm.
+            retryOrFail(job, ex.getMessage());
+        } catch (Exceptions.ProviderCallException ex) {
+            if (ex.certainty() == Exceptions.OutcomeCertainty.UNKNOWN) {
+                // Po timeoutcie po wysłaniu requestu nie wolno automatycznie użyć
+                // drugiego providera: pierwszy mógł już przyjąć wiadomość.
+                job.markUnknown(ex.getMessage());
+                jobRepository.save(job);
+                unknownCounter.increment();
+                refreshNotificationStatus(job);
+            } else {
+                retryOrFail(job, ex.getMessage());
+            }
         } catch (RuntimeException ex) {
 
             /*
@@ -336,74 +403,6 @@ public class NotificationWorker {
     }
 
     /**
-     * Próbuje wysłać wiadomość przez providerów danego kanału.
-     *
-     * ProviderRegistry zwraca providerów w kolejności priorytetu:
-     * - primary,
-     * - fallback 1,
-     * - fallback 2 itd.
-     */
-    private ProviderSendResult sendWithFallback(
-            NotificationJob job,
-            RenderedNotification rendered
-    ) {
-        RuntimeException last = null;
-
-        /*
-         * Wyciągamy adres odbiorcy właściwy dla kanału.
-         *
-         * EMAIL -> email
-         * SMS -> phoneNumber
-         * PUSH -> pushToken
-         * IN_APP -> identyfikator użytkownika / lokalny kanał
-         */
-        String recipient = job
-                .getContactPoint()
-                .valueFor(job.getChannel());
-
-        /*
-         * Próbujemy wysłać wiadomość przez kolejnych providerów.
-         */
-        for (Ports.NotificationProvider provider
-                : providerRegistry.providersFor(job.getChannel())) {
-
-            try {
-                return provider.send(
-                        job.getTenantId(),
-                        recipient,
-                        rendered
-                );
-
-            } catch (Exceptions.PermanentProviderException ex) {
-                /*
-                 * Błąd permanentny przerywa fallback.
-                 *
-                 * Jeśli email jest niepoprawny, przełączenie z SendGrid na SES
-                 * nie ma sensu — drugi provider też nie naprawi adresu.
-                 */
-                throw ex;
-
-            } catch (RuntimeException ex) {
-                /*
-                 * Błąd tymczasowy pozwala spróbować kolejnego providera.
-                 *
-                 * Przykład:
-                 * SendGrid ma timeout, więc próbujemy SES.
-                 */
-                last = ex;
-            }
-        }
-
-        /*
-         * Jeśli żaden provider nie zadziałał, rzucamy ostatni błąd.
-         * Jeśli z jakiegoś powodu nie było błędu, tworzymy ogólny TransientProviderException.
-         */
-        throw last == null
-                ? new Exceptions.TransientProviderException("All providers failed")
-                : last;
-    }
-
-    /**
      * Obsługuje błąd potencjalnie tymczasowy.
      *
      * Jeśli job ma jeszcze dostępne próby, planujemy retry.
@@ -417,9 +416,9 @@ public class NotificationWorker {
              * attemptCount + 1, bo planujemy następną próbę,
              * a nie opisujemy poprzednią.
              */
-            Instant next = Instant.now().plus(
-                    backoff(job.getAttemptCount() + 1)
-            );
+            Duration delay = backoff(job.getAttemptCount() + 1);
+            long jitter = Math.floorMod(job.getId().hashCode(), Math.max(1, delay.toMillis() / 2));
+            Instant next = clock.instant().plus(delay).plusMillis(jitter);
 
             /*
              * scheduleRetry:
@@ -558,57 +557,7 @@ public class NotificationWorker {
                     /*
                      * Jeśli Notification wygasło, status nadrzędny to EXPIRED.
                      */
-                    if (n.isExpired()) {
-                        n.markExpired();
-
-                        /*
-                         * Jeśli wszystkie joby są DELIVERED,
-                         * całe Notification jest DELIVERED.
-                         *
-                         * Ten status zwykle pochodzi z webhooków providerów.
-                         */
-                    } else if (!jobs.isEmpty()
-                            && jobs.stream().allMatch(j ->
-                            j.getStatus() == NotificationStatus.DELIVERED
-                    )) {
-                        n.markDelivered();
-
-                        /*
-                         * Jeśli wszystkie joby są SENT albo DELIVERED,
-                         * Notification jest SENT.
-                         *
-                         * To znaczy: system przekazał wiadomości providerom,
-                         * ale niekoniecznie ma jeszcze potwierdzenie dostarczenia.
-                         */
-                    } else if (!jobs.isEmpty()
-                            && jobs.stream().allMatch(j ->
-                            j.getStatus() == NotificationStatus.SENT
-                                    || j.getStatus() == NotificationStatus.DELIVERED
-                    )) {
-                        n.markSent();
-
-                        /*
-                         * Jeśli którykolwiek job jest FAILED albo BOUNCED,
-                         * całe Notification traktujemy jako FAILED.
-                         *
-                         * To jest uproszczona polityka.
-                         * W bardziej zaawansowanej wersji można mieć status PARTIAL_FAILED.
-                         */
-                    } else if (jobs.stream().anyMatch(j ->
-                            j.getStatus() == NotificationStatus.FAILED
-                                    || j.getStatus() == NotificationStatus.BOUNCED
-                    )) {
-                        n.markFailed();
-
-                        /*
-                         * Jeśli przynajmniej jeden job jest PROCESSING,
-                         * Notification też jest PROCESSING.
-                         */
-                    } else if (jobs.stream().anyMatch(j ->
-                            j.getStatus() == NotificationStatus.PROCESSING
-                    )) {
-                        n.markProcessing();
-                    }
+                    statusPolicy.apply(n, jobs);
 
                     /*
                      * Zapisujemy zaktualizowany status agregatu.
@@ -616,4 +565,5 @@ public class NotificationWorker {
                     notificationRepository.save(n);
                 });
     }
+
 }

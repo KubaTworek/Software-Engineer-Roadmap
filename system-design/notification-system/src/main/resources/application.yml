@@ -3,13 +3,21 @@ server:
 
 spring:
   application:
-    name: notification-system-stage-6
+    name: notification-system
+  datasource:
+    url: jdbc:h2:mem:notifications;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+  flyway:
+    enabled: true
 
 notification:
   worker:
     fixed-delay-ms: 1000
+    lease-seconds: 30
   outbox:
     fixed-delay-ms: 700
+    max-attempts: 8
   retry:
     max-attempts: 3
     base-delay-ms: 1500
@@ -21,9 +29,22 @@ notification:
   digest:
     fixed-delay-ms: 2000
     window-seconds: 30
+  campaign:
+    batch-size: 100
+    claim-seconds: 60
+  admission:
+    provider-inflight: 20
+    tenant-inflight: 10
+  reconciliation:
+    fixed-delay-ms: 5000
   archive:
     fixed-delay-ms: 10000
     retention-seconds: 120
+  webhook:
+    signing-secret: "educational-only-change-me"
+    previous-signing-secret: ""
+    inbox-retry-ms: 5000
+    inbox-max-attempts: 20
 
 management:
   endpoints:

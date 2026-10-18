@@ -15,7 +15,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-class NotificationSystemStage6IntegrationTest {
+class NotificationApiTest {
     @Autowired
     TestRestTemplate restTemplate;
 
@@ -69,10 +69,45 @@ class NotificationSystemStage6IntegrationTest {
     void shouldExposeAdminDashboard() {
         HttpHeaders headers = new HttpHeaders();
         headers.set("X-Tenant-Id", "default");
+        headers.set("X-Role", "ADMIN");
 
         ResponseEntity<Map> response = restTemplate.exchange("/api/v1/admin/ops/dashboard", HttpMethod.GET, new HttpEntity<>(headers), Map.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).containsKeys("queueSize", "jobs", "dlq", "outbox", "auditEvents");
+    }
+
+    @Test
+    void shouldRejectApiRequestWithoutTenantIdentity() {
+        ResponseEntity<Map> response = restTemplate.getForEntity("/api/v1/notifications", Map.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void shouldRejectAdminEndpointWithoutTrustedRole() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-Tenant-Id", "default");
+        ResponseEntity<Map> response = restTemplate.exchange("/api/v1/admin/ops/dashboard", HttpMethod.GET,
+                new HttpEntity<>(headers), Map.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+    }
+
+    @Test
+    void tenantCannotReadAnotherTenantsNotification() {
+        ApiDtos.CreateNotificationRequest request = new ApiDtos.CreateNotificationRequest(
+                "isolated-user", NotificationType.PAYMENT_FAILED, List.of(Channel.EMAIL),
+                new ApiDtos.ContactPointRequest("isolated@example.com", null, null),
+                Map.of("firstName", "A", "invoiceId", "I", "amount", "1"),
+                "isolated-" + java.util.UUID.randomUUID(), null);
+        HttpHeaders owner = new HttpHeaders(); owner.setContentType(MediaType.APPLICATION_JSON);
+        owner.set("X-Tenant-Id", "tenant-a");
+        ResponseEntity<Map> created = restTemplate.postForEntity("/api/v1/notifications",
+                new HttpEntity<>(request, owner), Map.class);
+        String id = (String) ((Map) created.getBody().get("notification")).get("id");
+
+        HttpHeaders attacker = new HttpHeaders(); attacker.set("X-Tenant-Id", "default");
+        ResponseEntity<Map> read = restTemplate.exchange("/api/v1/notifications/" + id, HttpMethod.GET,
+                new HttpEntity<>(attacker), Map.class);
+        assertThat(read.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     }
 }

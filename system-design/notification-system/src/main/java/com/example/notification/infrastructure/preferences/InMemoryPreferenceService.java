@@ -49,6 +49,14 @@ public class InMemoryPreferenceService implements Ports.PreferenceService {
         return copy(merged);
     }
 
+    @Override
+    public boolean isAllowedNow(String tenantId, String userId, NotificationType type, Channel channel) {
+        if (mandatory(type)) return true;
+        return preferences.getOrDefault(key(tenantId, userId), defaults())
+                .getOrDefault(type, Map.of()).getOrDefault(channel, defaultEnabled(type, channel));
+    }
+    @Override public void deleteUser(String tenantId, String userId) { preferences.remove(key(tenantId, userId)); }
+
     private String key(String tenantId, String userId) { return tenantId + ":" + userId; }
 
     private List<Channel> defaultChannels(NotificationType type) {

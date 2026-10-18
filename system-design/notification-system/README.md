@@ -1,5 +1,697 @@
 # Notification System — System Design
 
+<!-- reading-guide:start -->
+## Ścieżki czytania
+
+| Cel czytania | Punkt wejścia |
+| --- | --- |
+| Teoria i model problemu | [Fundamenty teoretyczne projektowania Notification System](#fundamenty-teoretyczne-projektowania-notification-system) |
+| Implementacja i jej dowody | [Co rzeczywiście uruchamia projekt](#co-rzeczywiście-uruchamia-projekt) |
+| Uruchomienie i eksperymenty | [Uruchamianie](#uruchamianie) |
+| Ograniczenia i scenariusze awarii | [Gwarancje dostarczenia i okna awarii](#gwarancje-dostarczenia-i-okna-awarii) |
+
+Wspólne mechanizmy i ich testy znajdziesz w [indeksie pojęć backend-engineering](../../backend-engineering/README.md#globalny-indeks-pojęć). Tutaj śledź ich konsekwencje dla opisywanego systemu.
+Diagramy docelowe i warianty rozwoju czytaj razem z mapą implementacji; sam opis architektury nie oznacza, że wszystkie jej komponenty są uruchamiane w laboratorium.
+<!-- reading-guide:end -->
+
+## Zacznij tutaj
+
+| Pytanie | Odpowiedź |
+| --- | --- |
+| Najważniejszy niezmiennik | Retry tej samej komendy nie może utworzyć drugiej logicznej wysyłki, a wynik `UNKNOWN` providera nie może uruchomić ślepego fallbacku. |
+| Krytyczny przepływ | Przyjęcie intencji → atomowa idempotencja i outbox → job z przypiętym template'em → ponowny consent check → provider → podpisany webhook → status kanałów. |
+| Rekomendowany test | `mvnw.cmd -Dtest=NotificationGuaranteesTest test`; semantyka blokad: `mvnw.cmd -Pinfrastructure-tests verify`. |
+| Świadome ograniczenia | Domyślny profil jest szybką symulacją in-memory, natomiast `postgres-runtime` uruchamia trwały rdzeń z lease'ami. Adapter HTTP providera jest wykonywalnym kontraktem, lecz domyślne routowanie nadal używa symulacji. IAM, KMS, broker i regionalne DR pozostają granicami produkcyjnymi. |
+
+## Mapa wykonywalnych gwarancji
+
+| Problem | Mechanizm w kodzie | Test | Granica produkcyjna |
+| --- | --- | --- | --- |
+| retry klienta | fingerprint i atomowy `insertIfAbsent` | `sameIdempotencyKeyWithDifferentRequestIsAConflict` | unikalny constraint w PostgreSQL i retencja odpowiedzi |
+| replay outboxa | unikalny job `notification + channel` | `replayingOutboxDoesNotCreateSecondJobForTheSameChannel` | transakcja DB i broker at-least-once |
+| timeout providera | `NOT_SENT` kontra `UNKNOWN` oraz reconciliation | `ambiguousProviderTimeoutDoesNotFallBackOrRetry`, `reconciliationTurnsAmbiguousAttemptIntoProviderAcceptedState` | prawdziwe status API providera |
+| opt-out po zakolejkowaniu | drugi consent check i suppression po bounce | `marketingOptOutAfterQueueingStillStopsTheExternalEffect` | propagacja complaint/invalid token od realnych providerów |
+| zmiana template'u | `templateId + version` przypięte do joba | `jobPinsTemplateVersionAndScheduledJobIsNotReadyEarly` | immutable template store |
+| nielegalny status | jawna maszyna stanów | `stateMachineRejectsDeliveryBeforeProviderAcceptedTheJob` | optimistic locking/version column |
+| wielu publisherów | `FOR UPDATE SKIP LOCKED`, retry schedule i `DEAD` po wyczerpaniu budżetu | `PostgreSqlNotificationInfrastructureIT`, `outboxEventuallyBecomesDeadInsteadOfRetryingForever` | kontrolowany replay i alert dla wieku outboxa |
+| awaria workera po claimie | czasowy lease na rekordzie joba; po wygaśnięciu rekord wraca do puli | `durableQueueLeasePreventsConcurrentClaimAndAllowsCrashRecovery` | heartbeat dla operacji dłuższych od lease'u |
+| webhook spoofing/replay | HMAC dokładnego body, timestamp, rotacja current/previous secret i trwały inbox po `eventId` | `WebhookSignatureVerifierTest`, `webhookInboxMakesProviderRedeliveryIdempotent` | KMS i kontrolowane wycofanie starego klucza |
+| webhook nieuporządkowany | terminalny stan joba nie jest cofany przez późniejszy sprzeczny callback | `laterConflictingWebhookCannotDowngradeDeliveredState` | wersja/sekwencja, jeśli provider ją udostępnia |
+| poison callback | retry z budżetem i stan `dead`, bez blokowania całego skanu | `poisonWebhookStopsAfterItsRetryBudget` | panel naprawczy i selektywny replay |
+| historia prób | osobny `DeliveryAttempt` dla każdego wywołania providera | `ambiguousProviderTimeoutDoesNotFallBackOrRetry` | trwały append-only store i retencja audytowa |
+| transakcja akceptacji | PostgreSQL: Notification + outbox w jednej transakcji | `apiAcceptanceAndOutboxRelayUseTheSamePostgresSourceOfTruth` | HA/backup bazy |
+| agregacja kanałów | jedna `NotificationStatusPolicy` | `aggregateDistinguishesPartialDeliveryFromTotalFailureAndUnknown` | produktowa definicja sukcesu per typ |
+| czas lokalny | jawna polityka DST, overlap i misfire | `dstGapAndOverlapAreResolvedByExplicitPolicy` | trwały scheduler i kalendarze użytkowników |
+| przeciążenie | bounded inflight per tenant i provider | `admissionIsBoundedPerTenantAndReleasedDeterministically` | globalne limity rozproszone |
+| usunięcie PII | anonimizacja treści/contact points z zachowaniem śladu technicznego | `erasureRemovesPayloadAndContactButPreservesTechnicalHistory` | backup erasure i polityka prawna |
+| kontrakt providera | adapter HTTP, timeout, stabilny `Idempotency-Key`, klasyfikacja `NOT_SENT`/`UNKNOWN`/permanent | `HttpNotificationProviderTest`, `ProviderContractTest` | sandboxy i status API prawdziwych providerów |
+| kampania i digest po restarcie | trwały checkpoint kampanii oraz lease bufora digestu | `campaignCheckpointAndDigestClaimSurviveRepositoryRoundTrip` | zewnętrzny blob odbiorców i osobny capacity pool |
+| bezpieczeństwo wielodostępne | tenant-scoped reads i rola `ADMIN` dla control plane | `tenantCannotReadAnotherTenantsNotification`, `shouldRejectAdminEndpointWithoutTrustedRole` | tożsamość z gateway/mTLS zamiast zaufania dowolnemu nagłówkowi |
+| równoległy start kampanii | claim token + lease + checkpoint sprawdzający właściciela | `campaignClaimAllowsOnlyOneConcurrentBatchOwner` | renewal lease'u dla długiego batcha |
+| crash po efekcie providera | odzyskany `PROCESSING` przechodzi do `UNKNOWN`, nigdy do ślepego retry | `crashAfterProviderAcceptanceRecoversAsUnknownWithoutSecondExternalCall` | status API providera i ręczna eskalacja |
+| pełna granica HTTP | profil `http-provider`, timeout i idempotency header w całym pipeline | `HttpProviderPipelineTest` | TLS, DNS, proxy i sandbox konkretnego vendora |
+| tożsamość kryptograficzna | profil `secure-runtime` bierze tenant i role z podpisanego JWT | `SecureRuntimeApiTest` | asymetryczny klucz IdP, JWKS rotation i workload identity |
+| specyfika kanałów | reputacja email, segmentacja SMS, token push i idempotentny unread | `ChannelSemanticsTest` | adaptery i raporty rzeczywistych sieci/providerów |
+| kontrakt telemetryczny | test nazw metryk i ochrony cardinality | `ObservabilityContractTest` | walidacja PromQL przeciwko uruchomionemu Prometheusowi |
+
+## Co rzeczywiście uruchamia projekt
+
+Projekt ma kilka celowo kompozycyjnych profili:
+
+| Profil | Zastosowanie | Gwarancje | Czego nie dowodzi |
+| --- | --- | --- | --- |
+| domyślny | szybka nauka domeny i pipeline'u | maszyny stanów, idempotencja procesu, retry/fallback, consent, kampanie | restart procesu i koordynacja wielu instancji |
+| `postgres-runtime` | wykonywalny rdzeń trwały | transaction acceptance, unique constraints, lease jobów i digestów, trwałe kampanie/attempty/inbox/suppression, `SKIP LOCKED` | broker wake-up i rzeczywisty control plane providerów |
+| `http-provider` | cały pipeline przez prawdziwy socket HTTP | connect/request timeout, idempotency key, klasyfikacja odpowiedzi | semantyka konkretnego API, TLS i status endpoint |
+| `secure-runtime` | podpisany JWT zamiast zaufanych nagłówków | authentication, tenant claim, `ROLE_ADMIN`, fail-closed | pełny IdP, JWKS rotation i polityka service-to-service |
+
+W profilu domyślnym `InMemoryNotificationQueue` jest szybkim sygnałem gotowości do pracy. W profilu
+`postgres-runtime` zastępuje ją `PostgresNotificationQueue`: atomowo wybiera należny job przez
+`FOR UPDATE SKIP LOCKED`, zapisuje `lease_until`, a po awarii właściciela pozwala przejąć rekord dopiero po
+wygaśnięciu lease'u. Broker może nadal zmniejszać opóźnienie wake-up, lecz nie jest wtedy źródłem prawdy.
+
+### Zakres implementacji i out of scope
+
+Kod celowo wykonuje mechanizmy, których nie da się wiarygodnie wyjaśnić samym diagramem: atomową akceptację,
+idempotencję, outbox/inbox, lease, crash windows, retry/fallback, consent, webhook security, kampanie, digesty,
+metryki, JWT oraz kontrakt HTTP. Nie próbuje lokalnie udawać całej infrastruktury globalnego przedsiębiorstwa.
+
+Poza zakresem wykonywalnej implementacji pozostają: prawdziwe konta SendGrid/Twilio/FCM/APNs, zarządzanie DNS i
+reputacją domen, Kafka/SQS, wieloregionalna baza, KMS/HSM, zewnętrzny IdP/JWKS, data warehouse, billing i prawny
+workflow consentu. README opisuje ich wpływ i granice, ale nie oznacza ich jako zaimplementowanych. Profile można
+łączyć, np. `postgres-runtime,http-provider,secure-runtime`, aby stopniowo zastępować symulacje realnymi granicami.
+
+### Mapa odpowiedzialności w kodzie
+
+- osobne kontrolery reprezentują public API, control plane, webhooki i operacje;
+- `NotificationService` przyjmuje intencję i zamyka lokalną transakcję z outboxem;
+- `OutboxPublisher` materializuje idempotentne joby;
+- `NotificationWorker` zarządza lifecycle joba, a `ProviderDeliveryExecutor` izoluje routing, admission, fallback i
+  historię zewnętrznych prób;
+- repozytoria in-memory są szybką symulacją, a adaptery JDBC dowodzą zachowania zależnego od PostgreSQL;
+- reconciliation i webhook inbox budują evidence plane niezależnie od ścieżki wysyłki.
+
+## Model mentalny systemu
+
+Notification System nie jest wrapperem na SendGrid lub FCM. Jest systemem zarządzającym **intencją komunikacji**,
+jej polityką, próbami wykonania i dowodami dostarczenia. Trzeba rozdzielać pięć pojęć:
+
+1. `Notification` — biznesowa intencja dotarcia do odbiorcy;
+2. `NotificationJob` — wykonanie tej intencji konkretnym kanałem;
+3. `DeliveryAttempt` — pojedyncze wywołanie konkretnego providera;
+4. `provider message id` — identyfikator operacji po stronie zależności;
+5. delivery event — późniejsza obserwacja `DELIVERED`, `BOUNCED`, complaint lub invalid token.
+
+`202 Accepted` znaczy wyłącznie, że system trwale przyjął odpowiedzialność za dalsze przetwarzanie. `SENT` znaczy,
+że provider przyjął request. Nawet `DELIVERED` ma znaczenie kanałowe: dla SMTP zwykle opisuje przyjęcie przez serwer
+docelowy, a dla push nie dowodzi przeczytania wiadomości przez człowieka. Open/click tracking jest sygnałem
+analitycznym, może być blokowany i nie powinien sterować krytyczną logiką biznesową.
+
+## Jak rozumować o Notification System
+
+Najważniejszym krokiem projektowym jest oddzielenie **decyzji biznesowej o komunikacji** od technicznej próby
+wysłania bajtów. Bez tego rozdzielenia jedna tabela `notifications` zaczyna jednocześnie reprezentować request,
+wiadomość email, retry, callback providera i wynik całej operacji. Wtedy nie da się jednoznacznie odpowiedzieć,
+czy ponowienie jest bezpieczne ani co oznacza status `FAILED`.
+
+W tym projekcie odpowiedzialność jest rozłożona na kolejne poziomy:
+
+| Poziom | Pytanie, na które odpowiada | Typowa cardinality | Source of truth |
+| --- | --- | --- | --- |
+| `Notification` | co system biznesowy chciał zakomunikować? | 1 na komendę biznesową | baza intencji |
+| `NotificationJob` | którym kanałem realizujemy intencję? | 0..N na Notification | trwały store jobów |
+| `DeliveryAttempt` | którego providera faktycznie wywołaliśmy? | 0..N na job | append-only historia prób |
+| provider operation | jaki efekt mógł zajść poza naszym systemem? | 0..1 na attempt | system providera |
+| delivery event | co później zaobserwował provider? | 0..N na operację | inbox callbacków + historia |
+
+To rozdzielenie daje dwie ważne własności. Retry joba nie usuwa historii wcześniejszych prób, a callback zmienia
+wiedzę o dostawie bez udawania, że cofa wcześniej wykonane wywołanie. Status jest więc **stanem wiedzy systemu**, a
+nie absolutną prawdą o tym, czy człowiek zobaczył komunikat.
+
+### Control plane i data plane
+
+W większej instalacji warto rozdzielić dwie płaszczyzny:
+
+- control plane zarządza template'ami, konfiguracją providerów, regułami routingu, limitami, kampaniami i sekretami;
+- data plane przyjmuje intencje, tworzy joby, renderuje wiadomości, wywołuje providerów i przetwarza callbacki.
+
+Control plane ma mały ruch, ale wymaga silnej autoryzacji, audytu i bezpiecznej propagacji konfiguracji. Data plane
+ma duży ruch i jest optymalizowany pod izolację awarii, backpressure oraz szybki hot path. Awaria panelu template'ów
+nie powinna zatrzymywać wysyłki już przypiętych wersji, dlatego job przechowuje `templateId` i `templateVersion`.
+
+## Semantyka kanałów — wspólny pipeline, różne gwarancje
+
+Email, SMS, push i in-app nie są jedynie czterema adapterami z takim samym kontraktem. Różnią się kosztem,
+opóźnieniem, informacją zwrotną, sposobem identyfikacji odbiorcy i znaczeniem „dostarczono”.
+
+| Właściwość | Email | SMS | Push | In-app |
+| --- | --- | --- | --- | --- |
+| koszt marginalny | niski/średni | zwykle wysoki | niski | infrastruktura własna |
+| identyfikator odbiorcy | adres email | numer E.164 | zmienny token urządzenia | user/account ID |
+| potwierdzenie | accepted, bounce, complaint | accepted/delivered zależne od operatora | accepted/invalid token | zapis, odczyt klienta |
+| ordering | zwykle best effort | best effort | best effort per urządzenie | można zapewnić per użytkownik |
+| częsty błąd trwały | invalid mailbox | invalid/blocked number | expired token | usunięty użytkownik |
+| szczególna ochrona | SPF/DKIM/DMARC, unsubscribe | quiet hours, koszt, regulacje | lifecycle tokenu, TTL | unread count, synchronizacja urządzeń |
+
+Wspólny model upraszcza orkiestrację, lecz polityka retry, TTL, rate limit i status końcowy muszą pozostać kanałowe.
+Przykładowo retry SMS-a może zwiększyć koszt i ryzyko duplikatu, a retry push po `invalid token` jest bezcelowy.
+
+## Granice transakcji i model spójności
+
+Notification System przecina trzy niezależne źródła prawdy: lokalną bazę, broker oraz system providera. Nie istnieje
+jedna transakcja ACID obejmująca te granice. Poprawność uzyskuje się przez lokalne transakcje, idempotencję i procesy
+naprawcze:
+
+1. przyjęcie `Notification` oraz wpisu outbox następuje w jednej transakcji lokalnej;
+2. relay może opublikować outbox więcej niż raz;
+3. konsument tworzy job idempotentnie dzięki kluczowi `(notification_id, channel)`;
+4. wywołanie providera otrzymuje stabilny klucz operacji, jeśli provider go obsługuje;
+5. callback jest deduplikowany i nie może cofnąć stanu do mniej zaawansowanego;
+6. brak callbacku lub wynik `UNKNOWN` jest naprawiany przez reconciliation, nie przez założenie sukcesu albo porażki.
+
+Z punktu widzenia klienta przyjęcie komendy może być liniowalne w granicy rekordu idempotencji, natomiast status
+dostawy jest eventual consistent. API powinno więc zwrócić identyfikator zasobu i pozwolić odpytać stan zamiast
+blokować request HTTP aż do odpowiedzi wszystkich providerów.
+
+### Dlaczego „exactly once” jest niewłaściwym wymaganiem
+
+Exactly-once można zrealizować dla **lokalnej zmiany stanu** chronionej constraintem. Nie można wiarygodnie obiecać
+exactly-once dla dowolnego efektu zewnętrznego, jeśli po timeoutcie nie wiadomo, czy provider wykonał operację.
+Poprawniejszy kontrakt brzmi:
+
+- exactly-once acceptance dla tej samej pary tenant + idempotency key;
+- at-least-once transport outboxa i brokera;
+- idempotentne materializowanie joba;
+- co najmniej jedna próba dostawy, z możliwością wyniku niejednoznacznego;
+- deduplikowane i monotoniczne przetwarzanie obserwacji providera.
+
+## Maszyna stanów i agregacja wielu kanałów
+
+Statusy muszą tworzyć dozwolony graf przejść, a nie dowolnie edytowalną kolumnę tekstową. Przykładowy happy path
+joba wygląda tak:
+
+```text
+QUEUED -> PROCESSING -> SENT -> DELIVERED
+             |            |
+             |            +-> BOUNCED / FAILED
+             +-> QUEUED (retry po wyniku NOT_SENT)
+             +-> UNKNOWN (efekt zewnętrzny mógł zajść)
+```
+
+`UNKNOWN` nie jest rodzajem `FAILED`. Jest stanem wymagającym dodatkowego dowodu. Automatyczne przejście
+`UNKNOWN -> QUEUED` może wygenerować duplikat, dlatego potrzebuje odpytywania providera, ręcznej decyzji albo
+udokumentowanej akceptacji ryzyka dla danego rodzaju komunikatu.
+
+Status nadrzędnego `Notification` jest projekcją, a nie prostym kopiowaniem statusu ostatniego joba:
+
+| Stany kanałów | Sensowny stan agregatu |
+| --- | --- |
+| wszystkie `QUEUED` | `QUEUED` |
+| dowolny `PROCESSING`, brak wyniku końcowego | `PROCESSING` |
+| wszystkie przyjęte przez providerów | `SENT` |
+| wszystkie potwierdzone | `DELIVERED` |
+| część dostarczona, reszta terminalnie niedostarczona | `PARTIALLY_DELIVERED` |
+| choć jeden kanał `UNKNOWN` | `UNKNOWN` lub osobny stan częściowo nieznany |
+| wszystkie kanały terminalnie niedostarczone | `FAILED` |
+
+Polityka „sukces, jeśli dowolny kanał dostarczył” bywa właściwa dla alertu, ale niewłaściwa dla komunikatu, którego
+każdy kanał ma osobne znaczenie prawne. Agregacja powinna być częścią kontraktu produktu, nie przypadkowym `if`.
+
+## Routing providerów i bezpieczny fallback
+
+Provider routing może uwzględniać kanał, kraj, koszt, historyczny success rate, latency, typ ruchu i wymagania
+compliance. Najprostsza lista primary/fallback jest wystarczająca edukacyjnie, ale produkcyjny wybór powinien mieć
+stabilną politykę i ograniczać oscylację między providerami.
+
+Fallback jest bezpieczny wyłącznie wtedy, gdy poprzednia próba na pewno nie mogła wywołać efektu (`NOT_SENT`).
+Timeout po wysłaniu requestu daje `UNKNOWN`; wywołanie drugiego providera może wtedy dostarczyć drugą wiadomość.
+Circuit breaker chroni zasoby systemu, lecz nie rozstrzyga wyniku konkretnej operacji. Retry, fallback i circuit
+breaker rozwiązują inne problemy i nie powinny być traktowane zamiennie.
+
+## Kolejność, partycjonowanie i backpressure
+
+Globalna kolejność wszystkich powiadomień byłaby droga i zwykle niepotrzebna. Jeśli produkt wymaga kolejności,
+należy nazwać jej zakres, np. `(tenantId, userId, channel)`, i użyć tego samego klucza partycji. Nadal trzeba jednak
+obsłużyć opóźniony retry: starszy job może wrócić po wysłaniu nowszego. Dla komunikatów zależnych semantycznie lepszy
+bywa numer sekwencji lub odrzucanie nieaktualnych wersji niż poleganie wyłącznie na kolejności brokera.
+
+Backpressure zaczyna się przed kolejką. API może zastosować admission control, kampanie muszą być porcjowane, a
+worker powinien mieć bounded concurrency per provider. Nieskończona kolejka tylko przesuwa awarię w czasie:
+zwiększa wiek wiadomości, koszty storage, liczbę nieaktualnych komunikatów i czas odtwarzania po incydencie.
+
+## Prywatność, retencja i audyt
+
+Payload wiadomości może zawierać PII, dane finansowe lub link resetujący hasło. Z tego powodu warto rozdzielić:
+
+- metadane routingu potrzebne do dostawy;
+- treść wymagającą krótkiej retencji lub szyfrowania pole-level;
+- log audytowy opisujący kto i dlaczego zainicjował komunikację;
+- dane analityczne, które powinny być zanonimizowane lub agregowane.
+
+Logi nie powinny zawierać pełnego adresu, numeru telefonu, tokenu push, payloadu ani sekretu webhooka. Retencja
+attemptów może być inna niż retencja treści. Usunięcie danych użytkownika musi objąć joby, cache, suppression listy,
+analitykę i kopie zapasowe zgodnie z udokumentowaną polityką, bez niszczenia wymaganych prawnie dowodów audytowych.
+Laboratorium udostępnia `DELETE /api/v1/admin/users/{userId}/personal-data`: usuwa preferencje i suppression,
+anonimizuje payload/contact points oraz pseudonimizuje aktora w audycie, zachowując techniczną historię dostawy.
+Usunięcie z backupów pozostaje procesem retencyjnym — natychmiastowa edycja każdej kopii mogłaby zniszczyć jej
+integralność i zdolność do odtworzenia.
+
+## Gwarancje dostarczenia i okna awarii
+
+End-to-end exactly-once nie jest realną obietnicą przy sieci i zewnętrznym providerze. Projekt przyjmuje:
+
+- at-least-once dla outboxa i kolejki;
+- idempotentne tworzenie jobów;
+- stabilny provider idempotency key dla kolejnych prób tej samej operacji;
+- brak automatycznego fallbacku po niejednoznacznym timeoutcie;
+- reconciliation dla wyników `UNKNOWN` i `SENT` bez callbacku.
+
+`DeliveryReconciliationService` wykonuje tę politykę na deterministycznej symulacji status API: może uznać operację
+za przyjętą, potwierdzić końcowe dostarczenie, bezpiecznie wznowić wynik `NOT_SENT` albo pozostawić `STILL_UNKNOWN`.
+Skan obejmuje zarówno niejednoznaczne joby `UNKNOWN`, jak i `SENT` czekające zbyt długo na callback. Granicą produkcyjną jest adapter
+do rzeczywistego endpointu providera, jego rate limit, retencja identyfikatorów i eskalacja zbyt długo nieznanych prób.
+
+Najważniejsze okna awarii:
+
+| Awaria | Ryzyko | Wymagana ochrona |
+| --- | --- | --- |
+| po zapisie Notification, przed outboxem | zgubiona wysyłka | wspólna transakcja |
+| po utworzeniu joba, przed ack outboxa | podwójny job | unique `(notification_id, channel)` |
+| po wywołaniu providera, przed zapisem odpowiedzi | podwójna wiadomość | `UNKNOWN`, provider key, reconciliation |
+| po zapisie retry, przed enqueue | job bez wake-up | trwały scheduler skanujący due jobs |
+| callback przed zapisem provider ID | niedopasowany status | inbox pending events i późniejsze dopasowanie |
+
+## Priorytet, fairness i backpressure
+
+Kampania nie może wyprzeć OTP ani alertu bezpieczeństwa. Same etykiety priorytetu nie wystarczą. Potrzebne są
+oddzielne capacity pools lub kolejki, weighted fair scheduling, limit inflight per provider i per tenant oraz
+admission control. Najważniejszą metryką backlogu jest **wiek najstarszego gotowego joba**, nie sama liczba rekordów.
+Skalowanie workerów ma sens tylko do granicy przepustowości bazy i providera; powyżej niej zwiększa retry storm.
+
+## Consent, suppression i polityka kanału
+
+Polityka powinna jawnie rozróżniać komunikację bezpieczeństwa, transakcyjną, produktową i marketingową.
+Preferencja użytkownika, wymóg prawny i suppression providera nie są tym samym. Dla marketingu opt-out musi wygrać
+z wcześniej utworzonym jobem, dlatego jest sprawdzany tuż przed efektem. Hard bounce, spam complaint i invalid push
+token powinny zasilać suppression list. Link unsubscribe musi być podpisany, ograniczony zakresem i odporny na replay.
+
+## Czas, scheduling i kampanie
+
+`scheduledAt` przechowujemy jako `Instant`. Żądanie „9:00 czasu użytkownika” wymaga jednak także identyfikatora
+`ZoneId` i jawnej polityki dla brakującej/podwójnej godziny DST. Po restarcie scheduler musi odszukać należne rekordy;
+in-memory timer nie jest źródłem prawdy. Misfire policy określa, czy opóźnioną kampanię wysłać, pominąć czy wygasić.
+Kampanie przetwarza się porcjami z checkpointem, limitem kosztu, pause/cancel i osobną pulą zasobów. Digest wymaga
+atomowego claimu, limitu elementów i bezpiecznego wznowienia po awarii.
+
+## Capacity estimation — przykładowe założenia
+
+Załóżmy 10 mln użytkowników, 5 komunikatów dziennie i peak 50 tys. intencji/minutę. Daje to około 579 intencji/s
+średnio i 833/s w podanym peaku. Jeśli jedna intencja rozwija się średnio do 1,6 kanału, peak jobów wynosi około
+1333/s. Kampania do 5 mln odbiorców uruchomiona w godzinę wymaga około 1389 intencji/s jeszcze przed ruchem
+transakcyjnym — dlatego musi być throttlowana.
+
+Przy 2 KB metadanych na intencję i 1 KB na job dzienny przyrost bazowy to około 180 GB przed indeksami, audytem,
+replikacją i payloadami. Treści oraz duże listy odbiorców lepiej trzymać w object storage, a w bazie przechowywać
+referencje. Capacity plan powinien osobno policzyć request rate, fan-out kanałów, callback rate, bandwidth i koszt SMS.
+
+## SLO i obserwowalność
+
+SLO należy definiować per klasa ruchu, przykładowo:
+
+- critical: 99% zaakceptowanych intencji przekazane providerowi w 30 s;
+- transactional: 99% w 2 min;
+- marketing: 99% w oknie kampanii, bez naruszania budżetu ruchu krytycznego.
+
+SLI mierzy się od zapisu intencji do `SENT`, osobno od `SENT → DELIVERED`. Dashboard powinien pokazywać histogramy,
+oldest-job age, outbox lag, saturation, retry, `UNKNOWN`, fallback, bounce/complaint, DLQ oraz koszt per tenant. Gotowe
+reguły znajdują się w `ops/prometheus-alerts.yml`, dashboard w `ops/dashboard.json`, a procedury w `ops/RUNBOOK.md`.
+
+## High availability, disaster recovery i regiony
+
+HA chroni przed awarią instancji lub availability zone, a DR przed utratą całego regionu albo logicznym
+uszkodzeniem danych. Replika PostgreSQL nie jest backupem: może powielić przypadkowy delete i błędną migrację.
+Plan powinien zdefiniować osobno:
+
+- RPO dla intencji i audytu — ile zaakceptowanych rekordów wolno utracić;
+- RTO — jak długo może nie działać przyjmowanie oraz jak długo może rosnąć backlog;
+- backup, point-in-time recovery i regularny restore drill;
+- zachowanie DNS/gateway podczas failoveru oraz sposób uniknięcia aktywnych writerów w dwóch regionach;
+- los jobów `PROCESSING` podczas przejęcia oraz ponowną rekoncyliację z providerem;
+- regionalność danych kontaktowych, template'ów, sekretów i kluczy szyfrujących.
+
+Najprostszy bezpieczny wariant to active-passive dla zapisu z asynchroniczną replikacją i kontrolowanym failoverem.
+Active-active wymaga globalnej idempotencji, jednoznacznego ownership partycji i rozwiązania konfliktów; sama baza
+multi-region nie zapobiega dwóm równoległym wywołaniom providera. Po przełączeniu regionu należy najpierw odtworzyć
+źródło prawdy, następnie relay outboxa, skan należnych jobów i reconciliation, a dopiero potem zwiększać throughput.
+
+## Ewolucja kontraktów i wdrożenia bez przestoju
+
+Request API, event outboxa, payload kolejki i webhook providera są niezależnymi kontraktami. Zmiana powinna być
+additive: nowe pola opcjonalne, tolerowanie nieznanych pól, wersja schematu i okres równoczesnej obsługi producenta
+oraz konsumenta. Migracje danych stosują expand/contract — najpierw nowa kolumna i kod zdolny czytać oba formaty,
+potem backfill, przełączenie zapisu, a dopiero na końcu usunięcie starego pola.
+
+Rolling deployment oznacza, że przez pewien czas działają co najmniej dwie wersje workera. Template przypięty do
+joba oraz monotoniczna maszyna stanów ograniczają zależność wyniku od chwili rollout'u. Breaking change webhooka
+powinien mieć osobny adapter wersji, a nie warunek rozsiany po logice domenowej.
+
+## Jak weryfikować taki system
+
+Same testy jednostkowe nie dowodzą gwarancji rozproszonej. Sensowna strategia obejmuje:
+
+1. testy domenowe maszyn stanów, polityki czasu i agregacji;
+2. property-based lub model-based tests losowych sekwencji retry/callback/cancel;
+3. contract tests wszystkich provider adapterów;
+4. Testcontainers dla constraintów, transakcji i `SKIP LOCKED`;
+5. scenariusze crash-after-effect, crash-before-ack i callback-before-response;
+6. load, spike i soak test z obserwacją oldest-job age, saturation i kosztu;
+7. game day: niedostępny provider, rosnący backlog, utrata brokera oraz restore bazy;
+8. okresową weryfikację alertu i runbooka, nie tylko obecność plików konfiguracyjnych.
+
+Kryterium sukcesu eksperymentu nie brzmi „wszystkie requesty HTTP zwróciły 2xx”. Należy sprawdzić niezmienniki:
+brak podwójnej intencji, brak nieautoryzowanej wysyłki, kontrolowany backlog, monotoniczne statusy oraz możliwość
+wyjaśnienia każdej próby na podstawie historii.
+
+## Granica uwierzytelnienia i tenanta
+
+W profilu domyślnym `X-Tenant-Id` i `X-Role` reprezentują nagłówki nadane przez zaufany gateway. To szybka symulacja,
+nie mechanizm uwierzytelnienia. Profil `secure-runtime` włącza Spring Security Resource Server: bez Bearer JWT request
+jest odrzucany, tenant pochodzi wyłącznie z podpisanego claimu `tenant_id`, a control plane wymaga `ROLE_ADMIN`.
+Przesłany równocześnie `X-Tenant-Id` nie może nadpisać claimu.
+
+Lokalny profil używa HMAC, aby test pozostał samodzielny. Produkcyjny wariant powinien ufać asymetrycznym kluczom
+IdP przez JWKS, obsługiwać rotację `kid`, sprawdzać issuer/audience oraz używać workload identity lub mTLS dla
+service-to-service. Tożsamość podmiotu i powód administracyjnej operacji powinny trafić do audytu.
+
+## Fundamenty teoretyczne projektowania Notification System
+
+### System intencji, a nie tylko system transportowy
+
+Najczęstszy błąd projektowy polega na utożsamieniu Notification System z biblioteką `sendEmail()`. Transport jest
+jedynie ostatnią częścią procesu. System musi wcześniej odpowiedzieć na pytania: czy komunikacja jest dozwolona,
+który kanał ma sens, jaka wersja treści obowiązuje, kiedy komunikat traci wartość oraz co zrobić, gdy nie wiadomo,
+czy zewnętrzny efekt zaszedł. Z tego wynika podział na cztery płaszczyzny:
+
+| Płaszczyzna | Odpowiedzialność | Przykładowe dane | Dominująca gwarancja |
+| --- | --- | --- | --- |
+| intention plane | przyjęcie biznesowej intencji | typ, odbiorca, idempotency key, deadline | exactly-once acceptance w granicy lokalnego constraintu |
+| policy plane | consent, routing, priorytet, quiet hours | preferencje, suppression, reguły kanału | decyzja audytowalna i ponawialna |
+| delivery plane | wykonanie prób i kontrola obciążenia | job, attempt, lease, provider key | at-least-once processing bez ślepego retry efektu `UNKNOWN` |
+| evidence plane | późniejsza wiedza o skutku | callback, bounce, complaint, reconciliation | deduplikacja i monotoniczna aktualizacja wiedzy |
+
+Takie rozdzielenie pozwala skalować i naprawiać każdą płaszczyznę niezależnie. Przykładowo awaria panelu
+template'ów nie musi zatrzymywać wysyłki już przypiętych wersji, a opóźniony webhook nie powinien blokować przyjęcia
+nowej intencji.
+
+### Źródła prawdy i projekcje
+
+W systemie rozproszonym nie istnieje jedna tabela zawierająca całą prawdę. Trzeba jawnie określić właściciela
+każdego faktu:
+
+- lokalna baza jest źródłem prawdy o przyjętej intencji, konfiguracji joba i historii prób;
+- Preference/Consent Service jest źródłem prawdy o zgodzie użytkownika;
+- provider jest źródłem prawdy o tym, czy zaakceptował operację i jaki status później zaobserwował;
+- read model statusu powiadomienia jest projekcją powyższych faktów, a nie niezależną prawdą;
+- broker transportuje informację, ale nie powinien być jedynym dowodem przyjęcia biznesowej intencji.
+
+Status `SENT` jest zatem twierdzeniem epistemicznym: „mamy dowód, że provider przyjął operację”. `UNKNOWN` znaczy
+„nie mamy wystarczającego dowodu”, a nie „operacja się nie udała”. To rozróżnienie jest podstawą bezpiecznego retry.
+
+### Drabina gwarancji dostarczenia
+
+Hasła at-most-once, at-least-once i exactly-once mają sens dopiero po wskazaniu konkretnej granicy:
+
+| Granica | Realistyczna gwarancja | Mechanizm | Pozostałe ryzyko |
+| --- | --- | --- | --- |
+| klient → API | exactly-once acceptance dla jednego klucza | fingerprint + unique constraint + zapis odpowiedzi | retencja klucza krótsza od retry klienta |
+| baza → relay | at-least-once | transactional outbox | wielokrotna publikacja eventu |
+| relay → job | effectively-once materialization | unique `(notificationId, channel)` | konsument nadal musi tolerować replay |
+| worker → provider | zależne od API providera | stabilny operation key + klasyfikacja pewności | timeout po efekcie daje `UNKNOWN` |
+| provider → webhook | at-least-once i możliwy reorder | inbox po `eventId` + monotoniczna maszyna stanów | brak callbacku lub sprzeczne źródła |
+| cały proces | eventual convergence | reconciliation + historia prób | ręczna decyzja dla długo nierozstrzygniętego efektu |
+
+„Effectively once” nie jest własnością transportu. Jest wynikiem złożenia at-least-once delivery z trwałą,
+atomową deduplikacją efektu u konsumenta. Jeśli efekt jest poza kontrolą konsumenta, gwarancja zależy od kontraktu
+idempotencji oferowanego przez providera.
+
+### Teoria kolejki, capacity i stabilność systemu
+
+System jest stabilny tylko wtedy, gdy długookresowa przepustowość obsługi `μ` jest większa od tempa napływu `λ`.
+Gdy `λ >= μ`, żadna liczba retry ani większy broker nie rozwiąże problemu — backlog będzie rósł do wyczerpania
+retencji, storage'u albo ważności komunikatów. Broker kupuje czas na absorpcję krótkiego burstu, nie tworzy capacity.
+
+Prawo Little'a łączy średnią liczbę elementów `L`, throughput `λ` i średni czas w systemie `W`:
+
+```text
+L = λ × W
+```
+
+Jeżeli napływa 1000 jobów/s, a przeciętny job spędza 30 s w pipeline, należy oczekiwać około 30 000 jobów in-flight.
+To przybliżenie pomaga wykryć niespójne estymacje i dobrać liczbę partycji, połączeń oraz retencję. Nie zastępuje
+pomiaru rozkładu opóźnień — średnia ukrywa p95/p99 i starvation niskiego priorytetu.
+
+W pobliżu pełnej saturacji latency rośnie nieliniowo. Dlatego bezpieczny system utrzymuje zapas, ogranicza inflight i
+stosuje load shedding zanim zużyje wszystkie połączenia. Skalowanie workerów zatrzymuje się na najmniejszym z limitów:
+
+```text
+min(DB write capacity, provider quota, network capacity, worker capacity, budget kosztowy)
+```
+
+Retry zwiększa efektywny ruch. Przy średnio `r` dodatkowych próbach rzeczywiste zapotrzebowanie wynosi w przybliżeniu
+`λ × (1 + r)`. Podczas awarii zależności `r` rośnie właśnie wtedy, gdy jej capacity maleje, dlatego potrzebne są
+exponential backoff, jitter, retry budget, circuit breaker oraz bounded concurrency.
+
+### Priorytety nie gwarantują fairness
+
+Ścisła kolejka priorytetowa może zagłodzić marketing, a pojedyncza kolejka FIFO może dopuścić, aby wielka kampania
+opóźniła OTP. Typowe rozwiązania to osobne capacity pools, weighted fair queueing i limity per tenant. Wagi określają
+udział przepustowości, ale krytyczny ruch powinien mieć również zarezerwowane minimum.
+
+Noisy-neighbor pojawia się nie tylko na kolejce. Jeden tenant może zużyć provider quota, pulę połączeń, miejsce w
+outboxie albo budżet SMS. Z tego powodu fairness musi działać na każdym ograniczonym zasobie. Tagowanie metryk
+`tenantId` jest jednak niebezpieczne ze względu na cardinality; szczegółowy koszt per tenant lepiej obliczać z
+agregowanych eventów billingowych lub okresowych raportów.
+
+### Ordering, causality i ważność biznesowa
+
+Globalna kolejność jest kosztowna i zwykle niepotrzebna. Najpierw trzeba zdefiniować zakres: per użytkownik, kanał,
+konwersację czy encję biznesową. Nawet kolejność brokera nie wystarcza, gdy starszy komunikat trafia do retry i wraca
+po nowszym. Jeśli kolejność ma znaczenie, payload powinien zawierać wersję lub numer sekwencji, a konsument powinien
+umieć odrzucić stan przestarzały.
+
+Nie każdy komunikat warto dostarczyć za wszelką cenę. OTP, kod logowania i informacja „kurier będzie za 5 minut” mają
+deadline; wysłanie po nim jest błędem biznesowym, mimo że technicznie zakończy się sukcesem. TTL i `expiresAt` są
+więc częścią poprawności, a nie jedynie optymalizacją storage'u.
+
+### Delivery, deliverability i engagement
+
+Trzy pojęcia nie mogą być używane zamiennie:
+
+- **delivery** opisuje techniczny status kanału, np. przyjęcie przez serwer docelowy;
+- **deliverability** opisuje zdolność docierania do skrzynki/urządzenia, zależną od reputacji, jakości listy i polityk;
+- **engagement** opisuje zachowanie użytkownika, np. open/click/read, i jest sygnałem analitycznym o ograniczonej
+  wiarygodności.
+
+Email wymaga zarządzania reputacją domeny i IP, SPF/DKIM/DMARC, bounce oraz complaint rate. SMS zależy od kraju,
+operatora, sender ID, regulacji i kosztu segmentów. Push wymaga lifecycle tokenów, topiców, TTL i zrozumienia, że
+akceptacja przez FCM/APNs nie dowodzi wyświetlenia. Jeden wspólny pipeline powinien normalizować podstawowe statusy,
+ale nie może usuwać kanałowych różnic.
+
+### Model kosztu jako część architektury
+
+Koszt powinien być ograniczeniem podobnie jak latency. Dla każdej klasy ruchu warto policzyć:
+
+```text
+koszt dzienny = liczba intencji × średni fan-out kanałów × średnia liczba prób × koszt próby
+```
+
+Do tego dochodzą callbacki, egress, retencja payloadów, monitoring i koszt operacyjny. Fallback do drugiego providera
+może zwiększyć niezawodność, ale również podwoić koszt lub naruszyć umowę o danych regionalnych. Kampania powinna
+mieć budżet, forecast i kill switch, zanim zacznie tworzyć miliony jobów.
+
+### Kiedy budować, a kiedy kupić
+
+Własny Notification System ma sens, gdy wiele produktów potrzebuje wspólnego consentu, wielokanałowego routingu,
+audytu, kontroli kosztu, tenant isolation i niezależności od providera. Dla małego produktu z jednym kanałem lepszy
+może być bezpośredni provider lub managed orchestration: mniejszy koszt utrzymania, szybszy start i mniej failure
+modes.
+
+Decyzja nie jest binarna. Częsty kompromis to własny intention/policy plane oraz zewnętrzny delivery provider.
+Wtedy kluczowe pozostają idempotencja, statusy, reconciliation i możliwość eksportu danych. Vendor lock-in należy
+oceniać przez semantykę szablonów, API statusowe, przenośność suppression list, dostęp do surowych eventów i koszt
+historycznego replayu — nie tylko przez podobieństwo metody `send()`.
+
+### Kompletna mapa wiedzy projektowej
+
+Znajomość API providera nie oznacza jeszcze znajomości Notification System. Projektant powinien umieć odpowiedzieć
+na wszystkie poniższe grupy pytań; dalsze rozdziały README rozwijają każdą z nich.
+
+| Obszar | Pytania projektowe |
+| --- | --- |
+| wymagania | które komunikaty są krytyczne, jaki mają deadline, consent i definicję sukcesu? |
+| kontrakt API | co znaczy `202`, jaki jest zakres idempotency key i jak klient odczyta eventual status? |
+| model danych | co jest intencją, jobem, próbą i dowodem; które rekordy są immutable? |
+| spójność | gdzie kończy się transakcja ACID i jak zamykamy każde dual-write/failure window? |
+| delivery semantics | dla której granicy obiecujemy at-most-once, at-least-once lub effectively-once? |
+| scheduling | jak obsługujemy UTC, strefę użytkownika, DST, misfire, TTL i anulowanie? |
+| kanały | czym różni się provider acceptance, delivery, deliverability i engagement? |
+| przeciążenie | jaki jest `λ/μ`, retry amplification, bounded inflight, fairness i load shedding? |
+| skalowanie | jaki jest klucz partycji, ordering scope, hot tenant i strategia rebalancingu? |
+| bezpieczeństwo | gdzie są trust boundaries, jak uwierzytelniamy callerów/webhooki i chronimy PII? |
+| obserwowalność | jakie SLI mierzą acceptance, queue age, provider outcome i final delivery? |
+| operacje | jak zatrzymać kampanię, replayować rekord, odtworzyć backup i przełączyć region? |
+| koszt | jaki jest fan-out, liczba prób, koszt kanału i budżet kampanii? |
+| ewolucja | jak wersjonujemy API, event, template, webhook oraz schemat bez przestoju? |
+| testowanie | który test dowodzi inwariantu, a który tylko poprawnego happy path? |
+
+## Wykonywalny lifecycle niezawodności
+
+### Claim joba i odzyskanie po awarii
+
+Worker nie „zdejmuje” wiadomości bezpowrotnie. PostgreSQL jest źródłem prawdy, a poller wykonuje krótki claim:
+
+1. wybiera tylko `QUEUED`, należne rekordy bez aktywnego lease'u;
+2. używa `FOR UPDATE SKIP LOCKED`, aby dwa workery nie czekały na ten sam rekord;
+3. zapisuje `lease_until` i zwalnia transakcję przed wywołaniem sieciowym;
+4. drugi worker omija rekord do chwili wygaśnięcia lease'u;
+5. jeśli właściciel zginie, rekord znów staje się claimowalny.
+
+Lease nie daje exactly-once external effect. Awaria po wysłaniu requestu, ale przed zapisem odpowiedzi nadal daje
+wynik `UNKNOWN`. Dlatego trwały claim chroni koordynację workerów, natomiast provider idempotency key oraz
+reconciliation chronią granicę efektu zewnętrznego. Operacja trwająca dłużej niż lease wymagałaby heartbeat/renewal.
+
+`PostProviderEffectProbe` wykonuje najgroźniejsze okno awarii: provider zaakceptował efekt, ale proces ginie przed
+lokalnym `SENT`. Job pozostaje `PROCESSING`; odzyskujący worker przeprowadza go do `UNKNOWN` i nie wywołuje providera
+ponownie. Historia zachowuje jedną próbę `ACCEPTED`, a rozstrzygnięcie przejmuje reconciliation.
+
+### Outbox: retry, backoff i stan `DEAD`
+
+Outbox przechodzi `PENDING → PUBLISHED` albo, po wyczerpaniu limitu, `PENDING → DEAD`. Każde niepowodzenie zwiększa
+licznik prób i ustawia `next_attempt_at` przez exponential backoff z deterministycznym jitterem. Dzięki temu relay
+nie wykonuje hot loop i nie wywołuje retry storm. `DEAD` oznacza zatrzymanie automatycznych prób — operator musi
+usunąć przyczynę, zachować ten sam identyfikator zdarzenia i wykonać selektywny replay. Nie wolno tworzyć nowego
+logicznego eventu tylko po to, aby ominąć historię błędu.
+
+### Inbox webhooków i monotoniczność
+
+Callback jest najpierw uwierzytelniany HMAC-em dokładnego raw body i oknem timestampu, a potem zapisywany pod
+unikalnym `eventId`. Inbox ma własne `attempts`, `nextAttemptAt` i stan poison/dead, więc jeden wadliwy event nie
+blokuje partycji w nieskończoność. Stan terminalny joba nie jest cofany przez późniejszy callback sprzeczny z już
+uzyskanym dowodem. Podczas rotacji akceptowane są current i previous secret; stary klucz należy usunąć po czasie
+dłuższym od maksymalnego opóźnienia/retry callbacków.
+
+## Granica prawdziwego providera HTTP
+
+`HttpNotificationProvider` jest framework-independent adapterem kontraktu sieciowego. Ustawia request timeout i
+stabilny `Idempotency-Key`, wymaga identyfikatora operacji w odpowiedzi 2xx oraz rozróżnia:
+
+| Obserwacja | Pewność | Reakcja |
+| --- | --- | --- |
+| błąd połączenia przed ustanowieniem transportu | `NOT_SENT` | retry/fallback jest dopuszczalny |
+| HTTP 429 lub 5xx | `NOT_SENT` w kontrakcie tego adaptera | backoff, ewentualnie fallback |
+| HTTP 4xx | błąd trwały | bez automatycznego retry |
+| timeout odpowiedzi / ogólny błąd I/O | `UNKNOWN` | bez ślepego retry i fallbacku; reconciliation |
+| 2xx bez operation id | `UNKNOWN` | provider złamał kontrakt; reconciliation |
+
+Klasyfikacja 429/5xx jako `NOT_SENT` jest poprawna tylko wtedy, gdy umowa providera gwarantuje brak efektu dla tych
+odpowiedzi. Dla API, które może zwrócić 5xx po wykonaniu operacji, adapter musi klasyfikować taki wynik jako
+`UNKNOWN`. To przykład, dlaczego semantyka zależności jest ważniejsza od samego kodu HTTP.
+
+## Trwałe kampanie i digesty
+
+Profil PostgreSQL przechowuje status kampanii, indeks następnego odbiorcy, liczbę błędów oraz immutable payload.
+Checkpoint jest zapisywany po każdym odbiorcy, więc restart wznawia batch zamiast zaczynać go od zera. Nadal
+obowiązuje idempotency key per kampania + odbiorca: transakcja checkpointu nie obejmuje zewnętrznej dostawy.
+
+Start batcha używa `claim_token` i `claim_until`. Tylko właściciel tokenu może zapisać checkpoint, więc spóźniony
+worker po przejęciu lease'u nie nadpisze postępu nowego właściciela. Jeśli crash nastąpi po utworzeniu Notification,
+ale przed checkpointem, nowy właściciel powtórzy odbiorcę; idempotency key `campaignId:userId` zamienia replay w
+odczyt istniejącej intencji. Lease rozwiązuje koordynację, a idempotencja powtórzenie lokalnego efektu.
+
+Digest przechowuje bufor i `flush_at`, a due buffer jest claimowany przez `SKIP LOCKED` oraz czasowy `claim_until`.
+To zapobiega równoległemu flushowi w normalnej pracy i pozwala odzyskać bufor po śmierci workera. W systemie o dużej
+skali lista odbiorców kampanii i treści digestu powinna trafić do osobnego, partycjonowanego storage'u.
+
+## Wykonywalna semantyka kanałów
+
+`ChannelSemantics` oddziela reguły medium od SDK dostawcy:
+
+- email podejmuje decyzję `ALLOW/THROTTLE/PAUSE` na podstawie hard bounce, complaint i DMARC alignment;
+- SMS liczy segmenty GSM-7/UCS-2, ponieważ długość oraz alfabet bezpośrednio wpływają na koszt;
+- push przechowuje token per urządzenie i nie pozwala staremu invalidation usunąć nowego tokenu po rotacji;
+- in-app utrzymuje idempotentną projekcję unread odporną na replay eventów delivery/read.
+
+Progi reputacyjne są założeniami dydaktycznymi, nie uniwersalną rekomendacją providera. Produkcyjny system powinien
+wersjonować politykę, rozdzielać domeny/IP oraz reagować na progi właściwe dla rynku i klasy ruchu.
+
+## Metryki zgodne z operacjami
+
+Kod, dashboard i alerty używają tych samych nazw. Tagi są ograniczone do małych zbiorów (`provider`, `outcome`,
+`priority`); `tenantId`, `userId`, `jobId` i provider message id nie mogą być tagami metryk.
+
+| Metryka | Co odpowiada | Dlaczego jest ważna |
+| --- | --- | --- |
+| `notification_oldest_ready_job_age_seconds` | wiek najstarszego należnego joba | wykrywa naruszenie SLO lepiej niż sama liczba rekordów |
+| `notification_outbox_pending` | liczba nieopublikowanych eventów | pokazuje przerwanie ścieżki acceptance → job |
+| `notification_dlq_size` | aktualna liczba jobów w DLQ | określa wielkość pracy naprawczej |
+| `notification_time_to_send_seconds` | histogram czasu od utworzenia joba do `SENT` | umożliwia p95/p99 bez błędu średniej |
+| `notification_provider_attempts_total` | próby według providera i wyniku | ujawnia degradację zależności i retry storm |
+| `notification_provider_unknown_total` | niejednoznaczne efekty | wymaga pilnej reconciliation, nie zwiększania retry |
+
+## Strategia testów tego laboratorium
+
+- testy domenowe dowodzą dozwolonych przejść, consentu, DST i agregacji;
+- testy historii generują wiele sekwencji terminalnych callbacków i sprawdzają niezmiennik monotoniczności;
+- contract tests sprawdzają deterministyczność idempotency key oraz klasyfikację granicy HTTP;
+- test API pokazuje izolację tenantów i fail-closed control plane;
+- profil `infrastructure-tests` uruchamia prawdziwy PostgreSQL 17 oraz dowodzi constraintów, `SKIP LOCKED`, lease'u,
+  odzyskania po awarii i trwałości checkpointów.
+
+Test modelowy nie dowodzi poprawności wszystkich możliwych przeplotów, ale bada historię operacji zamiast jednego
+happy-path wyniku. Laboratorium ma również fault injection dla crash-after-effect oraz open-model load, spike i soak
+w [load-tests](load-tests/README.md). Pełną granicą produkcyjną pozostają wielowęzłowe chaos tests i okresowy restore
+drill z pomiarem RPO/RTO.
+
+`ObservabilityContractTest` wykrywa rozjazd nazw między kodem, dashboardem i alertami oraz zabrania tenantów,
+użytkowników i identyfikatorów operacji w tagach metryk.
+
+## Uruchamianie
+
+```powershell
+# szybkie testy domeny, API i pipeline'u bez Dockera
+.\mvnw.cmd clean verify
+
+# constrainty i konkurencyjne claimowanie na PostgreSQL 17
+.\mvnw.cmd -Pinfrastructure-tests verify
+
+# uruchomienie aplikacji na trwałym rdzeniu PostgreSQL
+$env:NOTIFICATION_DB_URL="jdbc:postgresql://localhost:5432/notifications"
+$env:NOTIFICATION_DB_USER="notifications"
+$env:NOTIFICATION_DB_PASSWORD="change-me"
+.\mvnw.cmd spring-boot:run -Dspring-boot.run.profiles=postgres-runtime
+
+# pipeline przez lokalny stub/provider HTTP
+.\mvnw.cmd spring-boot:run -Dspring-boot.run.profiles=http-provider
+
+# JWT: tenant_id i roles pochodzą z podpisanego tokenu
+$env:NOTIFICATION_JWT_SECRET="replace-with-at-least-32-random-bytes"
+.\mvnw.cmd spring-boot:run -Dspring-boot.run.profiles=secure-runtime
+
+# open-model load / spike / soak (wymaga k6)
+k6 run -e PROFILE=load -e RATE=50 load-tests/notification-pipeline.js
+```
+
+Profil `postgres-runtime` obejmuje `Notification`, outbox, joby z lease'em, próby dostawy, webhook inbox,
+suppression list, kampanie i digesty. Template'y, preferencje oraz domyślny routing providerów pozostają celowymi
+symulacjami dydaktycznymi; adapter HTTP jest testowany oddzielnie. Sekrety webhooka w repozytorium są wyłącznie
+wartościami lokalnymi; poza laboratorium muszą pochodzić z secret managera i podlegać kontrolowanej rotacji.
+
+## Szczegółowe kompendium teoretyczne
+
+Poniższe rozdziały rozwijają decyzje systemowe, sizing, modele danych, kanały i scenariusze operacyjne. Pierwsza
+część README jest mapą aktualnie wykonywalnych gwarancji; ta część stanowi materiał referencyjny do nauki i rozmów
+system-design.
+
 ## 1. Cel systemu
 
 System Notification ma umożliwiać niezawodne wysyłanie powiadomień do użytkowników przez wiele kanałów, np.:
@@ -914,6 +1606,21 @@ PROVIDER_WEBHOOK_RECEIVED
 ```
 
 ---
+
+### 8.7. `delivery_attempts`, `webhook_inbox` i `suppression_entries`
+
+`delivery_attempts` jest append-only historią efektów na granicy providera. Unikalność `(job_id, attempt_number)`
+zapobiega nadpisaniu jednej próby drugą. `outcome` przechowuje `ACCEPTED`, `NOT_SENT`, `UNKNOWN` lub `REJECTED`;
+nie wolno rekonstruować tej informacji wyłącznie z końcowego statusu joba.
+
+`webhook_inbox` przechowuje identyfikator eventu providera, status, chwilę przyjęcia, wynik przetworzenia i błąd.
+HTTP może potwierdzić duplikat tego samego eventu bez ponownego wykonania przejścia domenowego. Inbox powinien być
+retencjonowany co najmniej tak długo, jak provider może ponawiać callback.
+
+`suppression_entries` używa hasha contact pointu zamiast surowego adresu. Klucz `(tenant, channel, contact_hash)`
+pozwala zablokować kolejną wysyłkę po hard bounce, complaint lub invalid token. Hash ogranicza ekspozycję PII, ale
+nie zastępuje kontroli dostępu — przestrzeń numerów telefonu i popularnych adresów może być podatna na enumerację,
+więc produkcyjnie warto zastosować HMAC z sekretem zamiast niesolonego SHA-256.
 
 ## 9. Kolejki i topiki
 

@@ -4,7 +4,9 @@ import com.example.notification.application.Ports;
 import com.example.notification.domain.*;
 import jakarta.annotation.PostConstruct;
 import org.springframework.stereotype.Repository;
+import org.springframework.context.annotation.Profile;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -14,6 +16,7 @@ public final class InMemoryRepositories {
     private InMemoryRepositories() {}
 
     @Repository
+    @Profile("!postgres-runtime")
     public static class Notifications implements Ports.NotificationRepository {
         private final Map<UUID, Notification> storage = new ConcurrentHashMap<>();
         private final Map<String, UUID> idempotency = new ConcurrentHashMap<>();
@@ -22,8 +25,25 @@ public final class InMemoryRepositories {
         @Override public Notification save(Notification n) {
             storage.put(n.getId(), n);
             if (n.getIdempotencyKey() != null) idempotency.putIfAbsent(n.getTenantId() + ":" + n.getIdempotencyKey(), n.getId());
-            if (n.getDeduplicationKey() != null) dedupe.putIfAbsent(n.getTenantId() + ":" + n.getDeduplicationKey(), n.getId());
+            if (n.getDeduplicationKey() != null) dedupe.put(n.getTenantId() + ":" + n.getDeduplicationKey(), n.getId());
             return n;
+        }
+
+        @Override public synchronized InsertResult insertIfAbsent(Notification candidate) {
+            String idempotencyIndex = candidate.getTenantId() + ":" + candidate.getIdempotencyKey();
+            if (candidate.getIdempotencyKey() != null) {
+                UUID existingId = idempotency.get(idempotencyIndex);
+                if (existingId != null) {
+                    Notification existing = storage.get(existingId);
+                    if (!Objects.equals(existing.getRequestFingerprint(), candidate.getRequestFingerprint())) {
+                        throw new com.example.notification.application.Exceptions.IdempotencyConflictException(
+                                "Idempotency key was already used with a different request");
+                    }
+                    return new InsertResult(existing, false, "IDEMPOTENCY_KEY_MATCH");
+                }
+            }
+            save(candidate);
+            return new InsertResult(candidate, true, null);
         }
 
         @Override public Optional<Notification> findById(String tenantId, UUID id) {
@@ -50,14 +70,27 @@ public final class InMemoryRepositories {
             if (key == null || key.isBlank()) return Optional.empty();
             return Optional.ofNullable(dedupe.get(tenantId + ":" + key)).flatMap(id -> findById(tenantId, id));
         }
+        @Override public int anonymizeUser(String tenantId, String userId) {
+            var matches = storage.values().stream().filter(n -> n.getTenantId().equals(tenantId))
+                    .filter(n -> n.getUserId().equals(userId)).toList();
+            matches.forEach(Notification::anonymizePersonalData);
+            return matches.size();
+        }
     }
 
     @Repository
+    @Profile("!postgres-runtime")
     public static class Jobs implements Ports.NotificationJobRepository {
         private final Map<UUID, NotificationJob> storage = new ConcurrentHashMap<>();
         private final Map<UUID, NotificationJob> dlq = new ConcurrentHashMap<>();
 
         @Override public NotificationJob save(NotificationJob job) { storage.put(job.getId(), job); return job; }
+        @Override public synchronized NotificationJob saveIfAbsent(NotificationJob candidate) {
+            return storage.values().stream()
+                    .filter(existing -> existing.getNotificationId().equals(candidate.getNotificationId()))
+                    .filter(existing -> existing.getChannel() == candidate.getChannel())
+                    .findFirst().orElseGet(() -> save(candidate));
+        }
         @Override public Optional<NotificationJob> findById(UUID id) { return Optional.ofNullable(storage.get(id)); }
 
         @Override public Optional<NotificationJob> findByProviderMessageId(String providerMessageId) {
@@ -68,6 +101,10 @@ public final class InMemoryRepositories {
         @Override public List<NotificationJob> findByNotificationId(UUID notificationId) {
             return storage.values().stream().filter(j -> j.getNotificationId().equals(notificationId))
                     .sorted(Comparator.comparing(NotificationJob::getCreatedAt)).toList();
+        }
+        @Override public List<NotificationJob> findByNotificationId(String tenantId, UUID notificationId) {
+            return findByNotificationId(notificationId).stream()
+                    .filter(job -> job.getTenantId().equals(tenantId)).toList();
         }
 
         @Override public List<NotificationJob> findAll(String tenantId) {
@@ -81,22 +118,102 @@ public final class InMemoryRepositories {
         }
 
         @Override public void moveToDeadLetter(NotificationJob job) { dlq.put(job.getId(), job); }
+        @Override public int anonymizeUser(String tenantId, String userId) {
+            var matches = storage.values().stream().filter(j -> j.getTenantId().equals(tenantId))
+                    .filter(j -> j.getUserId().equals(userId)).toList();
+            matches.forEach(NotificationJob::anonymizePersonalData);
+            return matches.size();
+        }
+        @Override public List<NotificationJob> findReconcilableOlderThan(Instant threshold) {
+            return storage.values().stream().filter(job -> job.getStatus() == NotificationStatus.UNKNOWN
+                            || job.getStatus() == NotificationStatus.SENT)
+                    .filter(job -> job.getUpdatedAt().isBefore(threshold)).toList();
+        }
+        @Override public long countDeadLetter() { return dlq.size(); }
+        @Override public Optional<Instant> oldestReadyAt(Instant now) {
+            return storage.values().stream().filter(job -> job.getStatus() == NotificationStatus.QUEUED)
+                    .filter(job -> !job.getNextAttemptAt().isAfter(now))
+                    .map(NotificationJob::getNextAttemptAt).min(Comparator.naturalOrder());
+        }
     }
 
     @Repository
+    @Profile("!postgres-runtime")
+    public static class DeliveryAttempts implements Ports.DeliveryAttemptRepository {
+        private final CopyOnWriteArrayList<DeliveryAttempt> storage = new CopyOnWriteArrayList<>();
+
+        @Override public DeliveryAttempt save(DeliveryAttempt attempt) {
+            storage.add(attempt);
+            return attempt;
+        }
+        @Override public List<DeliveryAttempt> findByJobId(UUID jobId) {
+            return storage.stream().filter(attempt -> attempt.jobId().equals(jobId))
+                    .sorted(Comparator.comparingInt(DeliveryAttempt::number)).toList();
+        }
+    }
+
+    @Repository
+    @Profile("!postgres-runtime")
+    public static class WebhookInbox implements Ports.WebhookInboxRepository {
+        private final Map<String, WebhookInboxEvent> storage = new ConcurrentHashMap<>();
+        private final Clock clock;
+        public WebhookInbox(Clock clock) { this.clock = clock; }
+        @Override public WebhookInboxEvent saveIfAbsent(WebhookInboxEvent event) {
+            return storage.computeIfAbsent(event.getEventId(), ignored -> event);
+        }
+        @Override public WebhookInboxEvent save(WebhookInboxEvent event) { storage.put(event.getEventId(), event); return event; }
+        @Override public List<WebhookInboxEvent> findPending() {
+            Instant now = clock.instant();
+            return storage.values().stream().filter(event -> !event.isProcessed() && !event.isDead())
+                    .filter(event -> !event.getNextAttemptAt().isAfter(now))
+                    .sorted(Comparator.comparing(WebhookInboxEvent::getReceivedAt)).toList();
+        }
+    }
+
+    @Repository
+    @Profile("!postgres-runtime")
+    public static class Suppressions implements Ports.SuppressionRepository {
+        private final Map<String, SuppressionEntry> storage = new ConcurrentHashMap<>();
+        @Override public SuppressionEntry save(SuppressionEntry entry) {
+            storage.put(key(entry.tenantId(), entry.channel(), entry.contactHash()), entry); return entry;
+        }
+        @Override public boolean exists(String tenantId, Channel channel, String contactHash) {
+            return storage.containsKey(key(tenantId, channel, contactHash));
+        }
+        @Override public void delete(String tenantId, Channel channel, String contactHash) {
+            storage.remove(key(tenantId, channel, contactHash));
+        }
+        @Override public void deleteForTenant(String tenantId) {
+            storage.entrySet().removeIf(entry -> entry.getValue().tenantId().equals(tenantId));
+        }
+        private String key(String tenant, Channel channel, String hash) { return tenant + ":" + channel + ":" + hash; }
+    }
+
+    @Repository
+    @Profile("!postgres-runtime")
     public static class Outbox implements Ports.OutboxRepository {
         private final Map<UUID, OutboxEvent> storage = new ConcurrentHashMap<>();
+        private final Clock clock;
+        public Outbox(Clock clock) { this.clock = clock; }
 
         @Override public OutboxEvent save(OutboxEvent e) { storage.put(e.getId(), e); return e; }
 
         @Override public List<OutboxEvent> findPending(int limit) {
             return storage.values().stream().filter(e -> e.getStatus() == OutboxStatus.PENDING)
+                    .filter(e -> !e.getNextAttemptAt().isAfter(clock.instant()))
                     .sorted(Comparator.comparing(OutboxEvent::getCreatedAt)).limit(limit).toList();
         }
 
         @Override public List<OutboxEvent> findAll(String tenantId) {
             return storage.values().stream().filter(e -> e.getTenantId().equals(tenantId))
                     .sorted(Comparator.comparing(OutboxEvent::getCreatedAt).reversed()).toList();
+        }
+        @Override public long countPending() {
+            return storage.values().stream().filter(e -> e.getStatus() == OutboxStatus.PENDING).count();
+        }
+        @Override public Optional<Instant> oldestPendingAt() {
+            return storage.values().stream().filter(e -> e.getStatus() == OutboxStatus.PENDING)
+                    .map(OutboxEvent::getCreatedAt).min(Comparator.naturalOrder());
         }
     }
 
@@ -166,20 +283,49 @@ public final class InMemoryRepositories {
         }
 
         @Override public void delete(AuditEvent event) { events.remove(event); }
+        @Override public void anonymizeUser(String tenantId, String userId) {
+            events.replaceAll(event -> event.tenantId().equals(tenantId) && event.actor().equals(userId)
+                    ? new AuditEvent(event.id(), event.tenantId(), "erased-user", event.action(), event.resourceId(),
+                    Map.of("redacted", true), event.createdAt()) : event);
+        }
     }
 
     @Repository
+    @Profile("!postgres-runtime")
     public static class Campaigns implements Ports.CampaignRepository {
         private final Map<UUID, Campaign> storage = new ConcurrentHashMap<>();
+        private final Map<UUID, ClaimState> claims = new ConcurrentHashMap<>();
+        private record ClaimState(UUID token, Instant until) {}
 
         @Override public Campaign save(Campaign c) { storage.put(c.getId(), c); return c; }
         @Override public Optional<Campaign> findById(String tenantId, UUID id) { return Optional.ofNullable(storage.get(id)).filter(c -> c.getTenantId().equals(tenantId)); }
         @Override public List<Campaign> findAll(String tenantId) {
             return storage.values().stream().filter(c -> c.getTenantId().equals(tenantId)).sorted(Comparator.comparing(Campaign::getCreatedAt).reversed()).toList();
         }
+        @Override public synchronized Optional<Ports.CampaignRepository.Claim> claim(
+                String tenantId, UUID id, Instant now, Instant leaseUntil) {
+            Campaign campaign = findById(tenantId, id).orElse(null);
+            if (campaign == null || !campaign.hasMoreRecipients()) return Optional.empty();
+            ClaimState current = claims.get(id);
+            if (current != null && current.until().isAfter(now)) return Optional.empty();
+            UUID token = UUID.randomUUID();
+            claims.put(id, new ClaimState(token, leaseUntil));
+            return Optional.of(new Ports.CampaignRepository.Claim(campaign, token));
+        }
+        @Override public synchronized boolean checkpoint(Ports.CampaignRepository.Claim claim) {
+            ClaimState owner = claims.get(claim.campaign().getId());
+            if (owner == null || !owner.token().equals(claim.token())) return false;
+            storage.put(claim.campaign().getId(), claim.campaign());
+            return true;
+        }
+        @Override public synchronized void release(Ports.CampaignRepository.Claim claim) {
+            claims.computeIfPresent(claim.campaign().getId(), (id, owner) ->
+                    owner.token().equals(claim.token()) ? null : owner);
+        }
     }
 
     @Repository
+    @Profile("!postgres-runtime")
     public static class Digests implements Ports.DigestRepository {
         private final Map<UUID, DigestBuffer> storage = new ConcurrentHashMap<>();
 
@@ -192,7 +338,11 @@ public final class InMemoryRepositories {
         }
 
         @Override public List<DigestBuffer> findReadyToFlush(Instant now) {
-            return storage.values().stream().filter(b -> !b.isFlushed()).filter(b -> !b.getFlushAt().isAfter(now)).toList();
+            return storage.values().stream().filter(b -> !b.isFlushed() && !b.isClaimed()).filter(b -> !b.getFlushAt().isAfter(now)).toList();
+        }
+
+        @Override public synchronized List<DigestBuffer> claimReadyToFlush(Instant now) {
+            return findReadyToFlush(now).stream().filter(DigestBuffer::tryClaim).toList();
         }
     }
 }

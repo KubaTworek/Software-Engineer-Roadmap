@@ -6,6 +6,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.time.Clock;
 import java.util.Map;
 
 /**
@@ -40,16 +41,19 @@ public class ArchiveService {
      * W produkcji byłyby to raczej dni albo miesiące, np. 30, 90 albo 180 dni.
      */
     private final long retentionSeconds;
+    private final Clock clock;
 
     public ArchiveService(
             Ports.NotificationRepository notificationRepository,
             Ports.AuditRepository auditRepository,
             AuditService auditService,
+            Clock clock,
             @Value("${notification.archive.retention-seconds:120}") long retentionSeconds
     ) {
         this.notificationRepository = notificationRepository;
         this.auditRepository = auditRepository;
         this.auditService = auditService;
+        this.clock = clock;
         this.retentionSeconds = retentionSeconds;
     }
 
@@ -83,7 +87,7 @@ public class ArchiveService {
          *
          * Dane starsze niż 11:58:00 uznajemy za stare.
          */
-        Instant threshold = Instant.now().minusSeconds(retentionSeconds);
+        Instant threshold = clock.instant().minusSeconds(retentionSeconds);
 
         /*
          * Pobieramy stare powiadomienia w statusach końcowych.

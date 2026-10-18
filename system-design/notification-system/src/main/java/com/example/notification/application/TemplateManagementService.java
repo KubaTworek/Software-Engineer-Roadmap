@@ -26,9 +26,13 @@ public class TemplateManagementService {
     }
 
     public NotificationTemplate update(String tenantId, String actor, UUID id, String subject, String body, Set<String> vars, boolean active) {
-        NotificationTemplate template = templateRepository.findById(tenantId, id)
+        NotificationTemplate previous = templateRepository.findById(tenantId, id)
                 .orElseThrow(() -> new Exceptions.NotificationValidationException("Template not found: " + id));
-        template.update(subject, body, vars, active);
+        previous.deactivate();
+        templateRepository.save(previous);
+        NotificationTemplate template = new NotificationTemplate(UUID.randomUUID(), tenantId, previous.getTemplateKey(),
+                previous.getNotificationType(), previous.getChannel(), previous.getVersion() + 1,
+                subject, body, vars, active);
         templateRepository.save(template);
         auditService.record(tenantId, actor, AuditAction.TEMPLATE_UPDATED, template.getId(), Map.of("version", template.getVersion()));
         return template;

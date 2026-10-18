@@ -1,0 +1,11 @@
+{
+  "title": "Notification delivery pipeline",
+  "schemaVersion": 39,
+  "panels": [
+    {"type":"timeseries","title":"Time to send p95 by priority","targets":[{"expr":"histogram_quantile(0.95, sum by (le, priority) (rate(notification_time_to_send_seconds_bucket[5m])))"}]},
+    {"type":"timeseries","title":"Oldest ready job age","targets":[{"expr":"notification_oldest_ready_job_age_seconds"}]},
+    {"type":"timeseries","title":"Provider outcomes","targets":[{"expr":"sum by (provider, outcome) (rate(notification_provider_attempts_total[5m]))"}]},
+    {"type":"stat","title":"Outbox / DLQ backlog","targets":[{"expr":"notification_outbox_pending"},{"expr":"notification_dlq_size"}]},
+    {"type":"timeseries","title":"Delivery confirmation ratio","targets":[{"expr":"sum(rate(notification_jobs_delivered_total[5m])) / clamp_min(sum(rate(notification_jobs_sent_total[5m])), 1)"}]}
+  ]
+}

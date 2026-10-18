@@ -5,8 +5,10 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.Clock;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -42,6 +44,7 @@ public class NotificationService {
     private final DeduplicationKeyFactory deduplicationKeyFactory;
     private final RateLimiterService rateLimiterService;
     private final AuditService auditService;
+    private final Clock clock;
 
     /**
      * Okno czasowe deduplikacji.
@@ -69,6 +72,7 @@ public class NotificationService {
             RateLimiterService rateLimiterService,
             AuditService auditService,
             MeterRegistry meterRegistry,
+            Clock clock,
             @Value("${notification.deduplication.window-minutes:10}") long deduplicationWindowMinutes
     ) {
         this.notificationRepository = notificationRepository;
@@ -78,6 +82,7 @@ public class NotificationService {
         this.deduplicationKeyFactory = deduplicationKeyFactory;
         this.rateLimiterService = rateLimiterService;
         this.auditService = auditService;
+        this.clock = clock;
         this.deduplicationWindowMinutes = deduplicationWindowMinutes;
 
         /*
@@ -105,6 +110,7 @@ public class NotificationService {
      * 8. audyt,
      * 9. metryka.
      */
+    @Transactional
     public CreateNotificationResult create(
             String tenantId,
             String actor,
@@ -115,6 +121,16 @@ public class NotificationService {
             Map<String, Object> payload,
             String idempotencyKey,
             Instant expiresAt
+    ) {
+        return create(tenantId, actor, userId, notificationType, requestedChannels, contactPoint, payload,
+                idempotencyKey, expiresAt, null);
+    }
+
+    @Transactional
+    public CreateNotificationResult create(
+            String tenantId, String actor, String userId, NotificationType notificationType,
+            List<Channel> requestedChannels, ContactPoint contactPoint, Map<String, Object> payload,
+            String idempotencyKey, Instant expiresAt, Instant scheduledAt
     ) {
         /*
          * 1. Rate limiting.
@@ -137,37 +153,6 @@ public class NotificationService {
          * Ponawia ten sam request z tym samym idempotencyKey.
          * System nie tworzy drugiego powiadomienia, tylko zwraca istniejące.
          */
-        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
-            var existing = notificationRepository.findByIdempotencyKey(
-                    tenantId,
-                    idempotencyKey
-            );
-
-            if (existing.isPresent()) {
-                /*
-                 * Audytujemy fakt, że request został rozpoznany jako duplikat.
-                 * To jest przydatne przy debugowaniu integracji między serwisami.
-                 */
-                auditService.record(
-                        tenantId,
-                        actor,
-                        AuditAction.NOTIFICATION_DUPLICATE_RETURNED,
-                        existing.get().getId(),
-                        Map.of("reason", "IDEMPOTENCY_KEY_MATCH")
-                );
-
-                /*
-                 * Zwracamy istniejące Notification.
-                 * duplicate=true mówi klientowi, że nic nowego nie zostało utworzone.
-                 */
-                return new CreateNotificationResult(
-                        existing.get(),
-                        true,
-                        "IDEMPOTENCY_KEY_MATCH"
-                );
-            }
-        }
-
         /*
          * 3. Normalizacja listy kanałów z requestu.
          *
@@ -278,7 +263,7 @@ public class NotificationService {
 
             boolean insideWindow = existing
                     .getCreatedAt()
-                    .isAfter(Instant.now().minusSeconds(
+                    .isAfter(clock.instant().minusSeconds(
                             deduplicationWindowMinutes * 60
                     ));
 
@@ -289,7 +274,7 @@ public class NotificationService {
              * - spoza okna deduplikacji.
              */
             if (insideWindow
-                    && !existing.isExpired()
+                    && !existing.isExpired(clock.instant())
                     && existing.getStatus() != NotificationStatus.CANCELLED) {
 
                 auditService.record(
@@ -327,7 +312,10 @@ public class NotificationService {
                 payload,
                 normalize(idempotencyKey),
                 dedupeKey,
-                expiresAt
+                dedupeKey,
+                expiresAt,
+                scheduledAt,
+                clock.instant()
         );
 
         /*
@@ -336,7 +324,12 @@ public class NotificationService {
          * W produkcji ten zapis powinien być częścią transakcji razem z OutboxEvent.
          * W tej wersji repozytoria są in-memory, ale wzorzec architektoniczny jest ten sam.
          */
-        notificationRepository.save(notification);
+        Ports.NotificationRepository.InsertResult insertion = notificationRepository.insertIfAbsent(notification);
+        if (!insertion.inserted()) {
+            auditService.record(tenantId, actor, AuditAction.NOTIFICATION_DUPLICATE_RETURNED,
+                    insertion.notification().getId(), Map.of("reason", insertion.duplicateReason()));
+            return new CreateNotificationResult(insertion.notification(), true, insertion.duplicateReason());
+        }
 
         /*
          * 11. Outbox Pattern.

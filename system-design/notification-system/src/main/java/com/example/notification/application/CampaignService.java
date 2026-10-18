@@ -2,10 +2,14 @@ package com.example.notification.application;
 
 import com.example.notification.domain.*;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 
 /**
  * Serwis odpowiedzialny za obsługę kampanii powiadomień.
@@ -31,15 +35,24 @@ public class CampaignService {
     private final Ports.CampaignRepository campaignRepository;
     private final NotificationService notificationService;
     private final AuditService auditService;
+    private final int batchSize;
+    private final Clock clock;
+    private final Duration claimLease;
 
     public CampaignService(
             Ports.CampaignRepository campaignRepository,
             NotificationService notificationService,
-            AuditService auditService
+            AuditService auditService,
+            Clock clock,
+            @Value("${notification.campaign.batch-size:100}") int batchSize,
+            @Value("${notification.campaign.claim-seconds:60}") long claimSeconds
     ) {
         this.campaignRepository = campaignRepository;
         this.notificationService = notificationService;
         this.auditService = auditService;
+        this.batchSize = batchSize;
+        this.clock = clock;
+        this.claimLease = Duration.ofSeconds(claimSeconds);
     }
 
     /**
@@ -112,11 +125,12 @@ public class CampaignService {
          * To zabezpiecza przed sytuacją, w której tenant A próbuje uruchomić
          * kampanię należącą do tenanta B.
          */
-        Campaign campaign = campaignRepository
-                .findById(tenantId, id)
+        Instant now = clock.instant();
+        Ports.CampaignRepository.Claim claim = campaignRepository
+                .claim(tenantId, id, now, now.plus(claimLease))
                 .orElseThrow(() -> new Exceptions.NotificationValidationException(
-                        "Campaign not found: " + id
-                ));
+                        "Campaign is missing, completed or already claimed: " + id));
+        Campaign campaign = claim.campaign();
 
         /*
          * Oznaczamy kampanię jako RUNNING.
@@ -124,7 +138,7 @@ public class CampaignService {
          * To informuje system/operatora, że kampania jest w trakcie uruchamiania.
          */
         campaign.markRunning();
-        campaignRepository.save(campaign);
+        if (!campaignRepository.checkpoint(claim)) throw lostClaim(id);
 
         /*
          * Audytujemy start kampanii.
@@ -154,7 +168,9 @@ public class CampaignService {
          * - może respektować preferencje konkretnego użytkownika,
          * - może zostać zdeduplikowane.
          */
-        for (String userId : campaign.getUserIds()) {
+        int stopExclusive = Math.min(campaign.getNextRecipientIndex() + batchSize, campaign.getUserIds().size());
+        while (campaign.getNextRecipientIndex() < stopExclusive) {
+            String userId = campaign.getUserIds().get(campaign.getNextRecipientIndex());
             /*
              * contactResolver dostarcza dane kontaktowe użytkownika.
              *
@@ -174,17 +190,17 @@ public class CampaignService {
              * Dzięki temu ponowne uruchomienie tej samej kampanii
              * nie powinno utworzyć drugiego powiadomienia dla tego samego usera.
              */
-            notificationService.create(
-                    tenantId,
-                    actor,
-                    userId,
-                    campaign.getNotificationType(),
-                    campaign.getChannels(),
-                    contactPoint,
-                    campaign.getPayload(),
-                    "campaign:" + campaign.getId() + ":" + userId,
-                    null
-            );
+            try {
+                notificationService.create(
+                        tenantId, actor, userId, campaign.getNotificationType(), campaign.getChannels(), contactPoint,
+                        campaign.getPayload(), "campaign:" + campaign.getId() + ":" + userId, null);
+                campaign.recipientProcessed();
+            } catch (RuntimeException recipientFailure) {
+                // Checkpoint przesuwa się również po błędzie: operator może naprawić
+                // pojedynczego odbiorcę bez ponawiania całej kampanii.
+                campaign.recipientFailed();
+            }
+            if (!campaignRepository.checkpoint(claim)) throw lostClaim(id);
         }
 
         /*
@@ -197,20 +213,22 @@ public class CampaignService {
          * Dostarczenie dzieje się później asynchronicznie przez:
          * OutboxPublisher -> Queue -> NotificationWorker -> Provider.
          */
-        campaign.markCompleted();
-        campaignRepository.save(campaign);
+        if (!campaign.hasMoreRecipients()) campaign.markCompleted();
+        if (!campaignRepository.checkpoint(claim)) throw lostClaim(id);
+        campaignRepository.release(claim);
 
         /*
          * Audytujemy zakończenie uruchamiania kampanii.
          */
-        auditService.record(
-                tenantId,
-                actor,
-                AuditAction.CAMPAIGN_COMPLETED,
-                campaign.getId(),
-                Map.of()
-        );
+        if (!campaign.hasMoreRecipients()) {
+            auditService.record(tenantId, actor, AuditAction.CAMPAIGN_COMPLETED,
+                    campaign.getId(), Map.of("failedRecipients", campaign.getFailedRecipients()));
+        }
 
         return campaign;
+    }
+
+    private IllegalStateException lostClaim(UUID campaignId) {
+        return new IllegalStateException("Campaign claim lost while checkpointing: " + campaignId);
     }
 }

@@ -1,0 +1,5 @@
+notification:
+  security:
+    # Wyłącznie bezpieczny fallback lokalny. W produkcji wartość musi pochodzić
+    # z secret managera, a preferowanym wariantem jest asymetryczny klucz IdP.
+    jwt-secret: ${NOTIFICATION_JWT_SECRET:local-educational-secret-at-least-32-bytes}

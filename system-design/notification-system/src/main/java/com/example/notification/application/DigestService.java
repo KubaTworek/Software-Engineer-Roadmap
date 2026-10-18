@@ -6,6 +6,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.time.Clock;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -35,6 +36,7 @@ public class DigestService {
     private final Ports.DigestRepository digestRepository;
     private final NotificationService notificationService;
     private final AuditService auditService;
+    private final Clock clock;
 
     /**
      * Długość okna digestu w sekundach.
@@ -55,11 +57,13 @@ public class DigestService {
             Ports.DigestRepository digestRepository,
             NotificationService notificationService,
             AuditService auditService,
+            Clock clock,
             @Value("${notification.digest.window-seconds:30}") long windowSeconds
     ) {
         this.digestRepository = digestRepository;
         this.notificationService = notificationService;
         this.auditService = auditService;
+        this.clock = clock;
         this.windowSeconds = windowSeconds;
     }
 
@@ -113,7 +117,7 @@ public class DigestService {
                         tenantId,
                         userId,
                         digestKey,
-                        Instant.now().plusSeconds(windowSeconds)
+                        clock.instant().plusSeconds(windowSeconds)
                 ));
 
         /*
@@ -172,7 +176,7 @@ public class DigestService {
          * - nie są flushed,
          * - mają flushAt w przeszłości albo teraz.
          */
-        for (DigestBuffer buffer : digestRepository.findReadyToFlush(Instant.now())) {
+        for (DigestBuffer buffer : digestRepository.claimReadyToFlush(clock.instant())) {
 
             /*
              * Dodatkowe zabezpieczenie przed podwójnym flushowaniem.
@@ -220,6 +224,7 @@ public class DigestService {
              * - DLQ,
              * - fallback providerów.
              */
+            try {
             notificationService.create(
                     buffer.getTenantId(),
                     "system",
@@ -295,6 +300,17 @@ public class DigestService {
                     buffer.getId(),
                     Map.of("items", buffer.getItems().size())
             );
+            } catch (RuntimeException failure) {
+                /*
+                 * Claim jest odpowiednikiem krótkiego lease'a. Jeżeli utworzenie
+                 * Notification nie powiedzie się, bufor musi wrócić do puli.
+                 * Pozostawienie claimed=true zakleszczyłoby digest na zawsze.
+                 * Idempotency key oparty o ID bufora sprawia, że ponowna próba
+                 * po niejednoznacznym wyniku nie utworzy drugiego powiadomienia.
+                 */
+                buffer.releaseClaim();
+                digestRepository.save(buffer);
+            }
         }
     }
 }

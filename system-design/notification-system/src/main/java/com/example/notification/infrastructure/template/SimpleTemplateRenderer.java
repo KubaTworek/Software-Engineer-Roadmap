@@ -17,8 +17,19 @@ public class SimpleTemplateRenderer implements Ports.TemplateRenderer {
     private String renderText(String template, Map<String, Object> payload) {
         String rendered = template;
         for (Map.Entry<String, Object> entry : payload.entrySet()) {
-            rendered = rendered.replace("{{" + entry.getKey() + "}}", String.valueOf(entry.getValue()));
+            if (!entry.getKey().matches("[A-Za-z][A-Za-z0-9_]{0,63}")) {
+                throw new IllegalArgumentException("Unsafe template variable name");
+            }
+            rendered = rendered.replace("{{" + entry.getKey() + "}}", escape(String.valueOf(entry.getValue())));
+        }
+        if (rendered.matches("(?s).*\\{\\{[^}]+}}.*")) {
+            throw new IllegalArgumentException("Template contains unresolved variables");
         }
         return rendered;
+    }
+
+    private String escape(String value) {
+        return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                .replace("\"", "&quot;").replace("'", "&#39;");
     }
 }
