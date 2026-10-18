@@ -33,6 +33,12 @@ public class Driver {
     private String vehicleColor;
     private String vehicleType;
 
+    /** Przejazd, który aktualnie posiada ofertę albo kierowcę. */
+    private UUID activeRideId;
+
+    /** Termin ważności oferty. Po akceptacji jest czyszczony. */
+    private Instant offerExpiresAt;
+
     @Column(nullable = false)
     private BigDecimal rating;
 

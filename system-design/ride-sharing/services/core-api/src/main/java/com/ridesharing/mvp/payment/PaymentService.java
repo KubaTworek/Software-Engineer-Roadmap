@@ -1,14 +1,9 @@
 package com.ridesharing.mvp.payment;
 
-import com.ridesharing.mvp.outbox.OutboxService;
 import com.ridesharing.mvp.ride.Ride;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.time.Instant;
-import java.util.Map;
-import java.util.UUID;
+import org.springframework.dao.DataIntegrityViolationException;
 
 /**
  * Serwis domenowy odpowiedzialny za płatności powiązane z przejazdem.
@@ -31,8 +26,6 @@ public class PaymentService {
      * Każdy przejazd powinien mieć maksymalnie jedną główną płatność.
      * Dlatego authorize() najpierw sprawdza, czy płatność dla rideId już istnieje.
      */
-    private final PaymentRepository payments;
-
     /**
      * Adapter do providera płatności.
      *
@@ -49,7 +42,7 @@ public class PaymentService {
      * Po każdej istotnej zmianie statusu płatności zapisujemy event.
      * OutboxPublisher opublikuje go później do Kafki.
      */
-    private final OutboxService outbox;
+    private final PaymentPersistenceService persistence;
 
     /**
      * Autoryzuje płatność dla przejazdu.
@@ -64,15 +57,14 @@ public class PaymentService {
      *
      * To zabezpiecza przed podwójną autoryzacją środków dla tego samego przejazdu.
      */
-    @Transactional
     public Payment authorize(Ride ride) {
         /*
          * Idempotencja na poziomie domenowym.
          * Jeżeli płatność dla ride już istnieje, nie wykonujemy kolejnej autoryzacji.
          */
-        var existing = payments.findByRideId(ride.getId());
-        if (existing.isPresent()) {
-            return existing.get();
+        var existing = persistence.find(ride.getId());
+        if (existing != null) {
+            return existing;
         }
 
         /*
@@ -92,56 +84,15 @@ public class PaymentService {
                 ride.getCurrency()
         );
 
-        var now = Instant.now();
-
-        /*
-         * Tworzymy trwały rekord płatności niezależnie od sukcesu.
-         * Przy nieudanej autoryzacji zapis statusu jest równie ważny,
-         * bo RideService może później zareagować na AUTHORIZATION_FAILED.
-         */
-        var payment = Payment.builder()
-                .id(UUID.randomUUID())
-                .ride(ride)
-                .passenger(ride.getPassenger())
-                .amount(ride.getEstimatedPrice())
-                .currency(ride.getCurrency())
-
-                /*
-                 * MVP: provider jest zapisany jako "mock".
-                 * Produkcyjnie ta wartość powinna odpowiadać realnemu providerowi,
-                 * np. stripe, adyen, przelewy24.
-                 */
-                .provider("mock")
-
-                .providerPaymentId(result.providerPaymentId())
-                .idempotencyKey(idempotencyKey)
-                .status(result.success()
-                        ? PaymentStatus.AUTHORIZED
-                        : PaymentStatus.AUTHORIZATION_FAILED)
-                .authorizedAt(result.success() ? now : null)
-                .failedAt(result.success() ? null : now)
-                .createdAt(now)
-                .updatedAt(now)
-                .build();
-
-        var saved = payments.save(payment);
-
-        /*
-         * Event płatniczy zapisany przez outbox.
-         * Inne komponenty mogą później reagować na status płatności asynchronicznie.
-         */
-        outbox.paymentEvent(
-                saved.getId(),
-                result.success() ? "PaymentAuthorized" : "PaymentAuthorizationFailed",
-                Map.of(
-                        "paymentId", saved.getId().toString(),
-                        "rideId", ride.getId().toString(),
-                        "status", saved.getStatus().name(),
-                        "providerMessage", result.message()
-                )
-        );
-
-        return saved;
+        try {
+            return persistence.recordAuthorization(ride, idempotencyKey, result);
+        } catch (DataIntegrityViolationException concurrentAuthorization) {
+            var winner = persistence.find(ride.getId());
+            if (winner != null) {
+                return winner;
+            }
+            throw concurrentAuthorization;
+        }
     }
 
     /**
@@ -158,7 +109,6 @@ public class PaymentService {
      * Capture powinien być wykonywany po zakończeniu kursu,
      * kiedy znana jest finalna kwota do pobrania.
      */
-    @Transactional
     public Payment capture(Ride ride) {
         /*
          * Jeżeli z jakiegoś powodu authorize nie zostało wykonane wcześniej,
@@ -167,8 +117,13 @@ public class PaymentService {
          * To wygodny fallback dla MVP, ale produkcyjnie warto ostrożnie rozróżnić:
          * brak autoryzacji, nieudana autoryzacja i udana autoryzacja.
          */
-        var payment = payments.findByRideId(ride.getId())
-                .orElseGet(() -> authorize(ride));
+        var payment = persistence.find(ride.getId());
+        if (payment == null) {
+            payment = authorize(ride);
+        }
+        if (payment.getStatus() == PaymentStatus.CAPTURED) {
+            return payment;
+        }
 
         /*
          * Capture pobiera finalną cenę przejazdu.
@@ -184,35 +139,6 @@ public class PaymentService {
          * Po capture aktualizujemy kwotę na finalną.
          * Może się różnić od estimate, gdy system zacznie uwzględniać realny dystans/czas.
          */
-        payment.setAmount(ride.getFinalPrice());
-        payment.setStatus(result.success()
-                ? PaymentStatus.CAPTURED
-                : PaymentStatus.CAPTURE_FAILED);
-
-        if (result.success()) {
-            payment.setCapturedAt(Instant.now());
-        } else {
-            payment.setFailedAt(Instant.now());
-        }
-
-        var saved = payments.save(payment);
-
-        /*
-         * Event po próbie capture.
-         * Przy sukcesie może uruchomić paragon/fakturę i rozliczenie kierowcy.
-         * Przy błędzie może uruchomić retry, reconciliation albo ticket supportowy.
-         */
-        outbox.paymentEvent(
-                saved.getId(),
-                result.success() ? "PaymentCaptured" : "PaymentCaptureFailed",
-                Map.of(
-                        "paymentId", saved.getId().toString(),
-                        "rideId", ride.getId().toString(),
-                        "status", saved.getStatus().name(),
-                        "providerMessage", result.message()
-                )
-        );
-
-        return saved;
+        return persistence.recordCapture(payment.getId(), ride, result);
     }
 }

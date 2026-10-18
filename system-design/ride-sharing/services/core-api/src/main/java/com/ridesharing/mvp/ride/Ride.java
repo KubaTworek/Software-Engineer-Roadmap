@@ -16,6 +16,9 @@ public class Ride {
     @Id
     private UUID id;
 
+    @Column(nullable = false)
+    private String cityId;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "passenger_id", nullable = false)
     private AppUser passenger;
@@ -40,6 +43,8 @@ public class Ride {
     private BigDecimal finalPrice;
     private String currency;
     private Instant requestedAt;
+    private Instant offeredAt;
+    private Instant offerExpiresAt;
     private Instant acceptedAt;
     private Instant driverArrivedAt;
     private Instant startedAt;

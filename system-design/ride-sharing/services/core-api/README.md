@@ -1,8 +1,15 @@
-# Ride Sharing — Stage 2 Stabilization
+# Ride Sharing — Core API
 
-Backend Java/Spring Boot rozszerzający MVP Ride Sharing o elementy stabilizacji produkcyjnej.
+Właściciel transakcyjnego cyklu życia przejazdu, kierowcy, płatności i trwałych zdarzeń. Usługi skalujące nie mogą samodzielnie zmieniać stanu agregatu `Ride`.
 
-## Zakres Etapu 2
+| Pytanie | Odpowiedź |
+| --- | --- |
+| Najważniejszy niezmiennik | Jeden kierowca ma najwyżej jedną aktywną ofertę/przejazd, a status ride przechodzi wyłącznie po krawędziach maszyny stanów. |
+| Krytyczny przepływ | idempotent request → commit ride/outbox → autoryzacja po commicie → matching → oferta z deadline → accept → trip → capture po commicie. |
+| Rekomendowany test | `RideStateMachineTest`, `DriverOfferOwnershipTest`; z Dockerem `PostgreSqlRideVersionInfrastructureTest`. |
+| Świadome ograniczenia | Płatność jest mockowana, lokalny profil używa jednego indeksu Redis GEO, a saga wymaga produkcyjnego procesu reconciliation. |
+
+## Zakres implementacji
 
 Dodane elementy:
 
@@ -15,38 +22,32 @@ Dodane elementy:
 - proste API admin panelu,
 - support tools i obsługa ticketów.
 
-Projekt nadal jest modularnym monolitem. To rozsądny etap przed wydzielaniem mikroserwisów.
+Core pozostaje modularnym właścicielem danych transakcyjnych. Profil domyślny uruchamia lokalne adaptery lokalizacji i pricingu. Profil `distributed` zastępuje je klientami HTTP bez zmiany kodu domenowego.
 
 ## Stack
 
 - Java 21
-- Spring Boot 3.3.x
+- Spring Boot 3.5.14
 - Spring Security + JWT
 - PostgreSQL + Flyway
 - Redis GEO
 - Kafka
-- WebSocket/STOMP
+- Kafka + osobny `realtime-gateway`
 - Resilience4j
 - Micrometer + Prometheus
 - Docker Compose
 
 ## Uruchomienie
 
-```bash
-docker compose up -d postgres redis zookeeper kafka
-mvn spring-boot:run
+```powershell
+..\..\mvnw.cmd -pl services/core-api test
+..\..\mvnw.cmd -pl services/core-api spring-boot:run
 ```
 
-Albo z aplikacją w kontenerze:
+Test kontraktów PostgreSQL:
 
-```bash
-docker compose --profile app up --build
-```
-
-Monitoring:
-
-```bash
-docker compose --profile observability up -d prometheus grafana
+```powershell
+..\..\mvnw.cmd -pl services/core-api -Pinfrastructure-tests verify
 ```
 
 Endpointy:
@@ -55,7 +56,6 @@ Endpointy:
 - Actuator health: `http://localhost:8080/actuator/health`
 - Prometheus metrics: `http://localhost:8080/actuator/prometheus`
 - Prometheus UI: `http://localhost:9090`
-- Grafana: `http://localhost:3000`
 
 ## Idempotency Keys
 
@@ -78,7 +78,7 @@ Jeżeli klient ponowi identyczny request z tym samym kluczem, system zwróci tę
 
 ## Outbox Pattern
 
-Zamiast publikować event bezpośrednio w transakcji biznesowej, aplikacja zapisuje rekord w tabeli `outbox_events`. Scheduler `OutboxPublisher` publikuje eventy do Kafki i oznacza je jako `PUBLISHED`.
+Zamiast publikować event bezpośrednio w transakcji biznesowej, aplikacja zapisuje pełny `DomainEventEnvelope` w tabeli `outbox_events`. Instancja publishera claimuje krótką paczkę przez `FOR UPDATE SKIP LOCKED`, zwalnia transakcję przed I/O do Kafki, a potwierdzenie zapisuje osobno. Crash po wysłaniu, ale przed ackiem może utworzyć duplikat — dlatego `eventId` jest stabilne, a consumer musi być idempotentny.
 
 Obsługiwane topic-i:
 
@@ -140,4 +140,4 @@ Konfiguracja znajduje się w `application.yml`.
 
 ## Ważna uwaga
 
-To nadal nie jest pełny system produkcyjny. Brakuje między innymi pełnego UI admina, dokładnego audytu uprawnień supportu, dead-letter topiców, rozbudowanego reconciliation dla płatności i testów kontraktowych. Kod jest jednak przygotowany jako sensowna baza do kolejnego etapu.
+To laboratorium nie obiecuje distributed transaction. Autoryzacja i capture są uruchamiane po commicie, a połączenie zapisów zapewnia saga oraz idempotentne komendy providera. Produkcyjnie potrzebne są timeouty/deadline, kolejka trwałych komend płatniczych, reconciliation, DLQ, rotacja sekretów i contract tests adapterów HTTP.

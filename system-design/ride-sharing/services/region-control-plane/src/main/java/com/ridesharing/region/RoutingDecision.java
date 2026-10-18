@@ -2,4 +2,13 @@ package com.ridesharing.region;
 
 import java.time.Instant;
 
-public record RoutingDecision(String aggregateId, String homeRegion, String routedRegion, String consistencyMode, String reason, Instant decidedAt) {}
+public record RoutingDecision(
+        String aggregateId,
+        String homeRegion,
+        String routedRegion,
+        long ownershipEpoch,
+        boolean acceptsWrites,
+        String consistencyMode,
+        String reason,
+        Instant decidedAt
+) {}

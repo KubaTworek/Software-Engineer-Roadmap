@@ -25,8 +25,11 @@ management:
     tags:
       application: ${spring.application.name}
 app:
+  jwt:
+    secret: ${APP_JWT_SECRET:change-me-change-me-change-me-change-me-change-me}
   realtime:
     node-id: ${REALTIME_NODE_ID:${random.uuid}}
+    allowed-origins: ${REALTIME_ALLOWED_ORIGINS:http://localhost:3000}
     topics:
       ride-events: ride.events
       location-events: driver.location.updated

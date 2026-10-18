@@ -3,6 +3,9 @@ package com.ridesharing.location;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
+import java.time.Instant;
+import java.util.Map;
+import java.util.UUID;
 
 /**
  * Publisher eventów lokalizacji kierowcy do Kafki.
@@ -75,10 +78,19 @@ public class LocationEventPublisher {
      * - podaży/popytu per city.
      */
     public void publish(DriverLocationSnapshot snapshot) {
+        UUID eventId = UUID.randomUUID();
         kafkaTemplate.send(
                 locationTopic,
-                snapshot.cityId(),
-                snapshot
+                snapshot.driverId(),
+                Map.of(
+                        "eventId", eventId.toString(),
+                        "eventType", "DriverLocationUpdated",
+                        "aggregateType", "Driver",
+                        "aggregateId", snapshot.driverId(),
+                        "schemaVersion", 1,
+                        "occurredAt", Instant.now().toString(),
+                        "payload", snapshot
+                )
         );
     }
 }

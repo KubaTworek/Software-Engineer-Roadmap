@@ -94,7 +94,7 @@ public class RideController {
     @PreAuthorize("hasRole('PASSENGER')")
     public ResponseEntity<RideDto> requestRide(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
             @Valid @RequestBody RideRequest request
     ) {
         var response = idempotencyService.execute(
@@ -120,8 +120,11 @@ public class RideController {
      * inaczej albo wymaga poprawy.
      */
     @GetMapping("/{rideId}")
-    public RideDto get(@PathVariable UUID rideId) {
-        return rideService.get(rideId);
+    public RideDto get(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable UUID rideId
+    ) {
+        return rideService.getForParticipant(principal.user(), rideId);
     }
 
     /**
@@ -171,9 +174,10 @@ public class RideController {
      * vehicleType pozwala różnicować cenę, np. standard, comfort, XL.
      */
     public record EstimateRequest(
+            @NotBlank String cityId,
             Point pickup,
             Point dropoff,
-            String vehicleType
+            @NotBlank String vehicleType
     ) {}
 
     /**
@@ -198,10 +202,11 @@ public class RideController {
      * obsługiwaną przez Payment Service.
      */
     public record RideRequest(
+            @NotBlank String cityId,
             Point pickup,
             Point dropoff,
-            String vehicleType,
-            String paymentMethodId
+            @NotBlank String vehicleType,
+            @NotBlank String paymentMethodId
     ) {}
 
     /**

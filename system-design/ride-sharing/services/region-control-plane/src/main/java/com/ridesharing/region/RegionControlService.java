@@ -5,6 +5,8 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
+import java.time.Duration;
 
 /**
  * Serwis control-plane dla routingu regionalnego.
@@ -78,6 +80,7 @@ public class RegionControlService {
                     "primary"
             )
     );
+    private final ConcurrentHashMap<String, RegionWriteLease> ownership = new ConcurrentHashMap<>();
 
     /**
      * Konstruktor ustawiający lokalny region z konfiguracji.
@@ -141,16 +144,51 @@ public class RegionControlService {
                 .filter(r -> r.regionId().equals(home) && r.acceptsWrites())
                 .findFirst()
                 .map(RegionDescriptor::regionId)
-                .orElse(localRegion);
+                .orElse(home);
 
         return new RoutingDecision(
                 aggregateId,
                 home,
                 routed,
+                ownership.getOrDefault(aggregateId, new RegionWriteLease(aggregateId, home, 0, Instant.EPOCH)).epoch(),
+                routed.equals(home),
                 "local_strong_global_eventual",
-                "city_home_region_plus_hash_fallback",
+                routed.equals(home)
+                        ? "city_home_region_plus_stable_hash_fallback"
+                        : "home_region_unavailable_fail_closed",
                 Instant.now()
         );
+    }
+
+    /**
+     * Przejmuje lub odnawia single-writer lease. Każde przejęcie zwiększa epoch;
+     * storage musi odrzucać zapis ze starszym tokenem, nawet gdy dawny region żyje.
+     */
+    public RegionWriteLease acquire(String aggregateId, String requestedRegion) {
+        if (regions.stream().noneMatch(r -> r.regionId().equals(requestedRegion) && r.acceptsWrites())) {
+            throw new IllegalArgumentException("Unknown or read-only region " + requestedRegion);
+        }
+        Instant now = Instant.now();
+        return ownership.compute(aggregateId, (id, current) -> {
+            if (current != null && current.expiresAt().isAfter(now)
+                    && !current.ownerRegion().equals(requestedRegion)) {
+                throw new IllegalStateException("Aggregate is owned by " + current.ownerRegion());
+            }
+            long epoch = current == null
+                    ? 1
+                    : current.ownerRegion().equals(requestedRegion) && current.expiresAt().isAfter(now)
+                    ? current.epoch()
+                    : current.epoch() + 1;
+            return new RegionWriteLease(id, requestedRegion, epoch, now.plus(Duration.ofSeconds(30)));
+        });
+    }
+
+    public boolean acceptsWrite(String aggregateId, String region, long epoch) {
+        var lease = ownership.get(aggregateId);
+        return lease != null
+                && lease.expiresAt().isAfter(Instant.now())
+                && lease.ownerRegion().equals(region)
+                && lease.epoch() == epoch;
     }
 
     /**
@@ -176,9 +214,8 @@ public class RegionControlService {
          * To jest wygodne, ale ryzykowne, jeśli pochodzi z niezaufanego klienta.
          * Publiczny klient nie powinien móc dowolnie wybrać regionu zapisu.
          */
-        if (hint != null && !hint.isBlank()) {
-            return hint;
-        }
+        // userRegionHint opisuje bliskość klienta, ale nie jest dowodem ownershipu.
+        // Publiczny klient nie może nim wybrać regionu zapisu.
 
         /*
          * Miasta europejskie kierujemy do eu-central.
@@ -216,9 +253,10 @@ public class RegionControlService {
          * Ale jeśli później zmieni się liczba regionów, hash modulo 3 może
          * przenieść wiele agregatów do innych regionów.
          */
-        int bucket = Math.abs(
-                (aggregateId == null ? "default" : aggregateId).hashCode()
-        ) % 3;
+        int bucket = Math.floorMod(
+                (aggregateId == null ? "default" : aggregateId).hashCode(),
+                regions.size()
+        );
 
         return bucket == 0
                 ? "eu-central"

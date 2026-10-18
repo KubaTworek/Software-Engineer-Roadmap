@@ -17,6 +17,7 @@ public class WarehouseSchemaInitializer {
         jdbc.execute("""
                     CREATE TABLE IF NOT EXISTS fact_events (
                       id BIGSERIAL PRIMARY KEY,
+                      event_id VARCHAR(64),
                       source_topic VARCHAR(128) NOT NULL,
                       event_type VARCHAR(128),
                       aggregate_id VARCHAR(128),
@@ -27,5 +28,7 @@ public class WarehouseSchemaInitializer {
                 """);
         jdbc.execute("CREATE INDEX IF NOT EXISTS idx_fact_events_city_received ON fact_events(city_id, received_at)");
         jdbc.execute("CREATE INDEX IF NOT EXISTS idx_fact_events_type_received ON fact_events(event_type, received_at)");
+        jdbc.execute("ALTER TABLE fact_events ADD COLUMN IF NOT EXISTS event_id VARCHAR(64)");
+        jdbc.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_fact_events_event_id ON fact_events(event_id)");
     }
 }

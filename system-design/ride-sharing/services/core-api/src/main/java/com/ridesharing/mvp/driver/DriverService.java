@@ -1,16 +1,16 @@
 package com.ridesharing.mvp.driver;
 
 import com.ridesharing.mvp.common.ApiException;
-import com.ridesharing.mvp.location.LocationService;
+import com.ridesharing.mvp.location.DriverLocationPort;
 import com.ridesharing.mvp.user.AppUser;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.Duration;
 import java.util.UUID;
 
 /**
@@ -37,14 +37,10 @@ public class DriverService {
     /**
      * Serwis lokalizacji.
      *
-     * @Lazy jest użyte najpewniej po to, żeby przerwać cykliczną zależność
-     * między DriverService i LocationService.
-     *
-     * To rozwiązanie działa, ale warto uważać: jeżeli zależności zaczynają się zapętlać,
-     * często oznacza to, że odpowiedzialności serwisów są zbyt mocno splecione.
+     * Port ukrywa wybór adaptera lokalnego lub zdalnego. DriverService nie zna
+     * Redisa ani protokołu HTTP używanego przez Location Service.
      */
-    @Lazy
-    private final LocationService locationService;
+    private final DriverLocationPort locationService;
 
     /**
      * Pobiera profil kierowcy przypisany do danego użytkownika.
@@ -141,6 +137,13 @@ public class DriverService {
             throw new ApiException(HttpStatus.FORBIDDEN, "Driver is not verified");
         }
 
+        if (driver.getActiveRideId() != null) {
+            throw new ApiException(
+                    HttpStatus.CONFLICT,
+                    "Driver availability is controlled by active ride " + driver.getActiveRideId()
+            );
+        }
+
         driver.setAvailabilityStatus(status);
         drivers.save(driver);
 
@@ -151,7 +154,7 @@ public class DriverService {
          * Kierowca OFFLINE, ON_TRIP albo OFFERED_RIDE nie powinien pojawiać się jako dostępny w pobliżu.
          */
         if (status != DriverAvailabilityStatus.AVAILABLE) {
-            locationService.removeDriver(driver.getId());
+            locationService.remove(driver.getId());
         }
 
         return DriverDto.from(driver);
@@ -174,15 +177,21 @@ public class DriverService {
      * 5. Jeżeli kierowca nie jest już dostępny, zwraca false.
      */
     @Transactional
-    public boolean tryOfferDriver(UUID driverId) {
+    public boolean tryOfferDriver(UUID driverId, UUID rideId) {
         var driver = drivers.findWithLockById(driverId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Driver not found"));
 
-        if (driver.getAvailabilityStatus() != DriverAvailabilityStatus.AVAILABLE) {
+        boolean expiredOffer = driver.getAvailabilityStatus() == DriverAvailabilityStatus.OFFERED_RIDE
+                && driver.getOfferExpiresAt() != null
+                && driver.getOfferExpiresAt().isBefore(Instant.now());
+
+        if (driver.getAvailabilityStatus() != DriverAvailabilityStatus.AVAILABLE && !expiredOffer) {
             return false;
         }
 
         driver.setAvailabilityStatus(DriverAvailabilityStatus.OFFERED_RIDE);
+        driver.setActiveRideId(rideId);
+        driver.setOfferExpiresAt(Instant.now().plus(Duration.ofSeconds(20)));
         drivers.save(driver);
 
         return true;
@@ -201,10 +210,17 @@ public class DriverService {
      * W większym systemie warto walidować dozwolone przejścia statusów.
      */
     @Transactional
-    public void markAvailable(UUID driverId) {
-        var driver = getById(driverId);
+    public boolean markAvailable(UUID driverId, UUID rideId) {
+        var driver = drivers.findWithLockById(driverId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Driver not found"));
+        if (!rideId.equals(driver.getActiveRideId())) {
+            return false;
+        }
         driver.setAvailabilityStatus(DriverAvailabilityStatus.AVAILABLE);
+        driver.setActiveRideId(null);
+        driver.setOfferExpiresAt(null);
         drivers.save(driver);
+        return true;
     }
 
     /**
@@ -214,9 +230,14 @@ public class DriverService {
      * żeby kierowca zniknął z puli kandydatów dla kolejnych pasażerów.
      */
     @Transactional
-    public void markOnTrip(UUID driverId) {
-        var driver = getById(driverId);
+    public void markOnTrip(UUID driverId, UUID rideId) {
+        var driver = drivers.findWithLockById(driverId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Driver not found"));
+        if (!rideId.equals(driver.getActiveRideId())) {
+            throw new ApiException(HttpStatus.CONFLICT, "Driver offer belongs to another ride");
+        }
         driver.setAvailabilityStatus(DriverAvailabilityStatus.ON_TRIP);
+        driver.setOfferExpiresAt(null);
         drivers.save(driver);
     }
 }

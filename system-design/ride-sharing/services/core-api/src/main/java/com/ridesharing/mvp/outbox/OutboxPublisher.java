@@ -6,9 +6,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.time.Instant;
+import org.springframework.beans.factory.annotation.Value;
 
 /**
  * Publisher eventów zapisanych w tabeli outbox.
@@ -39,7 +37,10 @@ public class OutboxPublisher {
      * Z niego pobieramy eventy w statusie PENDING i aktualizujemy ich status
      * po udanej albo nieudanej publikacji.
      */
-    private final OutboxEventRepository outbox;
+    private final OutboxClaimService claims;
+
+    @Value("${app.outbox.batch-size:50}")
+    private int batchSize;
 
     /**
      * KafkaTemplate używany do publikowania payloadu eventu do odpowiedniego topicu.
@@ -67,13 +68,12 @@ public class OutboxPublisher {
      * z końcem wykonania tej metody.
      */
     @Scheduled(fixedDelayString = "${app.outbox.poll-delay-ms:1000}")
-    @Transactional
     public void publishPending() {
         /*
          * Pobieramy małą paczkę eventów, żeby publisher nie próbował naraz wysłać
          * całej tabeli outbox. To ogranicza obciążenie bazy i Kafki.
          */
-        for (var event : outbox.findTop50ByStatusOrderByCreatedAtAsc(OutboxStatus.PENDING)) {
+        for (var event : claims.claim(batchSize)) {
             try {
                 /*
                  * Publikacja do Kafki.
@@ -97,24 +97,13 @@ public class OutboxPublisher {
                  * Event został skutecznie opublikowany.
                  * Od tego momentu consumery mogą go przetwarzać z Kafki.
                  */
-                event.setStatus(OutboxStatus.PUBLISHED);
-                event.setPublishedAt(Instant.now());
-                event.setLastError(null);
+                claims.published(event.getId());
             } catch (Exception ex) {
                 /*
                  * Publikacja się nie udała.
                  * Nie tracimy eventu — zostaje w outboxie i będzie ponawiany.
                  */
-                event.setAttempts(event.getAttempts() + 1);
-                event.setLastError(ex.getMessage());
-
-                /*
-                 * Po 10 próbach uznajemy event za problematyczny.
-                 * Trafia do statusu FAILED, żeby nie blokował w nieskończoność kolejki PENDING.
-                 */
-                if (event.getAttempts() >= 10) {
-                    event.setStatus(OutboxStatus.FAILED);
-                }
+                claims.failed(event.getId(), ex.getMessage());
 
                 log.warn(
                         "Outbox publish failed for {}: {}",

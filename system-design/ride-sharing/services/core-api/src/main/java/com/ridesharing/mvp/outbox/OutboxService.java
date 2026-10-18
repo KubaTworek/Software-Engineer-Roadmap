@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Map;
 import java.util.UUID;
+import java.time.Instant;
 
 /**
  * Serwis odpowiedzialny za zapisywanie eventów domenowych do tabeli outbox.
@@ -138,8 +139,20 @@ public class OutboxService {
             Map<String, Object> payload
     ) {
         try {
+            UUID eventId = UUID.randomUUID();
+            var envelope = new DomainEventEnvelope(
+                    eventId,
+                    eventType,
+                    aggregateType,
+                    aggregateId,
+                    1,
+                    Instant.now(),
+                    null,
+                    null,
+                    payload
+            );
             outbox.save(OutboxEvent.builder()
-                    .id(UUID.randomUUID())
+                    .id(eventId)
                     .aggregateType(aggregateType)
                     .aggregateId(aggregateId)
                     .eventType(eventType)
@@ -149,7 +162,7 @@ public class OutboxService {
                      * Payload zapisujemy jako JSON.
                      * Publisher wysyła później dokładnie ten JSON do Kafki.
                      */
-                    .payload(objectMapper.writeValueAsString(payload))
+                    .payload(objectMapper.writeValueAsString(envelope))
 
                     /*
                      * PENDING oznacza, że event czeka na publikację przez OutboxPublisher.

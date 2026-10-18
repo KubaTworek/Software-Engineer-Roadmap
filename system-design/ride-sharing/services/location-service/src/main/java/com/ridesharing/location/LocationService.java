@@ -5,6 +5,7 @@ import org.springframework.data.geo.Point;
 import org.springframework.data.redis.connection.RedisGeoCommands;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -27,6 +28,32 @@ import java.util.*;
  */
 @Service
 public class LocationService {
+
+    private static final DefaultRedisScript<Long> UPDATE_LOCATION =
+            new DefaultRedisScript<>("""
+                    local current = redis.call('HGET', KEYS[1], 'sequence')
+                    if current and tonumber(current) >= tonumber(ARGV[1]) then
+                      return 0
+                    end
+                    local oldCity = redis.call('HGET', KEYS[1], 'cityId')
+                    local oldCell = redis.call('HGET', KEYS[1], 'h3Cell')
+                    if oldCity and oldCell and (oldCity ~= ARGV[2] or oldCell ~= ARGV[3]) then
+                      redis.call('SREM', 'loc:city:' .. oldCity .. ':h3:' .. oldCell, ARGV[4])
+                    end
+                    if oldCity and oldCity ~= ARGV[2] then
+                      redis.call('ZREM', 'loc:city:' .. oldCity .. ':available', ARGV[4])
+                    end
+                    redis.call('HSET', KEYS[1],
+                      'driverId', ARGV[4], 'cityId', ARGV[2], 'h3Cell', ARGV[3],
+                      'lat', ARGV[5], 'lng', ARGV[6], 'heading', ARGV[7],
+                      'speed', ARGV[8], 'accuracyMeters', ARGV[9],
+                      'sequence', ARGV[1], 'recordedAt', ARGV[10], 'receivedAt', ARGV[11])
+                    redis.call('EXPIRE', KEYS[1], tonumber(ARGV[12]))
+                    redis.call('SADD', KEYS[2], ARGV[4])
+                    redis.call('EXPIRE', KEYS[2], 600)
+                    redis.call('GEOADD', KEYS[3], ARGV[6], ARGV[5], ARGV[4])
+                    return 1
+                    """, Long.class);
 
     /**
      * Redis używany jako szybki store dla bieżących lokalizacji.
@@ -106,6 +133,7 @@ public class LocationService {
          * Jeśli heading/speed/accuracyMeters nie są podane,
          * zapisujemy 0 jako wartość domyślną.
          */
+        Instant receivedAt = Instant.now();
         var snapshot = new DriverLocationSnapshot(
                 request.driverId(),
                 request.cityId(),
@@ -115,7 +143,9 @@ public class LocationService {
                 request.speed() == null ? 0 : request.speed(),
                 request.accuracyMeters() == null ? 0 : request.accuracyMeters(),
                 cell,
-                Instant.now()
+                request.sequence(),
+                request.recordedAt(),
+                receivedAt
         );
 
         /*
@@ -126,72 +156,30 @@ public class LocationService {
          *
          * Hash pozwala szybko odczytać wszystkie pola ostatniej lokalizacji.
          */
-        var hash = new LinkedHashMap<String, String>();
-        hash.put("driverId", snapshot.driverId());
-        hash.put("cityId", snapshot.cityId());
-        hash.put("lat", Double.toString(snapshot.lat()));
-        hash.put("lng", Double.toString(snapshot.lng()));
-        hash.put("heading", Double.toString(snapshot.heading()));
-        hash.put("speed", Double.toString(snapshot.speed()));
-        hash.put("accuracyMeters", Double.toString(snapshot.accuracyMeters()));
-        hash.put("h3Cell", snapshot.h3Cell());
-        hash.put("updatedAt", snapshot.updatedAt().toString());
-
-        /*
-         * Zapis ostatniego snapshotu kierowcy.
-         */
-        redis.opsForHash().putAll(
-                LocationKeys.driver(snapshot.driverId()),
-                hash
+        Long applied = redis.execute(
+                UPDATE_LOCATION,
+                List.of(
+                        LocationKeys.driver(snapshot.driverId()),
+                        LocationKeys.cell(snapshot.cityId(), snapshot.h3Cell()),
+                        LocationKeys.available(snapshot.cityId())
+                ),
+                Long.toString(snapshot.sequence()),
+                snapshot.cityId(),
+                snapshot.h3Cell(),
+                snapshot.driverId(),
+                Double.toString(snapshot.lat()),
+                Double.toString(snapshot.lng()),
+                Double.toString(snapshot.heading()),
+                Double.toString(snapshot.speed()),
+                Double.toString(snapshot.accuracyMeters()),
+                snapshot.recordedAt().toString(),
+                snapshot.receivedAt().toString(),
+                Long.toString(staleAfterSeconds * 4L)
         );
 
-        /*
-         * TTL hash-a jest dłuższy niż staleAfterSeconds.
-         *
-         * Dzięki temu możemy jeszcze przez chwilę odczytać snapshot,
-         * ale nearby() i tak odrzuci go jako stale po staleAfterSeconds.
-         */
-        redis.expire(
-                LocationKeys.driver(snapshot.driverId()),
-                Duration.ofSeconds(staleAfterSeconds * 4L)
-        );
-
-        /*
-         * Dodanie kierowcy do seta komórki H3.
-         *
-         * Set per city + h3Cell pozwala szybko zebrać kandydatów z komórek sąsiednich.
-         */
-        redis.opsForSet().add(
-                LocationKeys.cell(snapshot.cityId(), snapshot.h3Cell()),
-                snapshot.driverId()
-        );
-
-        /*
-         * TTL dla seta komórki.
-         *
-         * Uwaga: to nie usuwa pojedynczego driverId z poprzedniej komórki,
-         * jeśli kierowca się przemieścił.
-         */
-        redis.expire(
-                LocationKeys.cell(snapshot.cityId(), snapshot.h3Cell()),
-                Duration.ofMinutes(10)
-        );
-
-        /*
-         * Redis GEO per city.
-         *
-         * Dodaje lub aktualizuje pozycję kierowcy w indeksie GEO.
-         *
-         * W tej wersji nearby() nie używa Redis GEO do pobierania kandydatów,
-         * tylko setów H3. GEO może być użyte jako dodatkowy indeks albo do debugowania.
-         */
-        redis.opsForGeo().add(
-                LocationKeys.available(snapshot.cityId()),
-                new RedisGeoCommands.GeoLocation<>(
-                        snapshot.driverId(),
-                        new Point(snapshot.lng(), snapshot.lat())
-                )
-        );
+        if (applied == null || applied == 0) {
+            return read(snapshot.driverId()).orElse(snapshot);
+        }
 
         /*
          * Publikacja eventu do Kafki.
@@ -278,7 +266,7 @@ public class LocationService {
                  * nie powinien być zwracany do matchingu.
                  */
                 .filter(s -> Duration
-                        .between(s.updatedAt(), Instant.now())
+                        .between(s.receivedAt(), Instant.now())
                         .getSeconds() <= staleAfterSeconds)
 
                 /*
@@ -291,7 +279,7 @@ public class LocationService {
                         s.lng(),
                         haversineKm(lat, lng, s.lat(), s.lng()),
                         s.h3Cell(),
-                        s.updatedAt()
+                        s.receivedAt()
                 ))
 
                 /*
@@ -301,6 +289,18 @@ public class LocationService {
                 .sorted(Comparator.comparingDouble(NearbyDriver::distanceKm))
                 .limit(limit)
                 .toList();
+    }
+
+    /**
+     * Usuwa snapshot, członkostwo H3 i wpis GEO. Najpierw odczytuje ostatni
+     * snapshot, ponieważ to on wskazuje dokładny city/cell owning the membership.
+     */
+    public void remove(String driverId) {
+        read(driverId).ifPresent(snapshot -> {
+            redis.opsForSet().remove(LocationKeys.cell(snapshot.cityId(), snapshot.h3Cell()), driverId);
+            redis.opsForGeo().remove(LocationKeys.available(snapshot.cityId()), driverId);
+        });
+        redis.delete(LocationKeys.driver(driverId));
     }
 
     /**
@@ -330,7 +330,9 @@ public class LocationService {
                     Double.parseDouble(raw.get("speed").toString()),
                     Double.parseDouble(raw.get("accuracyMeters").toString()),
                     raw.get("h3Cell").toString(),
-                    Instant.parse(raw.get("updatedAt").toString())
+                    Long.parseLong(raw.get("sequence").toString()),
+                    Instant.parse(raw.get("recordedAt").toString()),
+                    Instant.parse(raw.get("receivedAt").toString())
             ));
         } catch (RuntimeException ex) {
             /*

@@ -6,6 +6,9 @@ import org.springframework.web.client.RestClient;
 
 import java.time.Instant;
 import java.util.List;
+import java.net.http.HttpClient;
+import java.time.Duration;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 
 /**
  * Serwis generujący rekomendacje relokacji kierowcy.
@@ -47,7 +50,11 @@ public class DriverPositioningService {
             RestClient.Builder builder,
             @Value("${app.demand-service-url:http://localhost:8088}") String demandServiceUrl
     ) {
-        this.restClient = builder.build();
+        var requestFactory = new JdkClientHttpRequestFactory(
+                HttpClient.newBuilder().connectTimeout(Duration.ofMillis(500)).build()
+        );
+        requestFactory.setReadTimeout(Duration.ofMillis(800));
+        this.restClient = builder.requestFactory(requestFactory).build();
         this.demandServiceUrl = demandServiceUrl;
     }
 
@@ -153,11 +160,8 @@ public class DriverPositioningService {
      * Endpoint:
      * GET /api/v1/demand/forecast?cityId=...&h3Cell=...&horizonMinutes=20
      *
-     * Obecna implementacja nie parsuje odpowiedzi jako JSON.
-     * Zamiast tego używa hashCode odpowiedzi, żeby uzyskać deterministycznie zmienną liczbę.
-     *
-     * To jest mock/baseline do spięcia architektury.
-     * Produkcyjnie trzeba użyć DTO, np. DemandForecastResponse, i odczytać expectedDemand.
+     * Odpowiedź jest parsowana do jawnego DTO. Dzięki temu zmiana kontraktu upstreamu
+     * nie zostanie ukryta przez mapę lub heurystykę opartą na surowym JSON-ie.
      */
     private double fetchDemand(String cityId, String cell) {
         try {
@@ -169,14 +173,14 @@ public class DriverPositioningService {
                             cell
                     )
                     .retrieve()
-                    .body(String.class);
+                    .body(DemandForecast.class);
 
             /*
              * Fallback, gdy odpowiedź jest pusta.
              */
             return response == null
                     ? 8.0
-                    : 10.0 + Math.abs(response.hashCode() % 20);
+                    : Math.max(0.0, response.expectedRequests());
         } catch (Exception ex) {
             /*
              * Awaryjne wartości popytu, gdy Demand Service nie odpowiada.

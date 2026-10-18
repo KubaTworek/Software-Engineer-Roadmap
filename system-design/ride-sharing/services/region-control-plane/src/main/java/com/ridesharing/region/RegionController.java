@@ -103,4 +103,21 @@ public class RegionController {
                 userRegionHint
         );
     }
+
+    @PostMapping("/ownership/{aggregateId}/acquire")
+    public RegionWriteLease acquire(
+            @PathVariable String aggregateId,
+            @RequestParam String region
+    ) {
+        return service.acquire(aggregateId, region);
+    }
+
+    @GetMapping("/ownership/{aggregateId}/validate")
+    public boolean validate(
+            @PathVariable String aggregateId,
+            @RequestParam String region,
+            @RequestParam long epoch
+    ) {
+        return service.acceptsWrite(aggregateId, region, epoch);
+    }
 }

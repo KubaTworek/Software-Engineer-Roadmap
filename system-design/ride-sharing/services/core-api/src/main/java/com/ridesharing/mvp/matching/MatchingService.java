@@ -1,14 +1,13 @@
 package com.ridesharing.mvp.matching;
 
 import com.ridesharing.mvp.driver.DriverService;
-import com.ridesharing.mvp.location.LocationService;
-import com.ridesharing.mvp.ride.Ride;
-import com.ridesharing.mvp.ride.RideService;
-import com.ridesharing.mvp.websocket.RideWebSocketPublisher;
+import com.ridesharing.mvp.location.DriverLocationPort;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+
+import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Serwis odpowiedzialny za proste dopasowanie kierowcy do przejazdu.
@@ -33,7 +32,7 @@ public class MatchingService {
      * Dostarcza listę najbliższych dostępnych kierowców na podstawie Redis GEO.
      * MatchingService nie liczy geolokalizacji samodzielnie — korzysta z LocationService.
      */
-    private final LocationService locationService;
+    private final DriverLocationPort locationService;
 
     /**
      * Serwis kierowców.
@@ -53,8 +52,6 @@ public class MatchingService {
      * Jeśli publikacja statusu odbywa się już w RideService.offerDriver(),
      * to to pole można usunąć z MatchingService.
      */
-    private final RideWebSocketPublisher publisher;
-
     /**
      * Początkowy promień wyszukiwania kierowców w kilometrach.
      *
@@ -88,15 +85,15 @@ public class MatchingService {
      * 4. Pierwszy skutecznie zarezerwowany kierowca dostaje ofertę/przypisanie do ride.
      * 5. Jeżeli żaden kierowca nie jest dostępny, przejazd kończy się jako failed.
      */
-    @Async
-    public void matchAsync(Ride ride, RideService rideService) {
+    public Optional<UUID> reserveCandidate(UUID rideId, String cityId, double pickupLat, double pickupLng) {
         /*
          * Pobieramy kandydatów z Redis GEO.
          * Lista powinna być posortowana od najbliższego kierowcy.
          */
-        var candidates = locationService.findNearbyAvailableDrivers(
-                ride.getPickupLat(),
-                ride.getPickupLng(),
+        var candidates = locationService.nearby(
+                cityId,
+                pickupLat,
+                pickupLng,
                 radiusKm,
                 maxCandidates
         );
@@ -109,7 +106,7 @@ public class MatchingService {
          * tego samego kierowcy w tym samym czasie.
          */
         for (var driverId : candidates) {
-            if (driverService.tryOfferDriver(driverId)) {
+            if (driverService.tryOfferDriver(driverId, rideId)) {
                 /*
                  * Po skutecznej rezerwacji kierowcy przekazujemy decyzję do RideService.
                  *
@@ -117,8 +114,7 @@ public class MatchingService {
                  * np. MATCHING -> DRIVER_ASSIGNED / DRIVER_OFFERED.
                  * Tam powinien też powstać wpis historii statusu i event outbox.
                  */
-                rideService.offerDriver(ride.getId(), driverId);
-                return;
+                return Optional.of(driverId);
             }
         }
 
@@ -132,6 +128,6 @@ public class MatchingService {
          * - uwzględnić kierowców, którzy zaraz kończą kurs,
          * - poinformować pasażera o dłuższym oczekiwaniu.
          */
-        rideService.markFailed(ride.getId(), "No available drivers nearby");
+        return Optional.empty();
     }
 }

@@ -7,6 +7,8 @@ import org.springframework.data.jpa.repository.Lock;
 import jakarta.persistence.LockModeType;
 import java.util.Optional;
 import java.util.UUID;
+import java.time.Instant;
+import java.util.List;
 
 public interface DriverRepository extends JpaRepository<Driver, UUID> {
     Optional<Driver> findByUser(AppUser user);
@@ -14,4 +16,9 @@ public interface DriverRepository extends JpaRepository<Driver, UUID> {
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<Driver> findWithLockById(UUID id);
+
+    List<Driver> findTop100ByAvailabilityStatusAndOfferExpiresAtBefore(
+            DriverAvailabilityStatus status,
+            Instant before
+    );
 }

@@ -1,6 +1,7 @@
 package com.ridesharing.mvp.ride;
 
 import org.springframework.stereotype.Service;
+import org.springframework.context.annotation.Profile;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -16,7 +17,8 @@ import java.math.RoundingMode;
  * który uwzględnia surge, miasto, typ pojazdu, promocje i reguły biznesowe.
  */
 @Service
-public class PricingService {
+@Profile("!distributed")
+public class PricingService implements RidePricingPort {
 
     /**
      * Liczy szacowaną cenę przejazdu.
@@ -33,7 +35,8 @@ public class PricingService {
      * Metoda zwraca BigDecimal, bo pieniądze nie powinny być liczone na double
      * ze względu na błędy precyzji liczb zmiennoprzecinkowych.
      */
-    public BigDecimal estimatePrice(double distanceKm, int durationMinutes) {
+    @Override
+    public BigDecimal estimatePrice(String cityId, String vehicleType, double distanceKm, int durationMinutes) {
         /*
          * Stała opłata startowa.
          * W realnym systemie byłaby zależna od miasta, typu pojazdu i taryfy.

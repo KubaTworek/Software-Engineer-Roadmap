@@ -2,6 +2,9 @@ package com.ridesharing.mvp.integration;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import org.springframework.context.annotation.Profile;
+import com.ridesharing.mvp.ride.RidePricingPort;
+import java.math.BigDecimal;
 import org.springframework.web.client.RestClient;
 
 import java.util.Map;
@@ -21,7 +24,8 @@ import java.util.Map;
  * tylko deleguje wycenę do dedykowanego serwisu.
  */
 @Component
-public class PricingServiceClient {
+@Profile("distributed")
+public class PricingServiceClient implements RidePricingPort {
 
     /**
      * RestClient skonfigurowany bazowym adresem Pricing Service.
@@ -82,5 +86,22 @@ public class PricingServiceClient {
                 .body(request)
                 .retrieve()
                 .body(Map.class);
+    }
+
+    @Override
+    public BigDecimal estimatePrice(String cityId, String vehicleType, double distanceKm, int durationMinutes) {
+        var response = estimate(Map.of(
+                "cityId", cityId,
+                "vehicleType", vehicleType,
+                "distanceKm", distanceKm,
+                "durationMinutes", durationMinutes,
+                "activeRequests", 1,
+                "availableDrivers", 1
+        ));
+        Object value = response.get("estimatedPrice");
+        if (value == null) {
+            throw new IllegalStateException("Pricing response has no estimatedPrice");
+        }
+        return new BigDecimal(value.toString());
     }
 }

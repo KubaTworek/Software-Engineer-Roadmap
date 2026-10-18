@@ -2,6 +2,10 @@ package com.ridesharing.mvp.integration;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import org.springframework.context.annotation.Profile;
+import com.ridesharing.mvp.location.DriverLocationPort;
+import com.ridesharing.mvp.driver.Driver;
+import java.util.UUID;
 import org.springframework.web.client.RestClient;
 
 import java.util.List;
@@ -19,7 +23,8 @@ import java.util.Map;
  * - URL usługi jest konfigurowalny per środowisko.
  */
 @Component
-public class LocationServiceClient {
+@Profile("distributed")
+public class LocationServiceClient implements DriverLocationPort {
 
     /**
      * RestClient skonfigurowany bazowym adresem Location Service.
@@ -81,5 +86,42 @@ public class LocationServiceClient {
                         .build())
                 .retrieve()
                 .body(List.class);
+    }
+
+    @Override
+    public void update(Driver driver, LocationUpdate update) {
+        restClient.post()
+                .uri("/api/v1/locations/drivers")
+                .body(Map.of(
+                        "driverId", driver.getId().toString(),
+                        "cityId", update.cityId(),
+                        "lat", update.lat(),
+                        "lng", update.lng(),
+                        "heading", update.heading(),
+                        "speed", update.speed(),
+                        "accuracyMeters", update.accuracyMeters(),
+                        "sequence", update.sequence(),
+                        "recordedAt", update.recordedAt().toString()
+                ))
+                .retrieve()
+                .toBodilessEntity();
+    }
+
+    @Override
+    public void remove(UUID driverId) {
+        restClient.delete()
+                .uri("/api/v1/locations/drivers/{driverId}", driverId)
+                .retrieve()
+                .toBodilessEntity();
+    }
+
+    @Override
+    public List<UUID> nearby(String cityId, double lat, double lng, double radiusKm, int limit) {
+        // Location Service pracuje na H3 ringach. Dla uproszczonego portu promień
+        // mapujemy na ograniczony ring, zamiast udawać precyzyjną konwersję km -> H3.
+        int ring = Math.max(1, Math.min(5, (int) Math.ceil(radiusKm / 2.0)));
+        return nearbyDrivers(cityId, lat, lng, ring, limit).stream()
+                .map(row -> UUID.fromString(row.get("driverId").toString()))
+                .toList();
     }
 }

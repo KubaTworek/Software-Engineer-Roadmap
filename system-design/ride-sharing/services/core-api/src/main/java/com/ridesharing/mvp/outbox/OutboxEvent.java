@@ -30,6 +30,7 @@ public class OutboxEvent {
     private String lastError;
     private Instant createdAt;
     private Instant publishedAt;
+    private Instant lockedUntil;
 
     @PrePersist
     void prePersist() {

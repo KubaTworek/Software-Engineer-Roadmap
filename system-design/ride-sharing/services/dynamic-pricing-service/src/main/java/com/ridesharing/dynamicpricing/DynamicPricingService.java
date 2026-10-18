@@ -8,6 +8,9 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.Map;
+import java.net.http.HttpClient;
+import java.time.Duration;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 
 /**
  * Serwis dynamicznej wyceny przejazdu.
@@ -55,7 +58,11 @@ public class DynamicPricingService {
             RestClient.Builder builder,
             @Value("${app.demand-service-url:http://localhost:8088}") String demandUrl
     ) {
-        this.restClient = builder.build();
+        var requestFactory = new JdkClientHttpRequestFactory(
+                HttpClient.newBuilder().connectTimeout(Duration.ofMillis(500)).build()
+        );
+        requestFactory.setReadTimeout(Duration.ofMillis(800));
+        this.restClient = builder.requestFactory(requestFactory).build();
         this.demandUrl = demandUrl;
     }
 
@@ -224,7 +231,7 @@ public class DynamicPricingService {
      */
     private double forecastDemand(String cityId, String h3Cell) {
         try {
-            String body = restClient.get()
+            DemandForecast forecast = restClient.get()
                     .uri(
                             demandUrl
                                     + "/api/v1/demand/forecast?cityId={cityId}&h3Cell={cell}&horizonMinutes=15",
@@ -232,14 +239,14 @@ public class DynamicPricingService {
                             h3Cell
                     )
                     .retrieve()
-                    .body(String.class);
+                    .body(DemandForecast.class);
 
             /*
              * Fallback przy pustej odpowiedzi.
              */
-            return body == null
+            return forecast == null
                     ? 8.0
-                    : 8.0 + Math.abs(body.hashCode() % 24);
+                    : Math.max(0.0, forecast.expectedRequests());
         } catch (Exception ex) {
             /*
              * Fallback przy błędzie Demand Service.

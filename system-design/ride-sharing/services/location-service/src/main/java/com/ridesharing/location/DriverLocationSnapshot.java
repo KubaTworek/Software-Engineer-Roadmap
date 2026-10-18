@@ -11,5 +11,7 @@ public record DriverLocationSnapshot(
         double speed,
         double accuracyMeters,
         String h3Cell,
-        Instant updatedAt
+        long sequence,
+        Instant recordedAt,
+        Instant receivedAt
 ) {}

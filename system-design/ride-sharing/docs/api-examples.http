@@ -59,10 +59,14 @@ Authorization: Bearer {{driver_token}}
 Content-Type: application/json
 
 {
+  "cityId": "warsaw",
   "lat": 52.2297,
   "lng": 21.0122,
   "heading": 90,
-  "speed": 20
+  "speed": 20,
+  "accuracyMeters": 8.5,
+  "sequence": 1,
+  "recordedAt": "2026-10-01T00:00:00Z"
 }
 
 ### Estimate ride
@@ -71,6 +75,7 @@ Authorization: Bearer {{passenger_token}}
 Content-Type: application/json
 
 {
+  "cityId": "warsaw",
   "pickup": {
     "lat": 52.2297,
     "lng": 21.0122,
@@ -87,9 +92,11 @@ Content-Type: application/json
 ### Request ride
 POST http://localhost:8080/api/v1/rides
 Authorization: Bearer {{passenger_token}}
+Idempotency-Key: passenger-1-ride-001
 Content-Type: application/json
 
 {
+  "cityId": "warsaw",
   "pickup": {
     "lat": 52.2297,
     "lng": 21.0122,

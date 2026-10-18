@@ -5,6 +5,8 @@ import org.springframework.messaging.simp.config.MessageBrokerRegistry;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
+import org.springframework.messaging.simp.config.ChannelRegistration;
+import org.springframework.beans.factory.annotation.Value;
 
 /**
  * Konfiguracja WebSocket/STOMP dla Realtime Gateway.
@@ -21,6 +23,21 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 @Configuration
 @EnableWebSocketMessageBroker
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
+    private final GatewayJwtChannelInterceptor authentication;
+    private final String[] allowedOrigins;
+
+    public WebSocketConfig(
+            GatewayJwtChannelInterceptor authentication,
+            @Value("${app.realtime.allowed-origins:http://localhost:3000}") String[] allowedOrigins
+    ) {
+        this.authentication = authentication;
+        this.allowedOrigins = allowedOrigins;
+    }
+
+    @Override
+    public void configureClientInboundChannel(ChannelRegistration registration) {
+        registration.interceptors(authentication);
+    }
 
     /**
      * Konfiguruje broker wiadomości STOMP.
@@ -93,7 +110,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                  * Produkcyjnie należy ograniczyć origins do konkretnych domen,
                  * np. aplikacji pasażera, aplikacji kierowcy i panelu admina.
                  */
-                .setAllowedOriginPatterns("*")
+                .setAllowedOriginPatterns(allowedOrigins)
 
                 /*
                  * SockJS fallback.

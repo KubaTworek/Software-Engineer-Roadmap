@@ -6,7 +6,7 @@
     <version>0.4.0</version>
     <packaging>pom</packaging>
     <name>ride-sharing</name>
-    <description>Ride Sharing Stage 4: optimization architecture with ML ETA, ML matching, demand prediction, driver positioning, dynamic pricing and multi-region active-active control plane.</description>
+    <description>Educational ride-sharing system design: transactional ride lifecycle, scalable location and realtime paths, event processing, optimization baselines and a fenced multi-region control-plane model.</description>
     <modules>
         <module>services/core-api</module>
         <module>services/location-service</module>
