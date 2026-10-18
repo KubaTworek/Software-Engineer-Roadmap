@@ -31,7 +31,10 @@ public class Promotion {
     @Column(nullable = false)
     private int priority = 100;
 
-    @Column(precision = 12, scale = 2)
+    // `value` jest słowem zastrzeżonym m.in. w H2. Jawna nazwa usuwa różnicę
+    // między lokalnym testem a PostgreSQL i pozwala testowi schematu faktycznie
+    // wykrywać błędy zamiast jedynie logować nieudaną komendę DDL.
+    @Column(name = "promotion_value", precision = 12, scale = 2)
     private BigDecimal value;
 
     private Long categoryId;

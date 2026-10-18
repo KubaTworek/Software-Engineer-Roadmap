@@ -183,6 +183,59 @@ public class PaymentService {
     }
 
     /**
+     * Obsługuje zweryfikowany callback PSP. Unique providerEventId oraz
+     * monotoniczna maszyna stanów sprawiają, że redelivery nie powtarza efektów.
+     * Kwota i waluta są porównywane z intencją zapisaną przez checkout; danych
+     * finansowych z callbacka nie wolno bezwarunkowo uznać za prawdę.
+     */
+    @Transactional
+    public PaymentDtos.PaymentResponse handleProviderEvent(
+            PaymentDtos.ProviderWebhookEvent event
+    ) {
+        var duplicate = payments.findByProviderEventId(event.eventId());
+        if (duplicate.isPresent()) {
+            if (!duplicate.get().getId().equals(event.paymentId())) {
+                throw ApiException.conflict("Provider event ID was already used for another payment");
+            }
+            return toResponse(duplicate.get());
+        }
+
+        Payment payment = payments.findById(event.paymentId())
+                .orElseThrow(() -> ApiException.notFound("Payment not found"));
+        if (payment.getAmount().compareTo(event.amount()) != 0
+                || !payment.getCurrency().equals(event.currency())) {
+            throw ApiException.conflict("Provider amount or currency does not match payment intent");
+        }
+        if (payment.getStatus() != PaymentStatus.PENDING) {
+            throw ApiException.conflict("Payment already has terminal status " + payment.getStatus());
+        }
+
+        payment.rememberProviderEvent(event.eventId());
+        if (event.status() == PaymentStatus.SUCCEEDED) {
+            payment.markSucceeded(event.providerPaymentId());
+            payment.getOrder().markPaid();
+            inventory.confirmReservations(payment.getOrder().getId());
+            notifications.sendOrderConfirmation(payment.getOrder());
+            loyalty.earnForOrder(payment.getOrder().getUser(), payment.getOrder().getId(), payment.getAmount());
+            metrics.paymentSucceeded();
+            outbox.saveEvent("Payment", payment.getId().toString(), "PaymentSucceeded",
+                    Map.of("paymentId", payment.getId(), "orderId", payment.getOrder().getId(),
+                            "providerEventId", event.eventId()));
+        } else if (event.status() == PaymentStatus.FAILED) {
+            payment.markFailed(event.providerPaymentId());
+            payment.getOrder().markPaymentFailed();
+            inventory.releaseReservations(payment.getOrder().getId());
+            metrics.paymentFailed();
+            outbox.saveEvent("Payment", payment.getId().toString(), "PaymentFailed",
+                    Map.of("paymentId", payment.getId(), "orderId", payment.getOrder().getId(),
+                            "providerEventId", event.eventId()));
+        } else {
+            throw ApiException.badRequest("Webhook supports only SUCCEEDED or FAILED result");
+        }
+        return toResponse(payment);
+    }
+
+    /**
      * Symuluje udaną płatność.
      *
      * Flow:
@@ -215,6 +268,10 @@ public class PaymentService {
          */
         if (payment.getStatus() == PaymentStatus.SUCCEEDED) {
             return toResponse(payment);
+        }
+
+        if (payment.getStatus() != PaymentStatus.PENDING) {
+            throw ApiException.conflict("Payment cannot succeed from status " + payment.getStatus());
         }
 
         /*
@@ -310,6 +367,10 @@ public class PaymentService {
          */
         if (payment.getStatus() == PaymentStatus.FAILED) {
             return toResponse(payment);
+        }
+
+        if (payment.getStatus() != PaymentStatus.PENDING) {
+            throw ApiException.conflict("Payment cannot fail from status " + payment.getStatus());
         }
 
         /*

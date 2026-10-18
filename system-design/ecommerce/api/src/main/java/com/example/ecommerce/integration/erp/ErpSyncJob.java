@@ -15,7 +15,7 @@ public class ErpSyncJob {
     private String entityId;
     private String operation;
 
-    @Lob
+    @Column(columnDefinition = "text")
     private String payloadJson;
 
     @Enumerated(EnumType.STRING)

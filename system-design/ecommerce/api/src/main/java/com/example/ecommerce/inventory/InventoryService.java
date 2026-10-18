@@ -2,12 +2,14 @@ package com.example.ecommerce.inventory;
 
 import com.example.ecommerce.catalog.ProductVariant;
 import com.example.ecommerce.common.ApiException;
+import com.example.ecommerce.monitoring.BusinessMetrics;
 import com.example.ecommerce.outbox.OutboxService;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Instant;
+import java.time.Clock;
+import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.Map;
 
@@ -57,6 +59,8 @@ public class InventoryService {
      * np. search-indexer, ERP, WMS albo analytics.
      */
     private final OutboxService outbox;
+    private final Clock clock;
+    private final BusinessMetrics metrics;
 
     /**
      * Constructor injection.
@@ -66,11 +70,15 @@ public class InventoryService {
     public InventoryService(
             InventoryItemRepository items,
             InventoryReservationRepository reservations,
-            OutboxService outbox
+            OutboxService outbox,
+            Clock clock,
+            BusinessMetrics metrics
     ) {
         this.items = items;
         this.reservations = reservations;
         this.outbox = outbox;
+        this.clock = clock;
+        this.metrics = metrics;
     }
 
     /**
@@ -185,8 +193,7 @@ public class InventoryService {
      */
     @Transactional
     public void reserve(Long orderId, ProductVariant variant, int quantity) {
-        InventoryItem item = items.findByVariantId(variant.getId())
-                .orElseThrow(() -> ApiException.notFound("Inventory item not found"));
+        InventoryItem item = lockedInventory(variant.getId());
 
         /*
          * Najważniejsza walidacja przeciwko oversellingowi.
@@ -216,7 +223,7 @@ public class InventoryService {
                         orderId,
                         variant,
                         quantity,
-                        Instant.now().plus(15, ChronoUnit.MINUTES)
+                        clock.instant().plus(15, ChronoUnit.MINUTES)
                 )
         );
 
@@ -263,8 +270,11 @@ public class InventoryService {
     )
     public void confirmReservations(Long orderId) {
         for (InventoryReservation reservation : reservations.findByOrderIdAndStatus(orderId, ReservationStatus.ACTIVE)) {
-            InventoryItem item = items.findByVariantId(reservation.getVariant().getId())
-                    .orElseThrow(() -> ApiException.notFound("Inventory item not found"));
+            if (reservation.isExpiredAt(clock.instant())) {
+                throw ApiException.conflict("Inventory reservation expired before payment confirmation");
+            }
+
+            InventoryItem item = lockedInventory(reservation.getVariant().getId());
 
             item.confirmSale(reservation.getQuantity());
             reservation.confirm();
@@ -315,8 +325,7 @@ public class InventoryService {
     )
     public void releaseReservations(Long orderId) {
         for (InventoryReservation reservation : reservations.findByOrderIdAndStatus(orderId, ReservationStatus.ACTIVE)) {
-            InventoryItem item = items.findByVariantId(reservation.getVariant().getId())
-                    .orElseThrow(() -> ApiException.notFound("Inventory item not found"));
+            InventoryItem item = lockedInventory(reservation.getVariant().getId());
 
             item.release(reservation.getQuantity());
             reservation.release();
@@ -374,14 +383,13 @@ public class InventoryService {
          */
         var expired = reservations.findTop100ByStatusAndExpiresAtBeforeOrderByIdAsc(
                 ReservationStatus.ACTIVE,
-                Instant.now()
+                clock.instant()
         );
 
         int processed = 0;
 
         for (InventoryReservation reservation : expired.stream().limit(batchSize).toList()) {
-            InventoryItem item = items.findByVariantId(reservation.getVariant().getId())
-                    .orElseThrow(() -> ApiException.notFound("Inventory item not found"));
+            InventoryItem item = lockedInventory(reservation.getVariant().getId());
 
             /*
              * Zmniejszamy reservedQuantity i przywracamy stock do sprzedaży.
@@ -392,7 +400,7 @@ public class InventoryService {
              * Oznaczamy rezerwację jako RELEASED,
              * żeby nie została przetworzona ponownie w kolejnym cyklu.
              */
-            reservation.release();
+            reservation.expire();
 
             processed++;
         }
@@ -413,5 +421,21 @@ public class InventoryService {
         }
 
         return processed;
+    }
+
+    /**
+     * Mierzy pełny czas pobrania rekordu z blokadą {@code SELECT ... FOR UPDATE}.
+     * Wysokie p95/p99 tej metryki oznacza kontencję na popularnym SKU, nawet jeśli
+     * sam checkout ostatecznie kończy się sukcesem. Metryka nie używa variantId
+     * jako tagu, ponieważ SKU tworzyłoby nieograniczoną kardynalność.
+     */
+    private InventoryItem lockedInventory(Long variantId) {
+        long startedAt = System.nanoTime();
+        try {
+            return items.findByVariantIdForUpdate(variantId)
+                    .orElseThrow(() -> ApiException.notFound("Inventory item not found"));
+        } finally {
+            metrics.recordInventoryLockWait(Duration.ofNanos(System.nanoTime() - startedAt));
+        }
     }
 }

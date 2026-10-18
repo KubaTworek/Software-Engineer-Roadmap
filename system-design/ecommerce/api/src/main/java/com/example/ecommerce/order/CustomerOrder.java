@@ -96,14 +96,25 @@ public class CustomerOrder {
     public List<CustomerOrderItem> getItems() { return items; }
 
     public void markPaid() {
+        requireStatus(OrderStatus.PENDING_PAYMENT, "mark as paid");
         this.status = OrderStatus.PAID;
     }
 
     public void markPaymentFailed() {
+        requireStatus(OrderStatus.PENDING_PAYMENT, "mark payment as failed");
         this.status = OrderStatus.PAYMENT_FAILED;
     }
 
     public void cancel() {
+        if (status != OrderStatus.PENDING_PAYMENT && status != OrderStatus.PAYMENT_FAILED) {
+            throw new IllegalStateException("Cannot cancel order in status " + status);
+        }
         this.status = OrderStatus.CANCELLED;
+    }
+
+    private void requireStatus(OrderStatus expected, String operation) {
+        if (status != expected) {
+            throw new IllegalStateException("Cannot " + operation + " from status " + status);
+        }
     }
 }

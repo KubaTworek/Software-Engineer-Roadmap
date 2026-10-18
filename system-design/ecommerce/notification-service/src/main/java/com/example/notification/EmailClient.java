@@ -14,7 +14,12 @@ public class EmailClient {
         this.retry = retry;
     }
 
-    public void sendTransactionalEmail(String template, String payloadJson) {
-        retry.run("email.send", () -> log.info("MOCK_EMAIL_SENT template={}, payload={}", template, payloadJson));
+    public void sendTransactionalEmail(String idempotencyKey, String template, String payloadJson) {
+        // Adapter produkcyjny musi przekazać ten klucz providerowi albo zapisać
+        // własny delivery ledger. Sam marker w bazie nie usuwa failure window
+        // pomiędzy wysłaniem wiadomości a commitem transakcji workera.
+        retry.run("email.send", () -> log.info(
+                "MOCK_EMAIL_SENT idempotencyKey={}, template={}, payload={}",
+                idempotencyKey, template, payloadJson));
     }
 }

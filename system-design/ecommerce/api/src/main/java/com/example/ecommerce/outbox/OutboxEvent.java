@@ -10,10 +10,12 @@ public class OutboxEvent {
     @Column(nullable = false) private String aggregateType;
     @Column(nullable = false) private String aggregateId;
     @Column(nullable = false) private String eventType;
-    @Lob @Column(nullable = false) private String payloadJson;
+    @Column(nullable = false, columnDefinition = "text") private String payloadJson;
     @Enumerated(EnumType.STRING) @Column(nullable = false) private OutboxEventStatus status = OutboxEventStatus.NEW;
     @Column(nullable = false) private int publishAttempts = 0;
     private String lastError;
+    private Instant nextAttemptAt;
+    private Instant claimedAt;
     @Column(nullable = false) private Instant createdAt = Instant.now();
     private Instant publishedAt;
     protected OutboxEvent() {}
@@ -26,6 +28,30 @@ public class OutboxEvent {
     public String getEventType(){ return eventType; }
     public String getPayloadJson(){ return payloadJson; }
     public OutboxEventStatus getStatus(){ return status; }
-    public void markPublished(){ this.status = OutboxEventStatus.PUBLISHED; this.publishedAt = Instant.now(); this.lastError = null; }
-    public void markFailed(String error){ this.status = OutboxEventStatus.FAILED; this.publishAttempts++; this.lastError = error; }
+    public int getPublishAttempts(){ return publishAttempts; }
+    public Instant getNextAttemptAt(){ return nextAttemptAt; }
+    public Instant getCreatedAt(){ return createdAt; }
+    public Instant getClaimedAt(){ return claimedAt; }
+    public void claim(Instant now){
+        if (status != OutboxEventStatus.NEW
+                && status != OutboxEventStatus.FAILED
+                && status != OutboxEventStatus.PROCESSING) {
+            throw new IllegalStateException("Cannot claim outbox event in status " + status);
+        }
+        this.status = OutboxEventStatus.PROCESSING;
+        this.claimedAt = now;
+    }
+    public void markPublished(){ this.status = OutboxEventStatus.PUBLISHED; this.publishedAt = Instant.now(); this.lastError = null; this.nextAttemptAt = null; this.claimedAt = null; }
+    public void markFailed(String error){
+        this.publishAttempts++;
+        this.lastError = error;
+        this.claimedAt = null;
+        if (publishAttempts >= 5) {
+            this.status = OutboxEventStatus.DEAD;
+            this.nextAttemptAt = null;
+        } else {
+            this.status = OutboxEventStatus.FAILED;
+            this.nextAttemptAt = Instant.now().plusSeconds(1L << publishAttempts);
+        }
+    }
 }

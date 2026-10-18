@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -173,14 +174,35 @@ public class IdempotencyService {
          * Od tego momentu kolejne requesty z tym samym kluczem będą trafiały
          * do tego samego rekordu.
          */
-        return records.save(
-                new IdempotencyRecord(
-                        key,
-                        userId,
-                        operation,
-                        requestHash
-                )
-        );
+        try {
+            // flush jest celowy: unique constraint musi rozstrzygnąć wyścig
+            // zanim checkout zacznie tworzyć order i rezerwować inventory.
+            return records.saveAndFlush(
+                    new IdempotencyRecord(
+                            key,
+                            userId,
+                            operation,
+                            requestHash
+                    )
+            );
+        } catch (DataIntegrityViolationException concurrentClaim) {
+            // Przegrany request nie wykonał jeszcze efektu biznesowego. Transakcja
+            // zostanie wycofana, a klient może odczytać wynik zwycięskiego requestu.
+            throw ApiException.conflict("Checkout with this Idempotency-Key is already processing");
+        }
+    }
+
+    /**
+     * Odróżnia rekord utworzony przez bieżący request od rekordu PROCESSING
+     * odczytanego z bazy. Ten drugi oznacza, że inny request już wykonuje tę
+     * operację i powinien dostać 409/Retry-After zamiast rozpocząć drugi checkout.
+     * Unique constraint pozostaje ochroną między instancjami; test PostgreSQL
+     * sprawdza, że tylko jeden insert może wygrać.
+     */
+    public void assertOwnedByCurrentAttempt(IdempotencyRecord record) {
+        if (!record.isClaimedByCurrentAttempt()) {
+            throw ApiException.conflict("Checkout with this Idempotency-Key is already processing");
+        }
     }
 
     /**

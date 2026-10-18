@@ -14,6 +14,14 @@ public class InventoryItem {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /**
+     * Wersja rekordu jest drugą linią obrony przed utraconą aktualizacją.
+     * Krytyczne operacje dodatkowo pobierają rekord z blokadą FOR UPDATE,
+     * natomiast wersja chroni pozostałe ścieżki modyfikujące inventory.
+     */
+    @Version
+    private long version;
+
     @OneToOne(optional = false)
     @JoinColumn(name = "variant_id")
     private ProductVariant variant;
@@ -51,18 +59,27 @@ public class InventoryItem {
         if (quantity <= 0) {
             throw new IllegalArgumentException("Quantity must be positive");
         }
+        if (sellableQuantity() < quantity) {
+            throw new IllegalStateException("Reservation would oversell inventory");
+        }
         this.reservedQuantity += quantity;
         this.updatedAt = Instant.now();
     }
 
     public void release(int quantity) {
-        this.reservedQuantity = Math.max(0, this.reservedQuantity - quantity);
+        if (quantity <= 0 || reservedQuantity < quantity) {
+            throw new IllegalStateException("Cannot release more inventory than reserved");
+        }
+        this.reservedQuantity -= quantity;
         this.updatedAt = Instant.now();
     }
 
     public void confirmSale(int quantity) {
-        this.reservedQuantity = Math.max(0, this.reservedQuantity - quantity);
-        this.availableQuantity = Math.max(0, this.availableQuantity - quantity);
+        if (quantity <= 0 || reservedQuantity < quantity || availableQuantity < quantity) {
+            throw new IllegalStateException("Cannot confirm sale without an active reservation");
+        }
+        this.reservedQuantity -= quantity;
+        this.availableQuantity -= quantity;
         this.soldQuantity += quantity;
         this.updatedAt = Instant.now();
     }

@@ -6,9 +6,11 @@ import jakarta.persistence.*;
 import java.time.Instant;
 
 @Entity
-@Table(name = "inventory_reservations", indexes = {
-        @Index(name = "idx_inventory_reservation_order", columnList = "order_id")
-})
+@Table(name = "inventory_reservations",
+        uniqueConstraints = @UniqueConstraint(
+                name = "uk_inventory_reservation_order_variant",
+                columnNames = {"order_id", "variant_id"}),
+        indexes = @Index(name = "idx_inventory_reservation_order", columnList = "order_id"))
 public class InventoryReservation {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -18,6 +20,7 @@ public class InventoryReservation {
     private Long orderId;
 
     @ManyToOne(optional = false)
+    @JoinColumn(name = "variant_id", nullable = false)
     private ProductVariant variant;
 
     @Column(nullable = false)
@@ -50,10 +53,27 @@ public class InventoryReservation {
     public Instant getExpiresAt() { return expiresAt; }
 
     public void confirm() {
+        requireActive("confirm");
         this.status = ReservationStatus.CONFIRMED;
     }
 
     public void release() {
+        requireActive("release");
         this.status = ReservationStatus.RELEASED;
+    }
+
+    public void expire() {
+        requireActive("expire");
+        this.status = ReservationStatus.EXPIRED;
+    }
+
+    public boolean isExpiredAt(Instant now) {
+        return !expiresAt.isAfter(now);
+    }
+
+    private void requireActive(String operation) {
+        if (status != ReservationStatus.ACTIVE) {
+            throw new IllegalStateException("Cannot " + operation + " reservation in status " + status);
+        }
     }
 }

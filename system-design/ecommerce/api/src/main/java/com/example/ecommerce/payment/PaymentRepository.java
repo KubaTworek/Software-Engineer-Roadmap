@@ -3,4 +3,8 @@ import org.springframework.data.jpa.repository.JpaRepository; import java.util.O
 public interface PaymentRepository extends JpaRepository<Payment, Long> {
     Optional<Payment> findByIdempotencyKey(String idempotencyKey);
     Optional<Payment> findByOrderId(Long orderId);
+    Optional<Payment> findByProviderEventId(String providerEventId);
+    java.util.List<Payment> findTop100ByStatusAndCreatedAtBeforeOrderByCreatedAtAsc(
+            PaymentStatus status,
+            java.time.Instant createdBefore);
 }
