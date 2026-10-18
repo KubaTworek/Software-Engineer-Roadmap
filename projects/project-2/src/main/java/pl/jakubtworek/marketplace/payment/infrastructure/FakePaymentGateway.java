@@ -80,15 +80,9 @@ public class FakePaymentGateway implements PaymentGateway {
     @Override
     public PaymentReservationResult reserve(UUID orderId, Money amount) {
         if (acceptReservations) {
-            return new PaymentReservationResult(
-                    true,
-                    "fake payment accepted"
-            );
+            return new PaymentReservationResult(Outcome.ACCEPTED, orderId.toString(), "fake payment accepted");
         }
 
-        return new PaymentReservationResult(
-                false,
-                "fake payment rejected"
-        );
+        return new PaymentReservationResult(Outcome.REJECTED, orderId.toString(), "fake payment rejected");
     }
 }

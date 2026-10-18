@@ -3,7 +3,7 @@ package pl.jakubtworek.marketplace.ordering.application;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import pl.jakubtworek.marketplace.ordering.domain.OrderId;
-import pl.jakubtworek.marketplace.payment.domain.PaymentRejected;
+import pl.jakubtworek.marketplace.integration.contracts.PaymentRejectedIntegrationEvent;
 import pl.jakubtworek.marketplace.shared.events.DomainEventHandler;
 
 /**
@@ -22,7 +22,7 @@ import pl.jakubtworek.marketplace.shared.events.DomainEventHandler;
  * Dzięki temu Payment nie musi znać statusów ani reguł procesu zamówienia.
  */
 @Component
-public class RejectOrderOnPaymentRejectedHandler implements DomainEventHandler<PaymentRejected> {
+public class RejectOrderOnPaymentRejectedHandler implements DomainEventHandler<PaymentRejectedIntegrationEvent> {
 
     /**
      * Port repozytorium zamówień.
@@ -40,8 +40,8 @@ public class RejectOrderOnPaymentRejectedHandler implements DomainEventHandler<P
      * Informuje mechanizm dispatchowania, że ten handler obsługuje zdarzenia PaymentRejected.
      */
     @Override
-    public Class<PaymentRejected> eventType() {
-        return PaymentRejected.class;
+    public Class<PaymentRejectedIntegrationEvent> eventType() {
+        return PaymentRejectedIntegrationEvent.class;
     }
 
     /**
@@ -58,7 +58,7 @@ public class RejectOrderOnPaymentRejectedHandler implements DomainEventHandler<P
      */
     @Override
     @Transactional
-    public void handle(PaymentRejected event) {
+    public void handle(PaymentRejectedIntegrationEvent event) {
         var order = repository.findById(OrderId.of(event.orderId()))
                 .orElseThrow();
 

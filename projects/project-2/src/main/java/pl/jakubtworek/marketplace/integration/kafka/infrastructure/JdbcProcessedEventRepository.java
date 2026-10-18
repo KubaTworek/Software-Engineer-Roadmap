@@ -1,7 +1,6 @@
 package pl.jakubtworek.marketplace.integration.kafka.infrastructure;
 
 import org.springframework.context.annotation.Profile;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import pl.jakubtworek.marketplace.integration.kafka.ProcessedEvent;
@@ -90,10 +89,11 @@ public class JdbcProcessedEventRepository implements ProcessedEventRepository {
     /**
      * Zapisuje informację o przetworzeniu eventu.
      *
-     * Używamy ON CONFLICT DO NOTHING, bo zapis processed_events powinien być idempotentny.
-     * Jeśli taki wpis już istnieje, nie traktujemy tego jako błędu.
-     *
-     * To jest dodatkowa ochrona na poziomie bazy danych przed race condition.
+     * Nie używamy tutaj {@code ON CONFLICT DO NOTHING}. Gdy dwa egzemplarze
+     * konsumenta równolegle przejdą wcześniejsze sprawdzenie {@code exists}, konflikt
+     * unikalnego klucza ma wycofać całą przegrywającą transakcję — razem z efektem
+     * biznesowym i wpisami outboxa. Ciche zignorowanie konfliktu zatwierdziłoby efekt
+     * wykonany drugi raz.
      */
     @Override
     public void save(ProcessedEvent processedEvent) {
@@ -104,7 +104,6 @@ public class JdbcProcessedEventRepository implements ProcessedEventRepository {
                     processed_at
                 )
                 VALUES (?, ?, ?)
-                ON CONFLICT (event_id, consumer_name) DO NOTHING
                 """,
                 processedEvent.eventId(),
                 processedEvent.consumerName(),

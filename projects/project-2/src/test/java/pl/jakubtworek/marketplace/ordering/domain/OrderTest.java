@@ -38,7 +38,7 @@ class OrderTest {
 
     @Test
     void shouldRejectOrderLineWithNonPositiveQuantity() {
-        assertThatThrownBy(() -> new OrderLine(ProductId.newId(), 0, Money.of("10.00", "PLN")))
+        assertThatThrownBy(() -> new OrderLine(UUID.randomUUID(), 0, Money.of("10.00", "PLN")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("quantity must be positive");
     }
@@ -113,6 +113,6 @@ class OrderTest {
     }
 
     private static OrderLine line(String unitAmount, int quantity) {
-        return new OrderLine(ProductId.newId(), quantity, Money.of(unitAmount, "PLN"));
+        return new OrderLine(UUID.randomUUID(), quantity, Money.of(unitAmount, "PLN"));
     }
 }

@@ -191,6 +191,36 @@ public class JdbcOutboxEventRepository implements OutboxEventRepository {
     }
 
     /**
+     * Atomowy claim zastępuje niebezpieczną sekwencję SELECT -> publish. CTE blokuje
+     * kandydatów, SKIP LOCKED rozdziela pracę między repliki, a UPDATE RETURNING
+     * przekazuje workerowi dokładnie te rekordy, które zdobył. Stary PROCESSING jest
+     * odzyskiwany po awarii workera. Nie daje to exactly-once: awaria po wysłaniu do
+     * Kafki, lecz przed markPublished(), nadal wymaga idempotentnego konsumenta.
+     */
+    @Override
+    public List<OutboxEvent> claimNew(int limit) {
+        return jdbcTemplate.query("""
+                        WITH candidates AS (
+                            SELECT id
+                            FROM integration.outbox_events
+                            WHERE status = ?
+                               OR (status = ? AND claimed_at < now() - interval '1 minute')
+                            ORDER BY created_at
+                            FOR UPDATE SKIP LOCKED
+                            LIMIT ?
+                        )
+                        UPDATE integration.outbox_events event
+                        SET status = ?, claimed_at = now()
+                        FROM candidates
+                        WHERE event.id = candidates.id
+                        RETURNING event.*
+                        """,
+                rowMapper,
+                OutboxEventStatus.NEW.name(), OutboxEventStatus.PROCESSING.name(), limit,
+                OutboxEventStatus.PROCESSING.name());
+    }
+
+    /**
      * Oznacza event jako opublikowany.
      *
      * Ustawiamy:
@@ -207,7 +237,8 @@ public class JdbcOutboxEventRepository implements OutboxEventRepository {
                 SET
                     status = ?,
                     published_at = ?,
-                    last_error = NULL
+                    last_error = NULL,
+                    claimed_at = NULL
                 WHERE id = ?
                 """,
                 OutboxEventStatus.PUBLISHED.name(),
@@ -229,7 +260,8 @@ public class JdbcOutboxEventRepository implements OutboxEventRepository {
                 SET
                     status = ?,
                     retry_count = retry_count + 1,
-                    last_error = ?
+                    last_error = ?,
+                    claimed_at = NULL
                 WHERE id = ?
                 """,
                 OutboxEventStatus.FAILED.name(),
@@ -249,7 +281,7 @@ public class JdbcOutboxEventRepository implements OutboxEventRepository {
     public void markNewForRetry(UUID eventId) {
         jdbcTemplate.update("""
                 UPDATE integration.outbox_events
-                SET status = ?
+                SET status = ?, claimed_at = NULL
                 WHERE id = ?
                   AND status <> ?
                 """,

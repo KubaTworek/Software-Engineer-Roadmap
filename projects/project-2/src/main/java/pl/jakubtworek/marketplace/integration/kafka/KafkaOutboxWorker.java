@@ -14,7 +14,7 @@ import java.util.UUID;
 /**
  * Worker publikujący trwałe eventy z outboxa do topiców Kafki.
  *
- * Ta klasa reprezentuje etap 4 architektury:
+ * Ta klasa reprezentuje produkcyjną granicę outbox -> broker:
  * - event jest najpierw zapisywany do tabeli outbox_events,
  * - następnie KafkaOutboxWorker pobiera event z outboxa,
  * - mapuje go na KafkaEnvelope,
@@ -22,9 +22,8 @@ import java.util.UUID;
  * - publikuje wiadomość do Kafki,
  * - oznacza event jako PUBLISHED albo FAILED.
  *
- * Ten worker zastępuje wcześniejszy OutboxWorker z fazy 3 w realnym asynchronicznym flow.
- * Faza 3 publikowała eventy lokalnie do ApplicationEventBus.
- * Faza 4 publikuje eventy do brokera, żeby konsumenci mogli je przetwarzać asynchronicznie.
+ * Lokalny OutboxWorker publikuje do ApplicationEventBus tylko w laboratorium.
+ * Ten wariant wysyła do brokera, aby konsumenci przetwarzali zdarzenia asynchronicznie.
  */
 @Component
 public class KafkaOutboxWorker {
@@ -133,7 +132,7 @@ public class KafkaOutboxWorker {
      */
     @Transactional
     public int publishNew(int limit) {
-        var events = repository.findNew(limit);
+        var events = repository.claimNew(limit);
 
         events.forEach(this::publishOneSafely);
 

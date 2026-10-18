@@ -2,7 +2,8 @@ package pl.jakubtworek.marketplace.payment.application;
 
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
-import pl.jakubtworek.marketplace.ordering.domain.OrderPlaced;
+import pl.jakubtworek.marketplace.integration.contracts.OrderPlacedIntegrationEvent;
+import pl.jakubtworek.marketplace.shared.kernel.Money;
 import pl.jakubtworek.marketplace.payment.domain.Payment;
 import pl.jakubtworek.marketplace.shared.events.DomainEventHandler;
 import pl.jakubtworek.marketplace.shared.events.EventPublisher;
@@ -21,7 +22,7 @@ import pl.jakubtworek.marketplace.shared.events.EventPublisher;
  * Dzięki temu moduły są luźniej powiązane, a komunikacja odbywa się przez zdarzenia.
  */
 @Component
-public class ReservePaymentOnOrderPlacedHandler implements DomainEventHandler<OrderPlaced> {
+public class ReservePaymentOnOrderPlacedHandler implements DomainEventHandler<OrderPlacedIntegrationEvent> {
 
     /**
      * Port do zewnętrznej bramki płatności.
@@ -65,8 +66,8 @@ public class ReservePaymentOnOrderPlacedHandler implements DomainEventHandler<Or
      * Informuje mechanizm dispatchowania, że ten handler obsługuje zdarzenie OrderPlaced.
      */
     @Override
-    public Class<OrderPlaced> eventType() {
-        return OrderPlaced.class;
+    public Class<OrderPlacedIntegrationEvent> eventType() {
+        return OrderPlacedIntegrationEvent.class;
     }
 
     /**
@@ -86,7 +87,8 @@ public class ReservePaymentOnOrderPlacedHandler implements DomainEventHandler<Or
      */
     @Override
     @Transactional
-    public void handle(OrderPlaced event) {
+    public void handle(OrderPlacedIntegrationEvent event) {
+        Money total = new Money(event.total().amount(), java.util.Currency.getInstance(event.total().currency()));
         /*
          * Próba rezerwacji płatności przez port.
          *
@@ -95,7 +97,7 @@ public class ReservePaymentOnOrderPlacedHandler implements DomainEventHandler<Or
          */
         var result = gateway.reserve(
                 event.aggregateId(),
-                event.total()
+                total
         );
 
         /*
@@ -106,13 +108,9 @@ public class ReservePaymentOnOrderPlacedHandler implements DomainEventHandler<Or
          * - PaymentReserved, jeśli gateway zaakceptował rezerwację,
          * - PaymentRejected, jeśli gateway ją odrzucił.
          */
-        var payment = Payment.reserve(
-                event.aggregateId(),
-                event.total(),
-                result.accepted(),
-                event.correlationId(),
-                event.eventId()
-        );
+        var payment = result.outcome() == PaymentGateway.Outcome.UNKNOWN
+                ? Payment.uncertain(event.aggregateId(), total, result.providerOperationId(), result.reason())
+                : Payment.reserve(event.aggregateId(), total, result.accepted(), event.correlationId(), event.eventId());
 
         /*
          * Zapis agregatu Payment.

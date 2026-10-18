@@ -19,7 +19,7 @@ public record OrderPlaced(
 ) implements DomainEvent {
     public static OrderPlaced now(Order order, UUID correlationId, UUID causationId) {
         List<Line> lines = order.lines().stream()
-                .map(line -> new Line(line.productId().value(), line.quantity(), line.unitPrice()))
+                .map(line -> new Line(line.productId(), line.quantity(), line.unitPrice()))
                 .toList();
         return new OrderPlaced(
                 UUID.randomUUID(),

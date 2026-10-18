@@ -18,14 +18,15 @@ class PlaceOrderUseCaseTest {
     void shouldPlaceOrderPersistItPublishEventAndClearDomainEvents() {
         InMemoryOrderRepository repository = new InMemoryOrderRepository();
         RecordingEventPublisher eventPublisher = new RecordingEventPublisher();
-        PlaceOrderUseCase useCase = new PlaceOrderUseCase(repository, eventPublisher);
+        PlaceOrderUseCase useCase = new PlaceOrderUseCase(repository, eventPublisher,
+                ignored -> Money.of("15.00", "PLN"));
         UUID customerId = UUID.randomUUID();
         UUID productId = UUID.randomUUID();
         UUID correlationId = UUID.randomUUID();
 
         var orderId = useCase.handle(new PlaceOrderUseCase.Command(
                 customerId,
-                List.of(new PlaceOrderUseCase.Line(productId, 2, "15.00", "PLN")),
+                List.of(new PlaceOrderUseCase.Line(productId, 2)),
                 correlationId
         ));
 

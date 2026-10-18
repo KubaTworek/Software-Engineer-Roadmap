@@ -54,6 +54,8 @@ public class Payment extends AggregateRoot {
      * Status zmienia się w wyniku operacji domenowych, np. rezerwacji płatności.
      */
     private PaymentStatus status;
+    private final String providerOperationId;
+    private final String uncertaintyReason;
 
     /**
      * Prywatny konstruktor wymusza tworzenie agregatu przez metody fabrykujące.
@@ -65,12 +67,16 @@ public class Payment extends AggregateRoot {
             PaymentId id,
             UUID orderId,
             Money amount,
-            PaymentStatus status
+            PaymentStatus status,
+            String providerOperationId,
+            String uncertaintyReason
     ) {
         this.id = id;
         this.orderId = orderId;
         this.amount = amount;
         this.status = status;
+        this.providerOperationId = providerOperationId;
+        this.uncertaintyReason = uncertaintyReason;
     }
 
     /**
@@ -101,7 +107,9 @@ public class Payment extends AggregateRoot {
                 PaymentId.newId(),
                 orderId,
                 amount,
-                PaymentStatus.PENDING
+                PaymentStatus.PENDING,
+                null,
+                null
         );
 
         if (accepted) {
@@ -125,6 +133,27 @@ public class Payment extends AggregateRoot {
     }
 
     /**
+     * Timeout po wysłaniu requestu nie jest odrzuceniem. Provider mógł wykonać
+     * autoryzację, dlatego stan UNKNOWN blokuje zarówno sukces sagi, jak i ponowne
+     * obciążenie. Jedyną bezpieczną następną operacją jest lookup po stabilnym ID.
+     */
+    public static Payment uncertain(UUID orderId, Money amount, String providerOperationId, String reason) {
+        if (providerOperationId == null || providerOperationId.isBlank()) {
+            throw new IllegalArgumentException("unknown payment needs provider operation id");
+        }
+        return new Payment(PaymentId.newId(), orderId, amount, PaymentStatus.UNKNOWN,
+                providerOperationId, reason);
+    }
+
+    public void resolve(boolean accepted, UUID correlationId, UUID causationId, String reason) {
+        if (status != PaymentStatus.UNKNOWN) return;
+        status = accepted ? PaymentStatus.RESERVED : PaymentStatus.REJECTED;
+        registerEvent(accepted
+                ? PaymentReserved.now(this, correlationId, causationId)
+                : PaymentRejected.now(this, reason, correlationId, causationId));
+    }
+
+    /**
      * Odtwarza płatność z istniejącego stanu, np. z bazy danych.
      *
      * Ta metoda nie oznacza biznesowej rezerwacji płatności.
@@ -138,12 +167,27 @@ public class Payment extends AggregateRoot {
             Money amount,
             PaymentStatus status
     ) {
-        return new Payment(
-                id,
-                orderId,
-                amount,
-                status
-        );
+        return restore(id, orderId, amount, status, null, null);
+    }
+
+    public static Payment restore(PaymentId id, UUID orderId, Money amount, PaymentStatus status,
+                                  String providerOperationId, String uncertaintyReason) {
+        return new Payment(id, orderId, amount, status, providerOperationId, uncertaintyReason);
+    }
+
+    /**
+     * Zwalnia autoryzację jako kompensację sagi. Operacja jest idempotentna:
+     * ponowne dostarczenie komendy nie wywołuje drugiego efektu. W projekcie status
+     * REFUNDED oznacza zarówno zwolnienie autoryzacji, jak i zwrot po capture;
+     * produkcyjny model zwykle rozdziela te operacje.
+     */
+    public boolean release() {
+        if (status == PaymentStatus.REFUNDED) return false;
+        if (status != PaymentStatus.RESERVED && status != PaymentStatus.CAPTURED) {
+            throw new IllegalStateException("Only reserved or captured payment can be released");
+        }
+        status = PaymentStatus.REFUNDED;
+        return true;
     }
 
     /**
@@ -173,4 +217,7 @@ public class Payment extends AggregateRoot {
     public PaymentStatus status() {
         return status;
     }
+
+    public String providerOperationId() { return providerOperationId; }
+    public String uncertaintyReason() { return uncertaintyReason; }
 }

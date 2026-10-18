@@ -2,7 +2,7 @@ package pl.jakubtworek.marketplace.ordering.application;
 
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
-import pl.jakubtworek.marketplace.inventory.domain.StockReserved;
+import pl.jakubtworek.marketplace.integration.contracts.StockReservedIntegrationEvent;
 import pl.jakubtworek.marketplace.ordering.domain.OrderId;
 import pl.jakubtworek.marketplace.shared.events.DomainEventHandler;
 import pl.jakubtworek.marketplace.shared.events.EventPublisher;
@@ -24,7 +24,7 @@ import pl.jakubtworek.marketplace.shared.events.EventPublisher;
  * Dzięki temu Inventory nie musi znać procesu zamówienia ani statusów Order.
  */
 @Component
-public class ConfirmStockOnStockReservedHandler implements DomainEventHandler<StockReserved> {
+public class ConfirmStockOnStockReservedHandler implements DomainEventHandler<StockReservedIntegrationEvent> {
 
     /**
      * Port repozytorium zamówień.
@@ -54,8 +54,8 @@ public class ConfirmStockOnStockReservedHandler implements DomainEventHandler<St
      * Informuje mechanizm dispatchowania, że ten handler obsługuje zdarzenia StockReserved.
      */
     @Override
-    public Class<StockReserved> eventType() {
-        return StockReserved.class;
+    public Class<StockReservedIntegrationEvent> eventType() {
+        return StockReservedIntegrationEvent.class;
     }
 
     /**
@@ -74,7 +74,7 @@ public class ConfirmStockOnStockReservedHandler implements DomainEventHandler<St
      */
     @Override
     @Transactional
-    public void handle(StockReserved event) {
+    public void handle(StockReservedIntegrationEvent event) {
         var order = repository.findById(OrderId.of(event.orderId()))
                 .orElseThrow();
 

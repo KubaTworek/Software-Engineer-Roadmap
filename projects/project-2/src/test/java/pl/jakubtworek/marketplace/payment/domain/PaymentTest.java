@@ -40,4 +40,18 @@ class PaymentTest {
         assertThat(payment.domainEvents()).hasSize(1);
         assertThat(payment.domainEvents().getFirst()).isInstanceOf(PaymentRejected.class);
     }
+
+    @Test
+    void timeoutAfterSendingRequestStaysUnknownUntilLookupResolvesSameProviderOperation() {
+        UUID orderId = UUID.randomUUID();
+        Payment payment = Payment.uncertain(orderId, Money.of("99.99", "PLN"), "provider-op-17", "read timeout");
+
+        assertThat(payment.status()).isEqualTo(PaymentStatus.UNKNOWN);
+        assertThat(payment.providerOperationId()).isEqualTo("provider-op-17");
+        assertThat(payment.domainEvents()).isEmpty();
+
+        payment.resolve(true, UUID.randomUUID(), UUID.randomUUID(), "provider confirms authorization");
+        assertThat(payment.status()).isEqualTo(PaymentStatus.RESERVED);
+        assertThat(payment.domainEvents()).singleElement().isInstanceOf(PaymentReserved.class);
+    }
 }

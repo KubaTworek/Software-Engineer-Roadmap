@@ -1,0 +1,12 @@
+type Query {
+  order(id: ID!): Order
+}
+
+type Order {
+  id: ID!
+  status: String!
+  version: Int!
+}
+
+# To kontrakt demonstracyjny. Produkcyjny resolver musi korzystać z query service,
+# DataLoadera, field-level authorization i QueryComplexityBudget.

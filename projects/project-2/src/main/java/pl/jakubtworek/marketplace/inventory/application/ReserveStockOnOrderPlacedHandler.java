@@ -1,15 +1,19 @@
 package pl.jakubtworek.marketplace.inventory.application;
 
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 import pl.jakubtworek.marketplace.inventory.domain.StockReservationFailed;
 import pl.jakubtworek.marketplace.inventory.domain.StockReserved;
-import pl.jakubtworek.marketplace.ordering.domain.OrderPlaced;
+import pl.jakubtworek.marketplace.integration.contracts.OrderPlacedIntegrationEvent;
 import pl.jakubtworek.marketplace.shared.events.DomainEventHandler;
 import pl.jakubtworek.marketplace.shared.events.EventPublisher;
 
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Handler reagujący na zdarzenie OrderPlaced.
@@ -26,7 +30,7 @@ import java.util.List;
  * implementacyjne między use case’ami.
  */
 @Component
-public class ReserveStockOnOrderPlacedHandler implements DomainEventHandler<OrderPlaced> {
+public class ReserveStockOnOrderPlacedHandler implements DomainEventHandler<OrderPlacedIntegrationEvent> {
 
     /**
      * Port repozytorium stocku.
@@ -47,13 +51,22 @@ public class ReserveStockOnOrderPlacedHandler implements DomainEventHandler<Orde
      * dzięki czemu publikacja jest niezawodniejsza niż bezpośrednie wołanie handlerów.
      */
     private final EventPublisher eventPublisher;
+    private final StockReservationRepository reservations;
 
+    @Autowired
     public ReserveStockOnOrderPlacedHandler(
             StockRepository repository,
-            EventPublisher eventPublisher
+            EventPublisher eventPublisher,
+            StockReservationRepository reservations
     ) {
         this.repository = repository;
         this.eventPublisher = eventPublisher;
+        this.reservations = reservations;
+    }
+
+    /** Wygodny konstruktor laboratoriów, w których kompensacja nie jest przedmiotem testu. */
+    public ReserveStockOnOrderPlacedHandler(StockRepository repository, EventPublisher eventPublisher) {
+        this(repository, eventPublisher, new pl.jakubtworek.marketplace.inventory.infrastructure.InMemoryStockReservationRepository());
     }
 
     /**
@@ -62,8 +75,8 @@ public class ReserveStockOnOrderPlacedHandler implements DomainEventHandler<Orde
      * Dzięki temu mechanizm dispatchowania może dopasować OrderPlaced do tego handlera.
      */
     @Override
-    public Class<OrderPlaced> eventType() {
-        return OrderPlaced.class;
+    public Class<OrderPlacedIntegrationEvent> eventType() {
+        return OrderPlacedIntegrationEvent.class;
     }
 
     /**
@@ -88,7 +101,19 @@ public class ReserveStockOnOrderPlacedHandler implements DomainEventHandler<Orde
      */
     @Override
     @Transactional
-    public void handle(OrderPlaced event) {
+    public void handle(OrderPlacedIntegrationEvent event) {
+        /*
+         * Duplikaty produktu w jednym zamówieniu agregujemy przed walidacją. Naiwne
+         * sprawdzenie każdej linii osobno mogłoby zaakceptować 2x6 sztuk przy stanie 10.
+         * Stała kolejność UUID zapobiega deadlockowi, gdy dwa zamówienia blokują te same
+         * produkty w przeciwnej kolejności.
+         */
+        var requested = new LinkedHashMap<UUID, Integer>();
+        event.lines().forEach(line -> requested.merge(line.productId(), line.quantity(), Math::addExact));
+        var orderedRequests = requested.entrySet().stream()
+                .sorted(java.util.Map.Entry.comparingByKey(Comparator.comparing(UUID::toString)))
+                .toList();
+        var lockedItems = new LinkedHashMap<UUID, pl.jakubtworek.marketplace.inventory.domain.StockItem>();
         /*
          * Pierwsza pętla tylko sprawdza dostępność.
          *
@@ -96,8 +121,8 @@ public class ReserveStockOnOrderPlacedHandler implements DomainEventHandler<Orde
          * zamówienia okaże się niemożliwa do zarezerwowania, nie chcemy zostawić częściowo
          * zarezerwowanego stocku dla wcześniejszych linii.
          */
-        for (OrderPlaced.Line line : event.lines()) {
-            var item = repository.findByProductId(line.productId());
+        for (var line : orderedRequests) {
+            var item = repository.findByProductIdForUpdate(line.getKey());
 
             /*
              * Brak StockItem oznacza, że system nie ma żadnego stanu magazynowego
@@ -106,7 +131,7 @@ public class ReserveStockOnOrderPlacedHandler implements DomainEventHandler<Orde
             if (item.isEmpty()) {
                 eventPublisher.publish(StockReservationFailed.now(
                         event.aggregateId(),
-                        line.productId(),
+                        line.getKey(),
                         "Missing stock item",
                         event.correlationId(),
                         event.eventId()
@@ -120,16 +145,17 @@ public class ReserveStockOnOrderPlacedHandler implements DomainEventHandler<Orde
              * Publikujemy zdarzenie porażki, żeby moduł Ordering mógł odrzucić zamówienie
              * albo uruchomić inny proces kompensacyjny.
              */
-            if (!item.get().canReserve(line.quantity())) {
+            if (!item.get().canReserve(line.getValue())) {
                 eventPublisher.publish(StockReservationFailed.now(
                         event.aggregateId(),
-                        line.productId(),
+                        line.getKey(),
                         "Not enough stock",
                         event.correlationId(),
                         event.eventId()
                 ));
                 return;
             }
+            lockedItems.put(line.getKey(), item.get());
         }
 
         /*
@@ -140,9 +166,8 @@ public class ReserveStockOnOrderPlacedHandler implements DomainEventHandler<Orde
          */
         List<StockReserved.Line> reservedLines = new ArrayList<>();
 
-        for (OrderPlaced.Line line : event.lines()) {
-            var item = repository.findByProductId(line.productId())
-                    .orElseThrow();
+        for (var line : orderedRequests) {
+            var item = lockedItems.get(line.getKey());
 
             /*
              * Rezerwujemy stock bez publikowania eventu bezpośrednio z agregatu.
@@ -151,7 +176,7 @@ public class ReserveStockOnOrderPlacedHandler implements DomainEventHandler<Orde
              * StockReserved dla całego zamówienia. Gdyby każda linia publikowała własne
              * zdarzenie, proces po stronie Ordering byłby bardziej skomplikowany.
              */
-            item.reserveWithoutPublishingEvent(line.quantity());
+            item.reserveWithoutPublishingEvent(line.getValue());
 
             /*
              * Zapisujemy zmieniony agregat StockItem.
@@ -162,8 +187,8 @@ public class ReserveStockOnOrderPlacedHandler implements DomainEventHandler<Orde
             repository.save(item);
 
             reservedLines.add(new StockReserved.Line(
-                    line.productId(),
-                    line.quantity()
+                    line.getKey(),
+                    line.getValue()
             ));
         }
 
@@ -174,6 +199,9 @@ public class ReserveStockOnOrderPlacedHandler implements DomainEventHandler<Orde
          * causationId ustawiony na event.eventId() mówi, że StockReserved powstał
          * jako reakcja na konkretne OrderPlaced.
          */
+        reservations.record(event.aggregateId(), reservedLines.stream()
+                .map(line -> new StockReservationRepository.Line(line.productId(), line.quantity()))
+                .toList());
         eventPublisher.publish(StockReserved.now(
                 event.aggregateId(),
                 reservedLines,

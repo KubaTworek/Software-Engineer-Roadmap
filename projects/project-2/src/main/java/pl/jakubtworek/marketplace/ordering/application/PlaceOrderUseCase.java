@@ -2,7 +2,6 @@ package pl.jakubtworek.marketplace.ordering.application;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import pl.jakubtworek.marketplace.catalog.domain.ProductId;
 import pl.jakubtworek.marketplace.ordering.domain.*;
 import pl.jakubtworek.marketplace.shared.events.EventPublisher;
 import pl.jakubtworek.marketplace.shared.kernel.Money;
@@ -46,13 +45,16 @@ public class PlaceOrderUseCase {
      * który zapisuje zdarzenia do tabeli outbox_events w tej samej transakcji co zamówienie.
      */
     private final EventPublisher eventPublisher;
+    private final ProductPricingPort pricing;
 
     public PlaceOrderUseCase(
             OrderRepository repository,
-            EventPublisher eventPublisher
+            EventPublisher eventPublisher,
+            ProductPricingPort pricing
     ) {
         this.repository = repository;
         this.eventPublisher = eventPublisher;
+        this.pricing = pricing;
     }
 
     /**
@@ -82,9 +84,9 @@ public class PlaceOrderUseCase {
          */
         List<OrderLine> lines = command.lines().stream()
                 .map(line -> new OrderLine(
-                        ProductId.of(line.productId()),
+                        line.productId(),
                         line.quantity(),
-                        Money.of(line.unitAmount(), line.currency())
+                        pricing.currentPrice(line.productId())
                 ))
                 .toList();
 
@@ -165,9 +167,7 @@ public class PlaceOrderUseCase {
      */
     public record Line(
             UUID productId,
-            int quantity,
-            String unitAmount,
-            String currency
+            int quantity
     ) {
     }
 }

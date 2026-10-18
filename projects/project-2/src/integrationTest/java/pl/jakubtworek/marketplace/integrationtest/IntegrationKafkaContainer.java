@@ -1,6 +1,6 @@
 package pl.jakubtworek.marketplace.integrationtest;
 
-import org.testcontainers.containers.KafkaContainer;
+import org.testcontainers.kafka.ConfluentKafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 
 /**
@@ -11,8 +11,8 @@ import org.testcontainers.utility.DockerImageName;
  */
 public final class IntegrationKafkaContainer {
 
-    private static final KafkaContainer INSTANCE =
-            new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"));
+    private static final ConfluentKafkaContainer INSTANCE =
+            new ConfluentKafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.6.1"));
 
     static {
         INSTANCE.start();
@@ -21,7 +21,7 @@ public final class IntegrationKafkaContainer {
     private IntegrationKafkaContainer() {
     }
 
-    public static KafkaContainer getInstance() {
+    public static ConfluentKafkaContainer getInstance() {
         return INSTANCE;
     }
 }

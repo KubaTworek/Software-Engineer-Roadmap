@@ -2,11 +2,16 @@
 
 ## Context
 
-The internal event bus from Stage 2 and the outbox worker from Stage 3 are useful, but they do not model real asynchronous processing, consumer groups, offsets, duplicate delivery or poison messages.
+The internal event bus and local outbox relay are useful teaching boundaries, but they do not model real asynchronous processing, consumer groups, offsets, duplicate delivery or poison messages.
 
 ## Decision
 
-Outbox events are published to Kafka-style topics. Each consumer owns its consumer group and commits offsets only after successful processing. Consumers store `(event_id, consumer_name)` in `processed_events` to make duplicate delivery safe. Events that cannot be processed after retries are moved to DLQ.
+Outbox events are published to Kafka topics. The application runtime uses
+`@KafkaListener` containers with one consumer group per bounded-context reaction
+and manual acknowledgement only after successful processing. The deterministic
+manual-poll adapter remains a laboratory for inspecting offsets. Consumers store
+`(event_id, consumer_name)` in `processed_events` to make duplicate delivery safe.
+Events that cannot be processed after retries are moved to DLQ.
 
 ## Consequences
 
@@ -16,6 +21,7 @@ Positive:
 - a crash after business side effect but before offset commit can be handled safely,
 - invalid events do not block the whole partition forever,
 - replay from DLQ is explicit.
+- a scoped dispatcher prevents one group from executing handlers owned by another module.
 
 Negative:
 

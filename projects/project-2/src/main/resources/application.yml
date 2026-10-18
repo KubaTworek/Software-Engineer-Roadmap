@@ -19,12 +19,14 @@ spring:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
     consumer:
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JacksonJsonDeserializer
       properties:
-        spring.json.trusted.packages: "*"
+        spring.json.trusted.packages: "pl.jakubtworek.marketplace.integration.kafka"
+    listener:
+      ack-mode: manual_immediate
 
 server:
   port: ${SERVER_PORT:8080}
@@ -50,6 +52,12 @@ logging:
     level: "%5p correlationId=%X{correlationId:-} causationId=%X{causationId:-} eventId=%X{eventId:-} orderId=%X{orderId:-} consumer=%X{consumerName:-} topic=%X{topic:-}"
 
 marketplace:
+  grpc:
+    enabled: false
+    port: 9090
+  security:
+    # W produkcji wyłącznie z secret managera; profil secure odrzuca zbyt krótki sekret.
+    jwt-secret: ${JWT_SECRET:change-me-in-secure-profile-at-least-32-chars}
   events:
     mode: ${EVENTS_MODE:in-memory}
   payment-gateway:
@@ -58,16 +66,28 @@ marketplace:
     fake:
       accept-reservations: ${PAYMENT_FAKE_ACCEPT_RESERVATIONS:true}
   kafka:
-    poll-timeout-ms: 1000
+    consumers:
+      enabled: ${KAFKA_CONSUMERS_ENABLED:true}
+    poll-timeout-ms: ${KAFKA_POLL_TIMEOUT_MS:1000}
     topics:
-      order-events: marketplace.order-events.v1
-      payment-events: marketplace.payment-events.v1
-      inventory-events: marketplace.inventory-events.v1
-      fulfillment-events: marketplace.fulfillment-events.v1
-      dlq: marketplace.dlq.v1
+      order-events: ${KAFKA_TOPIC_ORDER_EVENTS:marketplace.order-events.v1}
+      payment-events: ${KAFKA_TOPIC_PAYMENT_EVENTS:marketplace.payment-events.v1}
+      inventory-events: ${KAFKA_TOPIC_INVENTORY_EVENTS:marketplace.inventory-events.v1}
+      fulfillment-events: ${KAFKA_TOPIC_FULFILLMENT_EVENTS:marketplace.fulfillment-events.v1}
+      dlq: ${KAFKA_TOPIC_DLQ:marketplace.dlq.v1}
     consumer-groups:
-      payment: marketplace-payment
-      inventory: marketplace-inventory
-      ordering: marketplace-ordering
+      payment: ${KAFKA_CONSUMER_GROUP_PAYMENT:marketplace-payment}
+      inventory: ${KAFKA_CONSUMER_GROUP_INVENTORY:marketplace-inventory}
+      ordering: ${KAFKA_CONSUMER_GROUP_ORDERING:marketplace-ordering}
+      process: ${KAFKA_CONSUMER_GROUP_PROCESS:marketplace-process}
+      fulfillment: ${KAFKA_CONSUMER_GROUP_FULFILLMENT:marketplace-fulfillment}
+      notification: ${KAFKA_CONSUMER_GROUP_NOTIFICATION:marketplace-notification}
     retry:
-      max-attempts: 3
+      max-attempts: ${KAFKA_RETRY_MAX_ATTEMPTS:3}
+  kafka-outbox:
+    scheduled-enabled: ${KAFKA_OUTBOX_SCHEDULED_ENABLED:true}
+    worker-delay-ms: ${KAFKA_OUTBOX_WORKER_DELAY_MS:5000}
+  fulfillment-process:
+    timeout: ${FULFILLMENT_PROCESS_TIMEOUT:PT15M}
+    timeout-worker-enabled: ${FULFILLMENT_TIMEOUT_WORKER_ENABLED:true}
+    timeout-worker-delay-ms: ${FULFILLMENT_TIMEOUT_WORKER_DELAY_MS:10000}
