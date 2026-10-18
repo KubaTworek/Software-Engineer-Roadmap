@@ -55,8 +55,8 @@ public class MessageCreatedEventHandler implements DomainEventHandler {
     /**
      * Publisher WebSocket.
      *
-     * Odpowiada za wysłanie eventu message.created do topicu konwersacji:
-     * /topic/conversations/{conversationId}
+     * Odpowiada za fan-out eventu message.created do prywatnych kolejek
+     * aktualnych członków konwersacji.
      */
     private final RealtimeMessagePublisher realtimePublisher;
 
@@ -86,6 +86,11 @@ public class MessageCreatedEventHandler implements DomainEventHandler {
      * Dzięki temu QueuedEventWorker może mieć wiele handlerów,
      * ale odpala tylko te, które pasują do event.getEventType().
      */
+    @Override
+    public String consumerName() {
+        return "chat.message-created.realtime-and-notification.v1";
+    }
+
     @Override
     public boolean supports(String eventType) {
         return EventTypes.MESSAGE_CREATED.equals(eventType);
@@ -121,10 +126,7 @@ public class MessageCreatedEventHandler implements DomainEventHandler {
                 .orElseThrow(() -> new NotFoundException("Message not found for outbox event"));
 
         /*
-         * Publikujemy wiadomość realtime do topicu konwersacji.
-         *
-         * Wszyscy klienci subskrybujący:
-         * /topic/conversations/{conversationId}
+         * Publikujemy wiadomość do prywatnych kolejek aktualnych członków.
          *
          * dostaną event:
          * message.created

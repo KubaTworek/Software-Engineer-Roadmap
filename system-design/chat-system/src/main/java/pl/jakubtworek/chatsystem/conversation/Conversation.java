@@ -10,7 +10,8 @@ import java.util.List;
 import java.util.UUID;
 
 @Entity
-@Table(name = "conversations")
+@Table(name = "conversations", uniqueConstraints = @UniqueConstraint(
+        name = "uk_conversations_direct_key", columnNames = "direct_key"))
 public class Conversation {
     @Id
     private UUID id = UUID.randomUUID();
@@ -32,6 +33,20 @@ public class Conversation {
 
     private Instant lastMessageAt;
 
+    /**
+     * Kanoniczny, niezależny od kolejności klucz pary użytkowników rozmowy DIRECT.
+     * Constraint w bazie jest ostateczną ochroną przed równoległym utworzeniem A→B i B→A.
+     */
+    @Column(name = "direct_key", length = 73)
+    private String directKey;
+
+    /** Następny numer porządkowy jest przydzielany pod blokadą wiersza konwersacji. */
+    @Column(name = "next_sequence", nullable = false)
+    private long nextSequence = 1;
+
+    @Version
+    private long version;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -45,6 +60,11 @@ public class Conversation {
 
     public Conversation(ConversationType type) {
         this.type = type;
+    }
+
+    public Conversation(ConversationType type, String directKey) {
+        this.type = type;
+        this.directKey = directKey;
     }
 
     public Conversation(ConversationType type, String title, AppUser createdBy) {
@@ -69,9 +89,15 @@ public class Conversation {
         members.add(member);
     }
 
+    public long allocateSequence() {
+        return nextSequence++;
+    }
+
     public void updateLastMessage(Message message) {
-        this.lastMessage = message;
-        this.lastMessageAt = message.getCreatedAt();
+        if (lastMessage == null || message.getSequenceNumber() > lastMessage.getSequenceNumber()) {
+            this.lastMessage = message;
+            this.lastMessageAt = message.getCreatedAt();
+        }
     }
 
     public void rename(String title) {
@@ -84,6 +110,8 @@ public class Conversation {
     public AppUser getCreatedBy() { return createdBy; }
     public Message getLastMessage() { return lastMessage; }
     public Instant getLastMessageAt() { return lastMessageAt; }
+    public String getDirectKey() { return directKey; }
+    public long getNextSequence() { return nextSequence; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
     public List<ConversationMember> getMembers() { return members; }

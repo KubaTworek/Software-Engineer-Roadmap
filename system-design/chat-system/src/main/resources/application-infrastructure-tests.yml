@@ -1,0 +1,18 @@
+spring:
+  config:
+    activate:
+      on-profile: infrastructure-tests
+  jpa:
+    hibernate:
+      ddl-auto: validate
+app:
+  jwt:
+    secret: infrastructure-test-secret-must-have-at-least-32-characters
+  media:
+    local-dir: ./target/infrastructure-test-uploads
+    scanner-enabled: false
+  outbox:
+    publish-delay-ms: 3600000
+    consume-delay-ms: 3600000
+  websocket:
+    presence-cleanup-ms: 3600000

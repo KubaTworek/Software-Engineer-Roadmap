@@ -4,11 +4,13 @@ import jakarta.validation.Valid;
 import org.springframework.messaging.handler.annotation.MessageExceptionHandler;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
+import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.stereotype.Controller;
 import org.springframework.validation.annotation.Validated;
 import pl.jakubtworek.chatsystem.conversation.ConversationService;
 import pl.jakubtworek.chatsystem.message.MessageService;
 import pl.jakubtworek.chatsystem.message.SendMessageRequest;
+import pl.jakubtworek.chatsystem.presence.PresenceLeaseService;
 
 import java.security.Principal;
 import java.time.Instant;
@@ -73,15 +75,35 @@ public class RealtimeMessageController {
      * - błędy prywatne dla nadawcy.
      */
     private final RealtimeMessagePublisher publisher;
+    private final PresenceLeaseService presenceLeases;
 
     public RealtimeMessageController(
             MessageService messageService,
             ConversationService conversationService,
-            RealtimeMessagePublisher publisher
+            RealtimeMessagePublisher publisher,
+            PresenceLeaseService presenceLeases
     ) {
         this.messageService = messageService;
         this.conversationService = conversationService;
         this.publisher = publisher;
+        this.presenceLeases = presenceLeases;
+    }
+
+    /**
+     * Odnawia współdzielony lease presence dla bezczynnego połączenia.
+     *
+     * Heartbeat transportowy WebSocket/STOMP mówi jedynie, że połączenie TCP żyje;
+     * nie musi przechodzić przez aplikacyjny interceptor. Klient wysyła więc co
+     * kilkanaście sekund pustą komendę na {@code /app/presence.heartbeat}. Dzięki
+     * temu awaria gatewaya albo utracony DISCONNECT zostaną naprawione przez TTL,
+     * a użytkownik z aktywną sesją nie zostanie błędnie uznany za offline.
+     */
+    @MessageMapping("/presence.heartbeat")
+    public void heartbeat(Principal principal, SimpMessageHeaderAccessor headers) {
+        if (principal == null || headers.getSessionId() == null) {
+            throw new IllegalArgumentException("Authenticated WebSocket session is required");
+        }
+        presenceLeases.heartbeat(headers.getSessionId(), UUID.fromString(principal.getName()));
     }
 
     /**

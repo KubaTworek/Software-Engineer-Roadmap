@@ -19,7 +19,7 @@ import java.util.UUID;
  * 1. Klient tworzy upload przez POST /api/attachments/upload-url.
  * 2. Backend zwraca attachmentId oraz uploadToken/uploadUrl.
  * 3. Klient wysyła binarną zawartość pliku osobnym requestem.
- * 4. Załącznik przechodzi w status gotowy do użycia.
+ * 4. Załącznik przechodzi do SCANNING; worker promuje go do READY albo odrzuca.
  * 5. Klient wysyła wiadomość z attachmentIds.
  *
  * Dzięki temu MessageService nie musi przyjmować dużych payloadów binarnych,
@@ -99,7 +99,7 @@ public class AttachmentController {
     @PutMapping(value = "/{attachmentId}/content", consumes = MediaType.ALL_VALUE)
     public AttachmentResponse uploadContent(
             @PathVariable UUID attachmentId,
-            @RequestParam String uploadToken,
+            @RequestHeader("X-Upload-Token") String uploadToken,
             @RequestBody byte[] content
     ) {
         /*
@@ -109,7 +109,7 @@ public class AttachmentController {
          * - czy rozmiar contentu zgadza się z deklaracją,
          * - czy content type jest dozwolony,
          * - gdzie zapisać plik,
-         * - czy oznaczyć attachment jako READY.
+     * - czy oznaczyć attachment jako SCANNING.
          */
         return attachmentService.uploadContent(
                 attachmentId,

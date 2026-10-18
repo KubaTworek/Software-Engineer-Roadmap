@@ -4,6 +4,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.server.HandshakeInterceptor;
 import org.springframework.web.util.UriComponentsBuilder;
@@ -59,9 +60,14 @@ public class WebSocketJwtHandshakeInterceptor implements HandshakeInterceptor {
      * Deleguje to do JwtService.
      */
     private final JwtService jwtService;
+    private final WebSocketTicketService tickets;
+    private final boolean allowQueryToken;
 
-    public WebSocketJwtHandshakeInterceptor(JwtService jwtService) {
+    public WebSocketJwtHandshakeInterceptor(JwtService jwtService, WebSocketTicketService tickets,
+            @Value("${app.websocket.allow-query-token:false}") boolean allowQueryToken) {
         this.jwtService = jwtService;
+        this.tickets = tickets;
+        this.allowQueryToken = allowQueryToken;
     }
 
     /**
@@ -72,7 +78,8 @@ public class WebSocketJwtHandshakeInterceptor implements HandshakeInterceptor {
      * - false, jeśli połączenie powinno zostać odrzucone.
      *
      * To jest pierwsza linia obrony dla realtime.
-     * Bez poprawnego JWT użytkownik nie powinien móc otworzyć WebSocket.
+     * Bez poprawnego jednorazowego ticketu albo poświadczenia klienta
+     * nieprzeglądarkowego użytkownik nie powinien móc otworzyć WebSocket.
      */
     @Override
     public boolean beforeHandshake(
@@ -81,8 +88,17 @@ public class WebSocketJwtHandshakeInterceptor implements HandshakeInterceptor {
             WebSocketHandler wsHandler,
             Map<String, Object> attributes
     ) {
+        String ticket = UriComponentsBuilder.fromUri(request.getURI()).build()
+                .getQueryParams().getFirst("ticket");
+        if (ticket != null) {
+            var identity = tickets.consume(ticket, request.getHeaders().getOrigin());
+            if (identity.isEmpty()) return false;
+            attributes.put(USER_ID_ATTRIBUTE, identity.get().userId());
+            attributes.put(USERNAME_ATTRIBUTE, identity.get().username());
+            return true;
+        }
         /*
-         * Token może przyjść:
+         * Fallback dla klientów nieprzeglądarkowych może przyjść:
          * - w nagłówku Authorization: Bearer <token>,
          * - albo jako query param ?token=<token>.
          *
@@ -153,12 +169,12 @@ public class WebSocketJwtHandshakeInterceptor implements HandshakeInterceptor {
     /**
      * Wyciąga JWT z requestu WebSocket handshake.
      *
-     * Preferowana kolejność:
+     * Ticket jest obsługiwany wcześniej. Dla fallbacku JWT kolejność to:
      * 1. Authorization: Bearer <token>
-     * 2. Query parameter: ?token=<token>
+     * 2. Query parameter: ?token=<token>, tylko po jawnym włączeniu
      *
-     * Header Authorization jest czystszy z punktu widzenia bezpieczeństwa,
-     * ale query param bywa konieczny w praktycznych klientach WebSocket/SockJS.
+     * Natywna przeglądarka nie ustawi tego nagłówka, dlatego jej właściwą ścieżką
+     * jest jednorazowy ticket, a nie query JWT.
      */
     private String extractToken(ServerHttpRequest request) {
 
@@ -190,6 +206,7 @@ public class WebSocketJwtHandshakeInterceptor implements HandshakeInterceptor {
          * W produkcji warto preferować Authorization header,
          * a query param stosować świadomie.
          */
+        if (!allowQueryToken) return null;
         return UriComponentsBuilder.fromUri(request.getURI())
                 .build()
                 .getQueryParams()

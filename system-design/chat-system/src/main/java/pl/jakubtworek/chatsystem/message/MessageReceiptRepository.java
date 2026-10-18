@@ -31,8 +31,8 @@ public interface MessageReceiptRepository extends JpaRepository<MessageReceipt, 
             join fetch r.recipient
             where r.conversation.id = :conversationId
               and r.recipient.id = :recipientId
-              and m.createdAt <= (
-                    select boundary.createdAt from Message boundary where boundary.id = :upToMessageId
+              and m.sequenceNumber <= (
+                    select boundary.sequenceNumber from Message boundary where boundary.id = :upToMessageId
               )
               and r.readAt is null
             """)
@@ -48,8 +48,8 @@ public interface MessageReceiptRepository extends JpaRepository<MessageReceipt, 
             join fetch r.recipient
             where r.conversation.id = :conversationId
               and r.recipient.id = :recipientId
-              and m.createdAt <= (
-                    select boundary.createdAt from Message boundary where boundary.id = :upToMessageId
+              and m.sequenceNumber <= (
+                    select boundary.sequenceNumber from Message boundary where boundary.id = :upToMessageId
               )
               and r.deliveredAt is null
             """)

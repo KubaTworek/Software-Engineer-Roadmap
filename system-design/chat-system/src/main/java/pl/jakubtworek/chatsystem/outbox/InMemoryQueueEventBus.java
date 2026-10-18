@@ -1,6 +1,7 @@
 package pl.jakubtworek.chatsystem.outbox;
 
 import org.springframework.stereotype.Component;
+import org.springframework.context.annotation.Profile;
 
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -25,6 +26,7 @@ import java.util.concurrent.LinkedBlockingQueue;
  * Źródłem prawdy nadal pozostaje tabela outbox_events.
  */
 @Component
+@Profile("!kafka")
 public class InMemoryQueueEventBus implements EventBus {
 
     /**

@@ -2,11 +2,12 @@
 <html lang="pl">
 <head>
   <meta charset="utf-8" />
-  <title>Chat System Stage 4 — WebSocket test client</title>
+  <title>Chat System — lokalny klient WebSocket</title>
   <script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs@7.0.0/bundles/stomp.umd.min.js"></script>
 </head>
 <body>
-<h1>Chat System Stage 4 — WebSocket test client</h1>
+<h1>Chat System — lokalny klient WebSocket</h1>
+<p>Klient wymienia JWT przez chroniony REST na krótko żyjący, jednorazowy ticket. Długowieczny JWT nie trafia do URL handshake'u.</p>
 <p>Najpierw zarejestruj/zaloguj dwóch użytkowników przez REST, utwórz conversationId i wklej token użytkownika.</p>
 <label>JWT token: <input id="token" style="width: 700px"></label><br><br>
 <label>Conversation ID: <input id="conversationId" style="width: 350px"></label><br><br>
@@ -23,21 +24,34 @@
   let client;
   const log = (msg) => document.getElementById('log').textContent += msg + '\n';
 
-  function connect() {
+  async function connect() {
     const token = document.getElementById('token').value.trim();
     const conversationId = document.getElementById('conversationId').value.trim();
+    const response = await fetch('http://localhost:8080/api/websocket-tickets', {
+      method: 'POST',
+      headers: {Authorization: `Bearer ${token}`}
+    });
+    if (!response.ok) {
+      log(`TICKET ERROR: ${response.status}`);
+      return;
+    }
+    const {ticket} = await response.json();
 
     client = new StompJs.Client({
-      brokerURL: `ws://localhost:8080/ws?token=${encodeURIComponent(token)}`,
+      brokerURL: `ws://localhost:8080/ws?ticket=${encodeURIComponent(ticket)}`,
       reconnectDelay: 3000,
       onConnect: () => {
         log('CONNECTED');
-        client.subscribe(`/topic/conversations/${conversationId}`, message => log('TOPIC: ' + message.body));
+        client.subscribe(`/user/queue/conversations/${conversationId}`, message => log('CONVERSATION: ' + message.body));
         client.subscribe('/user/queue/messages', message => log('ACK: ' + message.body));
         client.subscribe('/user/queue/errors', message => log('ERROR: ' + message.body));
+        window.presenceHeartbeat = setInterval(() => client.publish({destination: '/app/presence.heartbeat'}), 15000);
       },
       onStompError: frame => log('STOMP ERROR: ' + frame.body),
-      onWebSocketClose: () => log('SOCKET CLOSED')
+      onWebSocketClose: () => {
+        clearInterval(window.presenceHeartbeat);
+        log('SOCKET CLOSED');
+      }
     });
 
     client.activate();

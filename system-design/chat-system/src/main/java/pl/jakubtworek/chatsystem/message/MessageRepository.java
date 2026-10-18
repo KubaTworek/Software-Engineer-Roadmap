@@ -11,19 +11,31 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface MessageRepository extends JpaRepository<Message, UUID> {
-    Optional<Message> findBySenderIdAndClientMessageId(UUID senderId, UUID clientMessageId);
+    Optional<Message> findByConversationIdAndSenderIdAndClientMessageId(UUID conversationId, UUID senderId, UUID clientMessageId);
 
-    List<Message> findByConversationIdOrderByCreatedAtDesc(UUID conversationId, Pageable pageable);
+    List<Message> findByConversationIdAndSequenceNumberGreaterThanEqualOrderBySequenceNumberDesc(
+            UUID conversationId, long joinedSequence, Pageable pageable);
 
-    List<Message> findByConversationIdAndCreatedAtBeforeOrderByCreatedAtDesc(UUID conversationId, Instant before, Pageable pageable);
+    @Query("select m from Message m where m.conversation.id = :conversationId and m.sequenceNumber >= :joined and m.sequenceNumber < :before order by m.sequenceNumber desc")
+    List<Message> findVisibleBefore(@Param("conversationId") UUID conversationId, @Param("joined") long joined,
+                                    @Param("before") long before, Pageable pageable);
 
-    List<Message> findByConversationIdAndCreatedAtAfterOrderByCreatedAtAsc(UUID conversationId, Instant after, Pageable pageable);
+    @Query("select m from Message m where m.conversation.id = :conversationId and m.sequenceNumber >= :joined and m.sequenceNumber > :after order by m.sequenceNumber asc")
+    List<Message> findVisibleAfter(@Param("conversationId") UUID conversationId, @Param("joined") long joined,
+                                   @Param("after") long after, Pageable pageable);
+
+    @Query("select count(m) > 0 from Message m join m.attachments a join m.conversation.members cm " +
+            "where a.id = :attachmentId and cm.user.id = :viewerId and cm.leftAt is null " +
+            "and m.sequenceNumber >= cm.joinedSequence")
+    boolean isAttachmentVisibleTo(@Param("attachmentId") UUID attachmentId, @Param("viewerId") UUID viewerId);
 
     @Query("""
             select distinct m from Message m
             join m.conversation c
             join c.members cm
             where cm.user.id = :viewerId
+              and cm.leftAt is null
+              and m.sequenceNumber >= cm.joinedSequence
               and m.body is not null
               and lower(m.body) like :query
             order by m.createdAt desc

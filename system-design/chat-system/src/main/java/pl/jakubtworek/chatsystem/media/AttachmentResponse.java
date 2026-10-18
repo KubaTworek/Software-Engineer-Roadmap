@@ -10,6 +10,7 @@ public record AttachmentResponse(
         long sizeBytes,
         AttachmentStatus status,
         String uploadUrl,
+        String uploadToken,
         String downloadUrl,
         Instant createdAt,
         Instant uploadedAt
@@ -22,6 +23,7 @@ public record AttachmentResponse(
                 attachment.getSizeBytes(),
                 attachment.getStatus(),
                 uploadUrl,
+                attachment.getUploadToken(),
                 downloadUrl,
                 attachment.getCreatedAt(),
                 attachment.getUploadedAt()

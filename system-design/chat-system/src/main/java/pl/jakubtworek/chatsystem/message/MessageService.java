@@ -5,6 +5,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pl.jakubtworek.chatsystem.common.BadRequestException;
+import pl.jakubtworek.chatsystem.common.ConflictException;
+import pl.jakubtworek.chatsystem.common.ForbiddenException;
 import pl.jakubtworek.chatsystem.common.NotFoundException;
 import pl.jakubtworek.chatsystem.conversation.Conversation;
 import pl.jakubtworek.chatsystem.conversation.ConversationMember;
@@ -23,6 +25,9 @@ import pl.jakubtworek.chatsystem.user.AppUser;
 import pl.jakubtworek.chatsystem.user.UserRepository;
 
 import java.time.Instant;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -129,6 +134,7 @@ public class MessageService {
      * np. pod kątem zakazanych słów, spamu albo niedozwolonej treści.
      */
     private final ModerationService moderationService;
+    private final DeviceSyncCursorService deviceCursors;
 
     public MessageService(
             MessageRepository messageRepository,
@@ -141,7 +147,8 @@ public class MessageService {
             OutboxService outboxService,
             AttachmentService attachmentService,
             BlockingService blockingService,
-            ModerationService moderationService
+            ModerationService moderationService,
+            DeviceSyncCursorService deviceCursors
     ) {
         this.messageRepository = messageRepository;
         this.messageStore = messageStore;
@@ -154,6 +161,7 @@ public class MessageService {
         this.attachmentService = attachmentService;
         this.blockingService = blockingService;
         this.moderationService = moderationService;
+        this.deviceCursors = deviceCursors;
     }
 
     /**
@@ -210,9 +218,10 @@ public class MessageService {
          * Jeśli klient ponowi request po timeoutcie albo reconnect,
          * zwracamy istniejącą wiadomość zamiast tworzyć nową.
          */
-        var existing = messageStore.findBySenderAndClientMessageId(currentUserId, request.clientMessageId());
+        String fingerprint = commandFingerprint(conversationId, request);
+        var existing = messageStore.findByCommandKey(conversationId, currentUserId, request.clientMessageId());
         if (existing.isPresent()) {
-            return new SendMessageResult(toResponseForViewer(existing.get(), currentUserId), true);
+            return duplicateResult(existing.get(), currentUserId, fingerprint);
         }
 
         try {
@@ -220,7 +229,7 @@ public class MessageService {
              * Normalna ścieżka — wiadomość jeszcze nie istnieje,
              * więc tworzymy ją w bazie.
              */
-            return new SendMessageResult(createMessage(currentUserId, conversationId, request), false);
+            return createMessage(currentUserId, conversationId, request, fingerprint);
         } catch (DataIntegrityViolationException ex) {
             /*
              * Druga warstwa deduplikacji.
@@ -232,9 +241,9 @@ public class MessageService {
              * Zamiast zwracać błąd, odczytujemy już zapisaną wiadomość
              * i traktujemy request jako duplikat.
              */
-            Message duplicate = messageStore.findBySenderAndClientMessageId(currentUserId, request.clientMessageId())
+            Message duplicate = messageStore.findByCommandKey(conversationId, currentUserId, request.clientMessageId())
                     .orElseThrow(() -> ex);
-            return new SendMessageResult(toResponseForViewer(duplicate, currentUserId), true);
+            return duplicateResult(duplicate, currentUserId, fingerprint);
         }
     }
 
@@ -243,11 +252,11 @@ public class MessageService {
      *
      * Obsługuje paginację wsteczną:
      * - bez before zwraca najnowsze wiadomości,
-     * - z before zwraca wiadomości starsze niż wskazany timestamp.
+     * - z beforeSequence zwraca wiadomości o niższej sekwencji.
      */
     @Transactional(readOnly = true)
-    public MessagePageResponse getMessages(UUID currentUserId, UUID conversationId, Instant before, int limit) {
-        conversationService.ensureMember(conversationId, currentUserId);
+    public MessagePageResponse getMessages(UUID currentUserId, UUID conversationId, Long beforeSequence, int limit) {
+        ConversationMember membership = activeMembership(conversationId, currentUserId);
 
         /*
          * Limit jest normalizowany, żeby nie dopuścić do przeciążenia bazy.
@@ -256,9 +265,10 @@ public class MessageService {
         int pageSize = normalizeLimit(limit);
         PageRequest page = PageRequest.of(0, pageSize + 1);
 
-        List<Message> fetched = before == null
-                ? messageStore.latestForConversation(conversationId, page)
-                : messageStore.before(conversationId, before, page);
+        List<Message> fetched = beforeSequence == null
+                ? messageStore.latestForConversation(conversationId, membership.getJoinedSequence(), page)
+                : messageStore.beforeSequence(
+                        conversationId, membership.getJoinedSequence(), beforeSequence, page);
 
         boolean hasMore = fetched.size() > pageSize;
 
@@ -273,35 +283,50 @@ public class MessageService {
          * Dla UI czatu wygodniej jest zwrócić je rosnąco po czasie.
          */
         List<MessageResponse> ordered = toResponsesForViewer(pageItems, currentUserId).stream()
-                .sorted(Comparator.comparing(MessageResponse::createdAt))
+                .sorted(Comparator.comparingLong(MessageResponse::sequenceNumber))
                 .toList();
 
         /*
          * nextBefore to cursor dla kolejnego requestu historii.
          * Frontend używa go do infinite scroll.
          */
-        Instant nextBefore = hasMore && !pageItems.isEmpty()
-                ? pageItems.get(pageItems.size() - 1).getCreatedAt()
+        Long nextBefore = hasMore && !pageItems.isEmpty()
+                ? pageItems.get(pageItems.size() - 1).getSequenceNumber()
                 : null;
 
         return new MessagePageResponse(ordered, nextBefore, hasMore);
     }
 
     /**
-     * Pobiera wiadomości utworzone po wskazanym czasie.
+     * Pobiera wiadomości o sekwencji wyższej niż potwierdzony cursor urządzenia.
      *
      * To endpoint wspierający reconnect/offline sync.
      * Jeśli klient straci WebSocket, po powrocie może pobrać brakujące wiadomości.
      */
     @Transactional(readOnly = true)
-    public List<MessageResponse> getMessagesSince(UUID currentUserId, UUID conversationId, Instant after, int limit) {
-        conversationService.ensureMember(conversationId, currentUserId);
+    public List<MessageResponse> getMessagesSince(UUID currentUserId, UUID conversationId, long afterSequence, int limit) {
+        return getMessagesSince(currentUserId, "default-device", conversationId, afterSequence, limit);
+    }
+
+    @Transactional
+    public List<MessageResponse> getMessagesSince(UUID currentUserId, String deviceId, UUID conversationId,
+                                                   long afterSequence, int limit) {
+        ConversationMember membership = activeMembership(conversationId, currentUserId);
+        deviceCursors.acknowledge(currentUserId, deviceId, conversationId, afterSequence);
 
         int pageSize = normalizeLimit(limit);
         PageRequest page = PageRequest.of(0, pageSize);
 
-        List<Message> messages = messageStore.after(conversationId, after, page);
+        long effectiveAfter = Math.max(afterSequence, membership.getJoinedSequence() - 1);
+        List<Message> messages = messageStore.afterSequence(
+                conversationId, membership.getJoinedSequence(), effectiveAfter, page);
         return toResponsesForViewer(messages, currentUserId);
+    }
+
+    /** Zwraca wyłącznie aktywną epokę; historyczny rekord membershipu nie przywraca ACL. */
+    private ConversationMember activeMembership(UUID conversationId, UUID userId) {
+        return memberRepository.findByConversationIdAndUserId(conversationId, userId)
+                .orElseThrow(() -> new ForbiddenException("You are not an active member of this conversation"));
     }
 
     /**
@@ -436,9 +461,17 @@ public class MessageService {
      * - aktualizuje lastMessage konwersacji,
      * - zapisuje event do outboxa.
      */
-    private MessageResponse createMessage(UUID currentUserId, UUID conversationId, SendMessageRequest request) {
-        Conversation conversation = conversationRepository.findById(conversationId)
+    private SendMessageResult createMessage(UUID currentUserId, UUID conversationId, SendMessageRequest request,
+                                            String fingerprint) {
+        Conversation conversation = conversationRepository.findForMessageAppend(conversationId)
                 .orElseThrow(() -> new NotFoundException("Conversation not found"));
+
+        /*
+         * Drugi odczyt następuje już pod blokadą konwersacji. Chroni przypadek, w którym dwa requesty
+         * równolegle nie znalazły klucza przed wejściem do sekcji przydzielającej sequence.
+         */
+        var racedDuplicate = messageStore.findByCommandKey(conversationId, currentUserId, request.clientMessageId());
+        if (racedDuplicate.isPresent()) return duplicateResult(racedDuplicate.get(), currentUserId, fingerprint);
 
         AppUser sender = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new NotFoundException("Current user not found"));
@@ -462,6 +495,8 @@ public class MessageService {
                 conversation,
                 sender,
                 request.clientMessageId(),
+                conversation.allocateSequence(),
+                fingerprint,
                 body == null || body.isBlank() ? null : body,
                 attachments
         );
@@ -508,7 +543,53 @@ public class MessageService {
         /*
          * Dla nadawcy świeżo zapisana wiadomość ma status SENT.
          */
-        return MessageResponse.from(saved, MessageStatus.SENT, null, null);
+        return new SendMessageResult(MessageResponse.from(saved, MessageStatus.SENT, null, null), false);
+    }
+
+    @Transactional
+    public MessageResponse editMessage(UUID currentUserId, UUID conversationId, UUID messageId,
+                                       EditMessageRequest request) {
+        conversationService.ensureMember(conversationId, currentUserId);
+        Message message = getMessageInConversation(conversationId, messageId);
+        if (!message.getSender().getId().equals(currentUserId)) throw new ForbiddenException("Only sender can edit message");
+        message.edit(request.body().trim());
+        Message saved = messageStore.save(message);
+        outboxService.append(saved.getId(), EventTypes.MESSAGE_EDITED,
+                Map.of("messageId", saved.getId(), "conversationId", conversationId,
+                        "sequenceNumber", saved.getSequenceNumber(), "revision", saved.getRevision()));
+        return toResponseForViewer(saved, currentUserId);
+    }
+
+    @Transactional
+    public MessageResponse deleteMessage(UUID currentUserId, UUID conversationId, UUID messageId) {
+        conversationService.ensureMember(conversationId, currentUserId);
+        Message message = getMessageInConversation(conversationId, messageId);
+        if (!message.getSender().getId().equals(currentUserId)) throw new ForbiddenException("Only sender can delete message");
+        message.delete();
+        Message saved = messageStore.save(message);
+        outboxService.append(saved.getId(), EventTypes.MESSAGE_DELETED,
+                Map.of("messageId", saved.getId(), "conversationId", conversationId,
+                        "sequenceNumber", saved.getSequenceNumber(), "revision", saved.getRevision()));
+        return toResponseForViewer(saved, currentUserId);
+    }
+
+    private SendMessageResult duplicateResult(Message existing, UUID viewerId, String fingerprint) {
+        if (!existing.getCommandFingerprint().equals(fingerprint)) {
+            throw new ConflictException("clientMessageId was already used for a different command");
+        }
+        return new SendMessageResult(toResponseForViewer(existing, viewerId), true);
+    }
+
+    private String commandFingerprint(UUID conversationId, SendMessageRequest request) {
+        String attachmentPart = request.attachmentIds() == null ? "" : request.attachmentIds().stream()
+                .map(UUID::toString).sorted().collect(Collectors.joining(","));
+        String canonical = conversationId + "\n" + (request.body() == null ? "" : request.body().trim()) + "\n" + attachmentPart;
+        try {
+            return java.util.HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(canonical.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 is required by the Java runtime", impossible);
+        }
     }
 
     /**

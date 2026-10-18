@@ -12,12 +12,16 @@ public record MessageResponse(
         UUID senderId,
         String senderUsername,
         UUID clientMessageId,
+        long sequenceNumber,
         String body,
         List<AttachmentResponse> attachments,
         MessageStatus status,
         Instant deliveredAt,
         Instant readAt,
-        Instant createdAt
+        Instant createdAt,
+        int revision,
+        Instant editedAt,
+        Instant deletedAt
 ) {
     public static MessageResponse from(Message message) {
         return from(message, MessageStatus.SENT, null, null);
@@ -28,7 +32,7 @@ public record MessageResponse(
                 .map(attachment -> AttachmentResponse.from(
                         attachment,
                         null,
-                        attachment.getStatus().name().equals("UPLOADED") ? "/api/attachments/" + attachment.getId() + "/content" : null
+                        attachment.getStatus().name().equals("READY") ? "/api/attachments/" + attachment.getId() + "/content" : null
                 ))
                 .toList();
         return new MessageResponse(
@@ -37,12 +41,16 @@ public record MessageResponse(
                 message.getSender().getId(),
                 message.getSender().getUsername(),
                 message.getClientMessageId(),
+                message.getSequenceNumber(),
                 message.getBody(),
                 attachments,
                 status,
                 deliveredAt,
                 readAt,
-                message.getCreatedAt()
+                message.getCreatedAt(),
+                message.getRevision(),
+                message.getEditedAt(),
+                message.getDeletedAt()
         );
     }
 }

@@ -38,6 +38,18 @@ public class OutboxEvent {
     @Column(name = "published_at")
     private Instant publishedAt;
 
+    @Column(name = "claimed_at")
+    private Instant claimedAt;
+
+    @Column(name = "claimed_by", length = 120)
+    private String claimedBy;
+
+    @Column(name = "next_attempt_at")
+    private Instant nextAttemptAt;
+
+    @Version
+    private long version;
+
     protected OutboxEvent() {}
 
     public OutboxEvent(UUID aggregateId, String eventType, String payloadJson) {
@@ -51,20 +63,35 @@ public class OutboxEvent {
         createdAt = Instant.now();
     }
 
-    public void markEnqueued() {
+    public void markEnqueued(String workerId) {
         status = OutboxStatus.ENQUEUED;
         attempts++;
+        claimedAt = Instant.now();
+        claimedBy = workerId;
     }
 
     public void markPublished() {
         status = OutboxStatus.PUBLISHED;
         publishedAt = Instant.now();
         lastError = null;
+        claimedAt = null;
+        claimedBy = null;
     }
 
     public void markFailed(String error) {
         status = OutboxStatus.FAILED;
         lastError = error == null ? "unknown error" : error.substring(0, Math.min(error.length(), 2000));
+        claimedAt = null;
+        claimedBy = null;
+        nextAttemptAt = Instant.now().plusSeconds(Math.min(60, 1L << Math.min(attempts, 5)));
+    }
+
+    public void recoverExpiredClaim() {
+        status = OutboxStatus.FAILED;
+        lastError = "Recovered expired outbox claim";
+        claimedAt = null;
+        claimedBy = null;
+        nextAttemptAt = Instant.now();
     }
 
     public UUID getId() { return id; }
@@ -76,4 +103,7 @@ public class OutboxEvent {
     public String getLastError() { return lastError; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getPublishedAt() { return publishedAt; }
+    public Instant getClaimedAt() { return claimedAt; }
+    public String getClaimedBy() { return claimedBy; }
+    public Instant getNextAttemptAt() { return nextAttemptAt; }
 }

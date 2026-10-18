@@ -7,7 +7,7 @@ import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Component;
-import pl.jakubtworek.chatsystem.conversation.ConversationService;
+import pl.jakubtworek.chatsystem.presence.PresenceLeaseService;
 
 import java.security.Principal;
 import java.util.UUID;
@@ -16,7 +16,7 @@ import java.util.UUID;
  * Interceptor autoryzujący subskrypcje WebSocket/STOMP.
  *
  * Ta klasa zabezpiecza kanały realtime przed sytuacją, w której użytkownik
- * zna albo zgadnie conversationId i spróbuje subskrybować cudzą rozmowę.
+ * zna albo zgadnie conversationId i spróbuje subskrybować dawny publiczny topic.
  *
  * Przykład ataku:
  * SUBSCRIBE /topic/conversations/{foreignConversationId}
@@ -25,9 +25,9 @@ import java.util.UUID;
  * a użytkownik zacząłby odbierać realtime eventy z rozmowy,
  * do której nie powinien mieć dostępu.
  *
- * Najważniejsza zasada:
- * każda subskrypcja topicu konwersacji musi być sprawdzona
- * przez ConversationService.ensureMember().
+ * Aktualny protokół nie używa publicznych topiców konwersacji. Serwer wykonuje
+ * fan-out do prywatnych kolejek {@code /user/queue/conversations/{id}} na podstawie
+ * aktualnego membershipu. Stary topic jest zatem zawsze odrzucany fail-closed.
  */
 @Component
 public class WebSocketAuthorizationInterceptor implements ChannelInterceptor {
@@ -43,10 +43,10 @@ public class WebSocketAuthorizationInterceptor implements ChannelInterceptor {
      */
     private static final String CONVERSATION_TOPIC_PREFIX = "/topic/conversations/";
 
-    private final ConversationService conversationService;
+    private final PresenceLeaseService presenceLeases;
 
-    public WebSocketAuthorizationInterceptor(ConversationService conversationService) {
-        this.conversationService = conversationService;
+    public WebSocketAuthorizationInterceptor(PresenceLeaseService presenceLeases) {
+        this.presenceLeases = presenceLeases;
     }
 
     /**
@@ -62,6 +62,13 @@ public class WebSocketAuthorizationInterceptor implements ChannelInterceptor {
     @Override
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
         StompHeaderAccessor accessor = StompHeaderAccessor.wrap(message);
+        if (accessor.getUser() != null && accessor.getSessionId() != null) {
+            try {
+                presenceLeases.heartbeat(accessor.getSessionId(), UUID.fromString(accessor.getUser().getName()));
+            } catch (IllegalArgumentException ignored) {
+                throw new AccessDeniedException("Invalid WebSocket principal");
+            }
+        }
 
         /*
          * Sprawdzamy tylko próby subskrypcji.
@@ -104,41 +111,8 @@ public class WebSocketAuthorizationInterceptor implements ChannelInterceptor {
          * Brak Principal oznacza, że użytkownik nie jest poprawnie zalogowany
          * w kontekście WebSocket.
          */
-        Principal principal = accessor.getUser();
-
-        if (principal == null) {
-            throw new AccessDeniedException("Unauthenticated WebSocket subscription");
-        }
-
-        /*
-         * W tej aplikacji principal.getName() przechowuje UUID użytkownika.
-         *
-         * To musi być spójne z konfiguracją WebSocket authentication,
-         * która ustawia Principal podczas nawiązywania połączenia.
-         */
-        UUID userId = UUID.fromString(principal.getName());
-
-        /*
-         * conversationId wyciągamy z końcówki destination.
-         *
-         * Dla:
-         * /topic/conversations/{conversationId}
-         *
-         * bierzemy fragment po prefixie.
-         */
-        UUID conversationId = UUID.fromString(
-                destination.substring(CONVERSATION_TOPIC_PREFIX.length())
+        throw new AccessDeniedException(
+                "Public conversation topics are disabled; subscribe to the private user queue"
         );
-
-        /*
-         * Kluczowe zabezpieczenie.
-         *
-         * Jeśli użytkownik nie jest członkiem konwersacji,
-         * ConversationService rzuci wyjątek i subskrypcja zostanie odrzucona.
-         *
-         * Dzięki temu użytkownik nie może podsłuchiwać cudzych wiadomości,
-         * receiptów, typing indicatorów ani presence eventów.
-         */
-        conversationService.ensureMember(conversationId, userId);
     }
 }

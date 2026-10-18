@@ -7,6 +7,9 @@ RUN mvn -q -DskipTests package
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app
-COPY --from=build /app/target/chat-system-stage6-0.1.0.jar app.jar
+COPY --from=build /app/target/chat-system-0.1.0.jar app.jar
+RUN addgroup --system chat && adduser --system --ingroup chat chat \
+    && chown chat:chat /app
+USER chat
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "app.jar"]

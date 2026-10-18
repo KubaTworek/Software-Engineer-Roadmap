@@ -8,6 +8,8 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
+import org.springframework.web.socket.config.annotation.WebSocketTransportRegistration;
+import java.util.List;
 
 /**
  * Główna konfiguracja WebSocket/STOMP dla aplikacji czatu.
@@ -91,13 +93,12 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     /**
      * Interceptor autoryzujący subskrypcje STOMP.
      *
-     * Sprawdza, czy użytkownik może subskrybować:
-     * /topic/conversations/{conversationId}
-     *
-     * Bez tego użytkownik mógłby próbować podsłuchiwać cudze rozmowy,
-     * jeśli znałby albo zgadł conversationId.
+     * Odrzuca historyczne publiczne topiki rozmów i odnawia lease presence.
+     * Aktualny protokół używa prywatnych kolejek użytkownika.
      */
     private final WebSocketAuthorizationInterceptor authorizationInterceptor;
+    private final List<String> allowedOrigins;
+    private final int messageSizeLimit;
 
     public WebSocketConfig(
             WebSocketJwtHandshakeInterceptor handshakeInterceptor,
@@ -106,7 +107,9 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
             @Value("${app.websocket.inbound-core-pool-size:4}") int inboundCorePoolSize,
             @Value("${app.websocket.inbound-max-pool-size:16}") int inboundMaxPoolSize,
             @Value("${app.websocket.outbound-core-pool-size:4}") int outboundCorePoolSize,
-            @Value("${app.websocket.outbound-max-pool-size:16}") int outboundMaxPoolSize
+            @Value("${app.websocket.outbound-max-pool-size:16}") int outboundMaxPoolSize,
+            @Value("#{'${app.websocket.allowed-origins:http://localhost:3000}'.split(',')}") List<String> allowedOrigins,
+            @Value("${app.websocket.message-size-limit-bytes:65536}") int messageSizeLimit
     ) {
         this.handshakeInterceptor = handshakeInterceptor;
         this.handshakeHandler = handshakeHandler;
@@ -115,6 +118,8 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         this.inboundMaxPoolSize = inboundMaxPoolSize;
         this.outboundCorePoolSize = outboundCorePoolSize;
         this.outboundMaxPoolSize = outboundMaxPoolSize;
+        this.allowedOrigins = allowedOrigins;
+        this.messageSizeLimit = messageSizeLimit;
     }
 
     /**
@@ -123,7 +128,6 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
      * Klient łączy się z jednym z tych endpointów,
      * a potem komunikuje się już przez STOMP:
      * - SEND /app/...
-     * - SUBSCRIBE /topic/...
      * - SUBSCRIBE /user/queue/...
      */
     @Override
@@ -133,7 +137,8 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
          * Główny endpoint WebSocket.
          *
          * Przykład połączenia:
-         * ws://localhost:8080/ws?token=JWT
+         * ws://localhost:8080/ws z Authorization: Bearer JWT.
+         * Query token jest dostępny wyłącznie po świadomym włączeniu dla developmentu.
          *
          * Używany przez nowoczesne klienty,
          * które wspierają natywny WebSocket.
@@ -146,7 +151,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                  * W produkcji lepiej zawęzić to do konkretnych domen frontendu,
                  * np. https://app.example.com.
                  */
-                .setAllowedOriginPatterns("*")
+                .setAllowedOriginPatterns(allowedOrigins.toArray(String[]::new))
 
                 /*
                  * Interceptor pobiera i waliduje dane JWT podczas handshake.
@@ -168,10 +173,17 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
          * ale /ws-sockjs ułatwia kompatybilność.
          */
         registry.addEndpoint("/ws-sockjs")
-                .setAllowedOriginPatterns("*")
+                .setAllowedOriginPatterns(allowedOrigins.toArray(String[]::new))
                 .addInterceptors(handshakeInterceptor)
                 .setHandshakeHandler(handshakeHandler)
                 .withSockJS();
+    }
+
+    @Override
+    public void configureWebSocketTransport(WebSocketTransportRegistration registration) {
+        registration.setMessageSizeLimit(messageSizeLimit)
+                .setSendBufferSizeLimit(messageSizeLimit * 4)
+                .setSendTimeLimit(10_000);
     }
 
     /**
@@ -201,13 +213,9 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         heartbeatScheduler.setThreadNamePrefix("ws-heartbeat-");
         heartbeatScheduler.initialize();
         /*
-         * Włącza prosty broker pamięciowy dla kanałów:
-         * - /topic — broadcast do wielu subskrybentów,
-         * - /queue — kolejki, często prywatne.
-         *
-         * W tym projekcie:
-         * /topic/conversations/{id} służy do eventów rozmowy,
-         * np. message.created, typing.updated, presence.updated.
+         * Włącza prosty broker pamięciowy. Eventy rozmowy trafiają przez
+         * convertAndSendToUser do /user/queue/conversations/{id}; /topic pozostaje
+         * wyłącznie technicznym prefiksem brokera, a topiki rozmów są blokowane.
          *
          * Przy dużej skali ten simple broker warto zastąpić brokerem zewnętrznym,
          * np. RabbitMQ, ActiveMQ albo relay do infrastruktury messagingowej.
@@ -267,12 +275,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                 .queueCapacity(10_000);
 
         /*
-         * Podpinamy autoryzację subskrypcji.
-         *
-         * Dzięki temu próba:
-         * SUBSCRIBE /topic/conversations/{conversationId}
-         *
-         * zostanie sprawdzona pod kątem członkostwa użytkownika w rozmowie.
+         * Podpinamy kontrolę destination oraz odnowienie lease presence.
          */
         registration.interceptors(authorizationInterceptor);
     }
