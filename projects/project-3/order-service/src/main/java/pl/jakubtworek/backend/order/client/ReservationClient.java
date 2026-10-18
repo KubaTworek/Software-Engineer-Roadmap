@@ -9,6 +9,8 @@ import org.springframework.web.reactive.function.client.WebClient;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
+import pl.jakubtworek.backend.common.resilience.AdmissionController;
+import pl.jakubtworek.backend.common.web.DeadlineContext;
 
 /**
  * Klient HTTP do reservation-service używany przez Order Service.
@@ -56,10 +58,14 @@ public class ReservationClient {
      * http://localhost:8082
      */
     private final String reservationUrl;
+    private final AdmissionController admissionController;
 
-    public ReservationClient(WebClient.Builder builder, @Value("${services.reservation.url}") String reservationUrl) {
+    public ReservationClient(WebClient.Builder builder,
+                             @Value("${services.reservation.url}") String reservationUrl,
+                             @Value("${app.bulkhead.reservation.max-concurrent:48}") int maximumConcurrentCalls) {
         this.webClient = builder.build();
         this.reservationUrl = reservationUrl;
+        this.admissionController = new AdmissionController(maximumConcurrentCalls);
     }
 
     /**
@@ -80,7 +86,8 @@ public class ReservationClient {
     @Retry(name = "reservation")
     @CircuitBreaker(name = "reservation", fallbackMethod = "getFallback")
     public ReservationResponse get(UUID reservationId) {
-        return webClient.get()
+        try (AdmissionController.Permit ignored = admissionController.tryAcquire()) {
+            return webClient.get()
                 .uri(reservationUrl + "/reservations/{id}", reservationId)
                 .retrieve()
 
@@ -97,7 +104,7 @@ public class ReservationClient {
                  * Jest niezależny od globalnych timeoutów HTTP.
                  * Dzięki temu ten use case ma jasny limit oczekiwania na Reservation Service.
                  */
-                .timeout(Duration.ofSeconds(2))
+                .timeout(DeadlineContext.timeoutCappedAt(Duration.ofSeconds(2)))
 
                 /*
                  * OrderService jest klasyczną warstwą synchroniczną, więc tutaj blokujemy
@@ -106,7 +113,8 @@ public class ReservationClient {
                  * To jest akceptowalne w tym projekcie, ale trzeba rozumieć trade-off:
                  * WebClient jest reaktywny, natomiast .block() zamienia wywołanie w synchroniczne.
                  */
-                .block();
+                    .block();
+        }
     }
 
     /**
@@ -123,12 +131,14 @@ public class ReservationClient {
     @Retry(name = "reservation")
     @CircuitBreaker(name = "reservation", fallbackMethod = "confirmFallback")
     public ReservationResponse confirm(UUID reservationId) {
-        return webClient.post()
-                .uri(reservationUrl + "/reservations/{id}/confirm", reservationId)
-                .retrieve()
-                .bodyToMono(ReservationResponse.class)
-                .timeout(Duration.ofSeconds(2))
-                .block();
+        try (AdmissionController.Permit ignored = admissionController.tryAcquire()) {
+            return webClient.post()
+                    .uri(reservationUrl + "/reservations/{id}/confirm", reservationId)
+                    .retrieve()
+                    .bodyToMono(ReservationResponse.class)
+                    .timeout(DeadlineContext.timeoutCappedAt(Duration.ofSeconds(2)))
+                    .block();
+        }
     }
 
     /**

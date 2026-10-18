@@ -5,6 +5,7 @@ export const NOTIFICATION_URL = __ENV.NOTIFICATION_URL || 'http://localhost:8085
 export const RABBITMQ_API_URL = __ENV.RABBITMQ_API_URL || 'http://localhost:15672/api';
 export const RABBITMQ_AUTH = __ENV.RABBITMQ_AUTH || 'guest:guest';
 export const EVENT_ID = __ENV.EVENT_ID || '11111111-1111-1111-1111-111111111111';
+export const API_KEY = __ENV.API_KEY || '';
 
 export function uuidLike(prefix = 'k6') {
   return `${prefix}-${Date.now()}-${__VU}-${__ITER}-${Math.random().toString(16).slice(2)}`;
@@ -16,6 +17,9 @@ export function jsonHeaders(extra = {}) {
     'Content-Type': 'application/json',
     'X-Correlation-Id': correlationId,
     'X-Request-Id': uuidLike('req'),
+    // Generator jest jednym technicznym klientem. Osobny klucz pozwala mierzyć
+    // pojemność usług niezależnie od scenariuszy, które celowo testują limit anonimowy.
+    ...(API_KEY ? { 'X-API-Key': API_KEY } : {}),
     ...extra,
   };
 }
@@ -30,6 +34,13 @@ export function makeReservationPayload(quantity = 1) {
 
 export function makeSummary(name, data) {
   const metrics = data.metrics || {};
+  const modelLines = ['closed', 'open'].flatMap((model) => {
+    const duration = metrics[`http_req_duration{model:${model}}`]?.values;
+    const requests = metrics[`http_reqs{model:${model}}`]?.values;
+    return duration ? [
+      `- ${model} model: ${requests?.count ?? 'n/a'} requests, p95 ${duration['p(95)'] ?? 'n/a'} ms, p99 ${duration['p(99)'] ?? 'n/a'} ms`,
+    ] : [];
+  });
   const lines = [
     `# k6 summary: ${name}`,
     '',
@@ -41,6 +52,7 @@ export function makeSummary(name, data) {
     `- http_req_duration p99: ${metrics.http_req_duration?.values?.['p(99)'] ?? 'n/a'} ms`,
     `- http_req_failed rate: ${metrics.http_req_failed?.values?.rate ?? 'n/a'}`,
     `- checks rate: ${metrics.checks?.values?.rate ?? 'n/a'}`,
+    ...modelLines,
     '',
     'Raw JSON summary is stored next to this file when the script is run from the repository root.',
     '',

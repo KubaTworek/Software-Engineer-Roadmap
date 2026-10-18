@@ -1,6 +1,6 @@
 package pl.jakubtworek.backend.catalog.application;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -186,7 +186,9 @@ public class EventCatalogService {
      */
     public AvailabilityResponse getAvailability(UUID id) {
         return cache.getOrLoad(
-                "event-availability",
+                /* Wersja klucza zapobiega odczytowi starego JSON bez totalTickets podczas
+                 * kompatybilnego rollout'u nowego kontraktu Catalog → Reservation. */
+                "event-availability-v2",
                 id.toString(),
                 availabilityTtl,
                 objectMapper.getTypeFactory().constructType(AvailabilityResponse.class),
@@ -196,7 +198,7 @@ public class EventCatalogService {
                     EventEntity event = eventRepository.findById(id)
                             .orElseThrow(() -> new IllegalArgumentException("Event not found: " + id));
 
-                    return new AvailabilityResponse(event.getId(), event.getAvailableTickets());
+                    return new AvailabilityResponse(event.getId(), event.getTotalTickets(), event.getAvailableTickets());
                 }
         );
     }

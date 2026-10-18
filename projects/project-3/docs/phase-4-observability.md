@@ -113,14 +113,14 @@ Logi mają format JSON. Najważniejsze pola:
   "path": "/orders",
   "status": "200",
   "durationMs": "123",
-  "message": "order_degraded_to_payment_pending ..."
+  "message": "order_reservation_confirmation_pending ..."
 }
 ```
 
 W Loki możesz filtrować np.:
 
 ```logql
-{service="order-service"} |= "order_degraded_to_payment_pending"
+{service="order-service"} |= "order_reservation_confirmation_pending"
 ```
 
 albo po correlation ID:

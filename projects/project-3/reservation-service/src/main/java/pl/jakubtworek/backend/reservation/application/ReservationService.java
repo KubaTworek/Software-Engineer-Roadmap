@@ -9,9 +9,12 @@ import pl.jakubtworek.backend.reservation.api.ReservationResponse;
 import pl.jakubtworek.backend.reservation.client.CatalogClient;
 import pl.jakubtworek.backend.reservation.domain.ReservationEntity;
 import pl.jakubtworek.backend.reservation.repository.ReservationRepository;
+import pl.jakubtworek.backend.reservation.repository.EventInventoryRepository;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.util.UUID;
+import pl.jakubtworek.backend.reservation.api.InventoryCapacityResponse;
 
 /**
  * Warstwa aplikacyjna Reservation Service.
@@ -26,12 +29,9 @@ import java.util.UUID;
  * Reservation Service jest właścicielem stanu rezerwacji. Nie powinien bezpośrednio
  * modyfikować bazy danych Catalog Service ani Order Service.
  *
- * Uwaga architektoniczna:
- * W tej wersji create(...) sprawdza availability przez Catalog Service, ale nie zmniejsza
- * faktycznie puli dostępnych biletów w Catalog Service. To oznacza, że przy dużej równoległości
- * możliwy jest overselling. Produkcyjnie trzeba byłoby dodać atomową rezerwację inventory,
- * np. przez osobny Inventory Service, transakcję z lockiem, optimistic locking albo event-driven
- * mechanizm kompensacji.
+ * Catalog Service odpowiada za opis wydarzenia, natomiast autorytatywne inventory należy
+ * do tego serwisu. Warunkowy UPDATE sprawia, że poprawność nie zależy od czasu odpowiedzi
+ * katalogu ani od liczby replik aplikacji.
  */
 @Service
 public class ReservationService {
@@ -60,10 +60,15 @@ public class ReservationService {
      * - fallback.
      */
     private final CatalogClient catalogClient;
+    private final EventInventoryRepository inventoryRepository;
+    private final Clock clock;
 
-    public ReservationService(ReservationRepository repository, CatalogClient catalogClient) {
+    public ReservationService(ReservationRepository repository, CatalogClient catalogClient,
+                              EventInventoryRepository inventoryRepository, Clock clock) {
         this.repository = repository;
         this.catalogClient = catalogClient;
+        this.inventoryRepository = inventoryRepository;
+        this.clock = clock;
     }
 
     /**
@@ -73,7 +78,7 @@ public class ReservationService {
      *
      * 1. Pobierz availability z Catalog Service.
      * 2. Sprawdź, czy odpowiedź nie jest pusta.
-     * 3. Sprawdź, czy jest wystarczająca liczba biletów.
+     * 3. Atomowo spróbuj odjąć bilety w lokalnej bazie właściciela inventory.
      * 4. Utwórz rezerwację w stanie PENDING.
      * 5. Zapisz rezerwację w lokalnej bazie Reservation Service.
      * 6. Zwróć DTO odpowiedzi.
@@ -102,12 +107,21 @@ public class ReservationService {
         }
 
         /*
+         * Catalog dostarcza metadane startowe, ale od pierwszego zapisu jedynym właścicielem
+         * licznika jest Reservation Service. Ponowne wywołanie nie resetuje sprzedanych miejsc.
+         * W większym systemie ten bootstrap byłby konsumentem EventCreated + reconciliation;
+         * tu ten sam kontrakt pokazujemy bez dokładania drugiego relaya outbox do laboratorium.
+         */
+        inventoryRepository.initializeIfAbsent(availability.eventId(), availability.totalTickets());
+
+        /*
          * Walidacja biznesowa: nie tworzymy rezerwacji, jeśli brakuje biletów.
          *
          * Warto zauważyć, że to sprawdzenie samo w sobie nie jest wystarczające przy dużej
          * równoległości, bo wiele requestów może jednocześnie zobaczyć tę samą availability.
          */
-        if (availability.availableTickets() < request.quantity()) {
+        /* Catalog potwierdza istnienie, lecz jego licznik może być opóźnionym read modelem. */
+        if (inventoryRepository.reserve(request.eventId(), request.quantity()) != 1) {
             throw new IllegalArgumentException("Not enough tickets available for event " + request.eventId());
         }
 
@@ -120,7 +134,8 @@ public class ReservationService {
         ReservationEntity reservation = ReservationEntity.pending(
                 request.eventId(),
                 request.userId(),
-                request.quantity()
+                request.quantity(),
+                clock.instant()
         );
 
         log.info("reservation_created eventId={} userId={} quantity={}",
@@ -149,7 +164,7 @@ public class ReservationService {
          * Jeśli użytkownik nie opłaci jej przed expiresAt, nie powinna być dalej traktowana
          * jako aktywna.
          */
-        if (reservation.isExpired(Instant.now())) {
+        if (reservation.isExpired(clock.instant())) {
             throw new IllegalStateException("Reservation expired: " + id);
         }
 
@@ -171,7 +186,7 @@ public class ReservationService {
      */
     @Transactional
     public ReservationResponse confirm(UUID id) {
-        ReservationEntity reservation = repository.findById(id)
+        ReservationEntity reservation = repository.findByIdForUpdate(id)
                 .orElseThrow(() -> new IllegalArgumentException("Reservation not found: " + id));
 
         /*
@@ -179,8 +194,11 @@ public class ReservationService {
          *
          * Jeśli rezerwacja wygasła, zapisujemy ten fakt w encji i przerywamy flow.
          */
-        if (reservation.isExpired(Instant.now())) {
-            reservation.expire();
+        Instant now = clock.instant();
+        if (reservation.isExpired(now)) {
+            if (reservation.expire(now)) {
+                releaseInventory(reservation);
+            }
 
             throw new IllegalStateException("Reservation expired: " + id);
         }
@@ -196,7 +214,7 @@ public class ReservationService {
          *
          * CANCELLED -> CONFIRMED
          */
-        reservation.confirm();
+        reservation.confirm(now);
 
         log.info("reservation_confirmed reservationId={}", id);
 
@@ -212,14 +230,45 @@ public class ReservationService {
      */
     @Transactional
     public ReservationResponse cancel(UUID id) {
-        ReservationEntity reservation = repository.findById(id)
+        ReservationEntity reservation = repository.findByIdForUpdate(id)
                 .orElseThrow(() -> new IllegalArgumentException("Reservation not found: " + id));
 
-        reservation.cancel();
+        if (reservation.cancel(clock.instant())) {
+            releaseInventory(reservation);
+        }
 
         log.info("reservation_cancelled reservationId={}", id);
 
         return toResponse(reservation);
+    }
+
+    /**
+     * Wygasza batch zdobyty przez SKIP LOCKED. Jeśli worker A obudzi się po utracie lease,
+     * jego starszy fencing token nie zostanie zaakceptowany przez inventory i transakcja
+     * wycofa również zmianę statusu rezerwacji.
+     */
+    @Transactional
+    public void expireBatch(long fencingToken, Instant now) {
+        for (ReservationEntity reservation : repository.lockExpiredBatch(now)) {
+            if (reservation.expire(now)
+                    && inventoryRepository.releaseWithFencing(reservation.getEventId(),
+                    reservation.getQuantity(), fencingToken) != 1) {
+                throw new IllegalStateException("Inventory rejected fencing token " + fencingToken
+                        + " or releasing the reservation would exceed the configured capacity");
+            }
+        }
+    }
+
+    /** Wersjonowana komenda administracyjna; retry starego requestu nie nadpisze nowszej decyzji. */
+    @Transactional
+    public InventoryCapacityResponse changeCapacity(UUID eventId, long expectedVersion, int newTotal) {
+        if (inventoryRepository.changeCapacity(eventId, expectedVersion, newTotal) != 1) {
+            throw new IllegalStateException("Capacity version is stale or new total is below already reserved tickets");
+        }
+        var inventory = inventoryRepository.findById(eventId)
+                .orElseThrow(() -> new IllegalArgumentException("Inventory not found: " + eventId));
+        return new InventoryCapacityResponse(inventory.getEventId(), inventory.getTotalTickets(),
+                inventory.getAvailableTickets(), inventory.getVersion());
     }
 
     /**
@@ -239,5 +288,11 @@ public class ReservationService {
                 reservation.getCreatedAt(),
                 reservation.getUpdatedAt()
         );
+    }
+
+    private void releaseInventory(ReservationEntity reservation) {
+        if (inventoryRepository.release(reservation.getEventId(), reservation.getQuantity()) != 1) {
+            throw new IllegalStateException("Inventory invariant violated for event " + reservation.getEventId());
+        }
     }
 }

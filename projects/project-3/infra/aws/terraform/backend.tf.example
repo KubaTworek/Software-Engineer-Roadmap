@@ -1,0 +1,11 @@
+# Skopiuj jako backend.tf dopiero po utworzeniu bucketa. Backend nie przyjmuje zwykłych
+# zmiennych Terraform, dlatego wartości środowiskowe konfiguruje się przed `terraform init`.
+terraform {
+  backend "s3" {
+    bucket       = "CHANGE_ME-ticketing-terraform-state"
+    key          = "production/project-3.tfstate"
+    region       = "eu-central-1"
+    encrypt      = true
+    use_lockfile = true
+  }
+}

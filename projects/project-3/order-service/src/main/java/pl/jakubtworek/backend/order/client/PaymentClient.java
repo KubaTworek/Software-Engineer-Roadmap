@@ -9,6 +9,8 @@ import org.springframework.web.reactive.function.client.WebClient;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.UUID;
+import pl.jakubtworek.backend.common.resilience.AdmissionController;
+import pl.jakubtworek.backend.common.web.DeadlineContext;
 
 /**
  * Klient HTTP do payment-mock-service.
@@ -56,10 +58,14 @@ public class PaymentClient {
      * http://localhost:8084
      */
     private final String paymentUrl;
+    private final AdmissionController admissionController;
 
-    public PaymentClient(WebClient.Builder builder, @Value("${services.payment.url}") String paymentUrl) {
+    public PaymentClient(WebClient.Builder builder,
+                         @Value("${services.payment.url}") String paymentUrl,
+                         @Value("${app.bulkhead.payment.max-concurrent:32}") int maximumConcurrentCalls) {
         this.webClient = builder.build();
         this.paymentUrl = paymentUrl;
+        this.admissionController = new AdmissionController(maximumConcurrentCalls);
     }
 
     /**
@@ -81,8 +87,14 @@ public class PaymentClient {
     @Retry(name = "payment")
     @CircuitBreaker(name = "payment", fallbackMethod = "paymentFallback")
     public PaymentResponse pay(UUID orderId, String userId, BigDecimal amount) {
-        return webClient.post()
+        /* Permit ogranicza realną pracę downstream, a nie liczbę utworzonych wątków.
+         * Ponieważ znajduje się wewnątrz metody objętej retry, każda próba ponownie
+         * konkuruje o limit i nie omija ochrony po pierwszym niepowodzeniu. */
+        try (AdmissionController.Permit ignored = admissionController.tryAcquire()) {
+            return webClient.post()
                 .uri(paymentUrl + "/payments")
+                /* Retry każdej próby używa tego samego klucza operacji po stronie providera. */
+                .header("Idempotency-Key", "payment:" + orderId)
 
                 /*
                  * Wysyłamy minimalny payload potrzebny do wykonania płatności.
@@ -115,7 +127,7 @@ public class PaymentClient {
                  * Jeśli timeout zostanie przekroczony, wyjątek trafi do mechanizmów
                  * retry/circuit breaker/fallback.
                  */
-                .timeout(Duration.ofSeconds(2))
+                .timeout(DeadlineContext.timeoutCappedAt(Duration.ofSeconds(2)))
 
                 /*
                  * OrderService działa synchronicznie, więc tutaj blokujemy na wyniku Mono.
@@ -123,7 +135,33 @@ public class PaymentClient {
                  * WebClient jest reaktywny, ale .block() zamienia wywołanie w klasyczny,
                  * synchroniczny call. W tym projekcie jest to świadomy kompromis.
                  */
-                .block();
+                    .block();
+        }
+    }
+
+    /** Lookup jest bezpieczniejszy od ponownego POST, gdy wynik poprzedniej próby jest nieznany. */
+    @CircuitBreaker(name = "payment")
+    public PaymentResponse findByOrder(UUID orderId) {
+        try (AdmissionController.Permit ignored = admissionController.tryAcquire()) {
+            return webClient.get().uri(paymentUrl + "/payments/orders/{orderId}", orderId)
+                    .retrieve().bodyToMono(PaymentResponse.class)
+                    .timeout(DeadlineContext.timeoutCappedAt(Duration.ofSeconds(2))).block();
+        }
+    }
+
+    /**
+     * Kompensacja ma własny stabilny klucz. Ponowienie po utracie odpowiedzi nie może
+     * spowodować dwóch refundów, tak samo jak retry płatności nie może obciążyć dwa razy.
+     */
+    @Retry(name = "payment")
+    @CircuitBreaker(name = "payment")
+    public PaymentResponse refund(UUID orderId) {
+        try (AdmissionController.Permit ignored = admissionController.tryAcquire()) {
+            return webClient.post().uri(paymentUrl + "/payments/orders/{orderId}/refund", orderId)
+                    .header("Idempotency-Key", "refund:" + orderId)
+                    .retrieve().bodyToMono(PaymentResponse.class)
+                    .timeout(DeadlineContext.timeoutCappedAt(Duration.ofSeconds(2))).block();
+        }
     }
 
     /**

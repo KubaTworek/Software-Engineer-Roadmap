@@ -33,32 +33,37 @@ public class ReservationEntity {
         this.updatedAt = updatedAt;
     }
 
-    public static ReservationEntity pending(UUID eventId, String userId, int quantity) {
-        Instant now = Instant.now();
+    public static ReservationEntity pending(UUID eventId, String userId, int quantity, Instant now) {
         return new ReservationEntity(UUID.randomUUID(), eventId, userId, quantity, ReservationStatus.PENDING, now.plusSeconds(15 * 60), now, now);
     }
 
-    public void confirm() {
+    public void confirm(Instant now) {
         if (this.status == ReservationStatus.EXPIRED || this.status == ReservationStatus.CANCELLED) {
             throw new IllegalStateException("Cannot confirm reservation in status " + this.status);
         }
         this.status = ReservationStatus.CONFIRMED;
-        this.updatedAt = Instant.now();
+        this.updatedAt = now;
     }
 
-    public void cancel() {
+    public boolean cancel(Instant now) {
+        if (this.status == ReservationStatus.CANCELLED || this.status == ReservationStatus.EXPIRED) {
+            return false;
+        }
         if (this.status == ReservationStatus.CONFIRMED) {
             throw new IllegalStateException("Cannot cancel already confirmed reservation");
         }
         this.status = ReservationStatus.CANCELLED;
-        this.updatedAt = Instant.now();
+        this.updatedAt = now;
+        return true;
     }
 
-    public void expire() {
+    public boolean expire(Instant now) {
         if (this.status == ReservationStatus.PENDING) {
             this.status = ReservationStatus.EXPIRED;
-            this.updatedAt = Instant.now();
+            this.updatedAt = now;
+            return true;
         }
+        return false;
     }
 
     public boolean isExpired(Instant now) {

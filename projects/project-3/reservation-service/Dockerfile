@@ -12,8 +12,6 @@ COPY order-service/pom.xml order-service/pom.xml
 COPY payment-mock-service/pom.xml payment-mock-service/pom.xml
 COPY notification-service/pom.xml notification-service/pom.xml
 
-RUN mvn -pl reservation-service -am dependency:go-offline -DskipTests
-
 # Copy only the modules needed to build this service and its shared dependency.
 COPY common common
 COPY reservation-service reservation-service

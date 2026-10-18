@@ -4,7 +4,6 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
 
-import java.time.Clock;
 import java.util.List;
 
 /**
@@ -63,12 +62,14 @@ public class RedisTokenBucketRateLimiter {
             -- W tym projekcie zawsze 1 request = 1 token.
             local requested = tonumber(ARGV[4])
 
-            -- Aktualny czas w milisekundach, liczony po stronie aplikacji.
-            local nowMs = tonumber(ARGV[5])
+            -- Jeden zegar Redisa eliminuje clock skew pomiędzy replikami gatewaya.
+            -- TIME zwraca sekundy i mikrosekundy czasu serwera Redis.
+            local redisTime = redis.call('TIME')
+            local nowMs = tonumber(redisTime[1]) * 1000 + math.floor(tonumber(redisTime[2]) / 1000)
 
             -- TTL klucza w Redisie. Dzięki temu nie trzymamy wiecznie bucketów
             -- dla klientów, którzy już przestali wysyłać requesty.
-            local ttlSeconds = tonumber(ARGV[6])
+            local ttlSeconds = tonumber(ARGV[5])
 
             -- Odczytujemy aktualny stan bucketa z hasha Redis:
             -- tokens    - obecna liczba tokenów,
@@ -139,14 +140,6 @@ public class RedisTokenBucketRateLimiter {
     private final StringRedisTemplate redisTemplate;
 
     /**
-     * Clock jest wydzielony jako pole zamiast bezpośredniego System.currentTimeMillis().
-     *
-     * Dzięki temu kod byłby łatwiejszy do testowania, gdybyśmy dodali konstruktor
-     * przyjmujący Clock.fixed(...) w testach jednostkowych.
-     */
-    private final Clock clock;
-
-    /**
      * Reprezentacja Lua script dla Spring Data Redis.
      *
      * Wynikiem skryptu jest lista:
@@ -157,7 +150,6 @@ public class RedisTokenBucketRateLimiter {
 
     public RedisTokenBucketRateLimiter(StringRedisTemplate redisTemplate) {
         this.redisTemplate = redisTemplate;
-        this.clock = Clock.systemUTC();
         this.script = new DefaultRedisScript<>(SCRIPT, List.class);
     }
 
@@ -199,7 +191,6 @@ public class RedisTokenBucketRateLimiter {
          * - refillTokens,
          * - refillPeriodMs,
          * - requested,
-         * - nowMs,
          * - ttlSeconds.
          */
         List<?> result = redisTemplate.execute(
@@ -209,7 +200,6 @@ public class RedisTokenBucketRateLimiter {
                 String.valueOf(bucket.refillTokens()),
                 String.valueOf(refillMs),
                 "1",
-                String.valueOf(clock.millis()),
                 String.valueOf(ttlSeconds)
         );
 

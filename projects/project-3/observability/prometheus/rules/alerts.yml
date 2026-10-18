@@ -31,7 +31,7 @@ groups:
           service: order-service
         annotations:
           summary: "Payment circuit breaker is open"
-          description: "Order Service is degrading orders to PAYMENT_PENDING because payment dependency is failing."
+          description: "Order Service is creating PAYMENT_UNKNOWN states because the payment result cannot be confirmed."
           runbook_url: "docs/runbooks/payment-dependency-failure.md"
 
       - alert: DatabaseConnectionPoolSaturation
@@ -67,12 +67,45 @@ groups:
           runbook_url: "docs/runbooks/rate-limit-spike.md"
 
       - alert: NotificationConsumerLagSuspected
-        expr: increase(app_notifications_sent_total[10m]) == 0 and sum(rate(http_server_requests_seconds_count{application="order-service",uri="/orders",status=~"2.."}[10m])) > 0
-        for: 10m
+        expr: rabbitmq_queue_messages_ready{queue="notifications.order-paid"} > 100
+        for: 5m
         labels:
           severity: warning
           service: notification-service
         annotations:
           summary: "Notifications may not be processed"
-          description: "Orders are being created, but notification-service reports no processed notifications. Check RabbitMQ queue depth and consumer logs."
+          description: "RabbitMQ has more than 100 ready notification events. Check consumer rate, failures and unacked messages."
+          runbook_url: "docs/runbooks/broker-lag.md"
+
+      - alert: OrderOutboxBacklogGrowing
+        expr: app_outbox_unpublished{application="order-service"} > 100
+        for: 5m
+        labels:
+          severity: critical
+          service: order-service
+        annotations:
+          summary: "Order outbox relay is not keeping up"
+          description: "Unpublished transactional outbox records exceed 100. Check RabbitMQ confirms and relay errors."
+          runbook_url: "docs/runbooks/broker-lag.md"
+
+      - alert: OrderServiceP99LatencyCritical
+        expr: histogram_quantile(0.99, sum(rate(http_server_requests_seconds_bucket{application="order-service"}[5m])) by (le)) > 3
+        for: 5m
+        labels:
+          severity: critical
+          service: order-service
+        annotations:
+          summary: "Order Service p99 exceeds its latency objective"
+          description: "Inspect saturation before scaling; retries can amplify a slow downstream."
+          runbook_url: "docs/runbooks/high-latency.md"
+
+      - alert: OrderOutboxPoisonRecord
+        expr: app_outbox_dead{application="order-service"} > 0
+        for: 1m
+        labels:
+          severity: critical
+          service: order-service
+        annotations:
+          summary: "Order outbox contains a terminally failed record"
+          description: "Inspect last_error, repair routing or payload, then replay the record deliberately."
           runbook_url: "docs/runbooks/broker-lag.md"

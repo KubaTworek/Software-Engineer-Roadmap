@@ -8,6 +8,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 
 import java.time.Duration;
 import java.util.UUID;
+import pl.jakubtworek.backend.common.web.DeadlineContext;
 
 /**
  * Klient HTTP do Catalog Service używany przez Reservation Service.
@@ -103,7 +104,7 @@ public class CatalogClient {
                  * Jeśli availability nie przyjdzie w rozsądnym czasie, rezerwacja zostanie
                  * bezpiecznie odrzucona.
                  */
-                .timeout(Duration.ofSeconds(2))
+                .timeout(DeadlineContext.timeoutCappedAt(Duration.ofSeconds(2)))
 
                 /*
                  * ReservationService działa synchronicznie, więc blokujemy na wyniku Mono.
@@ -137,6 +138,6 @@ public class CatalogClient {
      * To minimalny kontrakt HTTP potrzebny Reservation Service do podjęcia decyzji,
      * czy można utworzyć rezerwację.
      */
-    public record AvailabilityResponse(UUID eventId, int availableTickets) {
+    public record AvailabilityResponse(UUID eventId, int totalTickets, int availableTickets) {
     }
 }

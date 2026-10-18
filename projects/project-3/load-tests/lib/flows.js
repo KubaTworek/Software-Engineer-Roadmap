@@ -80,7 +80,8 @@ export function createOrderFromReservation(reservationId, userId) {
       }
 
       const status = safeJson(r, 'status');
-      return ['PAID', 'PAYMENT_PENDING', 'FAILED'].includes(status);
+      return ['PAID', 'PAYMENT_UNKNOWN', 'RESERVATION_CONFIRMATION_PENDING',
+        'COMPENSATION_PENDING', 'MANUAL_REVIEW', 'FAILED'].includes(status);
     },
   });
 

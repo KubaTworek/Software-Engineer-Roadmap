@@ -1,0 +1,75 @@
+name: Project 3 CI
+
+on:
+  workflow_dispatch:
+  push:
+    paths: ['projects/project-3/**', '.github/workflows/project-3-ci.yml']
+  pull_request:
+    paths: ['projects/project-3/**', '.github/workflows/project-3-ci.yml']
+
+jobs:
+  fast-verification:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: projects/project-3
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21', cache: maven}
+      - run: chmod +x mvnw
+      - run: ./mvnw --batch-mode --no-transfer-progress verify
+      - name: Reject whitespace errors in the submitted change
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            git diff --check "${{ github.event.pull_request.base.sha }}...HEAD"
+          else
+            git diff-tree --check --root -r HEAD
+          fi
+        working-directory: .
+      - run: docker compose config --quiet
+
+  infrastructure-contracts:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: projects/project-3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21', cache: maven}
+      - run: chmod +x mvnw
+      - run: ./mvnw --batch-mode --no-transfer-progress -Pinfrastructure-tests verify
+
+  system-workflow:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: projects/project-3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and start the complete application
+        run: docker compose --profile apps up --detach --build --wait
+      - name: Verify saga, outbox, inbox and durable payment
+        run: bash ./scripts/smoke-test.sh
+      - name: Preserve diagnostic logs after a failure
+        if: failure()
+        run: docker compose --profile apps logs --no-color
+      - name: Stop the environment
+        if: always()
+        run: docker compose --profile apps down --volumes
+
+  terraform-static-checks:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: projects/project-3/infra/aws/terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with: {terraform_version: '1.9.8'}
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false
+      - run: terraform validate

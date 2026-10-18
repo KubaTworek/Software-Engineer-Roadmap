@@ -10,7 +10,7 @@ Faza 3 domyka pierwszy senior-level fragment projektu. Celem nie jest tylko dopi
 | Rate limiting | `api-gateway` | Redisowy token bucket per IP albo per `X-API-Key`; działa między wieloma instancjami gatewaya. |
 | Circuit breaker | `reservation-service`, `order-service` | Osobne circuit breakery dla `catalog`, `reservation`, `payment`. |
 | Retry/backoff | `reservation-service`, `order-service` | Krótkie retry z exponential backoff; brak nieskończonych ponowień. |
-| Graceful degradation | `api-gateway`, `catalog-service`, `order-service` | Gateway fail-open przy Redis down, katalog działa bez cache, order przechodzi do `PAYMENT_PENDING`. |
+| Graceful degradation | `api-gateway`, `catalog-service`, `order-service` | Gateway fail-open przy Redis down, katalog działa bez cache, order przechodzi do jawnego stanu niepewności i rekoncyliacji. |
 | Idempotency key | `order-service` | `Idempotency-Key` zwraca istniejące zamówienie zamiast tworzyć duplikat. |
 | Timeouty HTTP | `common` | Wspólny timeout connect/response dla `WebClient` + lokalne `.timeout()` w klientach krytycznych. |
 
@@ -114,7 +114,7 @@ Klient `PaymentClient` ma:
 `OrderService` łapie problem z płatnością i ustawia status:
 
 ```text
-PAYMENT_PENDING
+PAYMENT_UNKNOWN
 ```
 
 To jest graceful degradation: zamówienie nie znika i nie blokuje requestu w nieskończoność. Można później dodać asynchroniczny retry płatności.
@@ -226,7 +226,7 @@ Uruchom `payment-mock-service` z wysokim failure rate:
 PAYMENT_FAILURE_RATE=1.0 PAYMENT_MAX_DELAY_MS=100 docker compose --profile apps up --build payment-mock-service order-service
 ```
 
-Potem wykonaj happy path. Oczekiwany wynik: zamówienie dostaje status `PAYMENT_PENDING`, a nie niekontrolowany błąd 500.
+Potem wykonaj happy path. Oczekiwany wynik: zamówienie dostaje status `PAYMENT_UNKNOWN`, a worker używa lookupu; nie powstaje fałszywy sukces ani niekontrolowany błąd 500.
 
 ## Co jeszcze nie jest production-grade
 

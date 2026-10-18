@@ -30,6 +30,13 @@ resource "aws_ecs_task_definition" "service" {
         }
       ]
 
+      secrets = [
+        for k, v in local.service_secrets[each.key] : {
+          name      = k
+          valueFrom = v
+        }
+      ]
+
       logConfiguration = {
         logDriver = "awslogs"
         options = {

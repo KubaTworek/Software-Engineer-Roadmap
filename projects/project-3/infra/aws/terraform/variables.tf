@@ -31,7 +31,19 @@ variable "enable_nat_gateway" {
 variable "container_image_tag" {
   description = "Docker image tag used by ECS task definitions."
   type        = string
-  default     = "latest"
+  default     = "0.1.0"
+}
+
+variable "enable_high_availability" {
+  description = "Enables Multi-AZ data services. Keep false for low-cost dev; production must explicitly enable it."
+  type        = bool
+  default     = false
+}
+
+variable "protect_data" {
+  description = "Enables deletion protection and a final RDS snapshot. Production must set this to true."
+  type        = bool
+  default     = false
 }
 
 variable "app_cpu" {
@@ -86,6 +98,10 @@ variable "database_password" {
   description = "RDS master password. Use a tfvars file or environment variable for real deployments."
   type        = string
   sensitive   = true
+  validation {
+    condition     = length(var.database_password) >= 16
+    error_message = "Database password must contain at least 16 characters."
+  }
 }
 
 variable "rds_instance_class" {
@@ -128,6 +144,10 @@ variable "mq_password" {
   description = "Amazon MQ RabbitMQ password. Use a tfvars file or environment variable for real deployments."
   type        = string
   sensitive   = true
+  validation {
+    condition     = length(var.mq_password) >= 16
+    error_message = "MQ password must contain at least 16 characters."
+  }
 }
 
 variable "log_retention_days" {

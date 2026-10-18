@@ -5,7 +5,16 @@ spring:
     # Dzięki temu w Grafanie/Prometheusie/Tempo można odróżnić notification-service
     # od pozostałych mikroserwisów.
     name: notification-service
-
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5436/notifications}
+    username: ${SPRING_DATASOURCE_USERNAME:app}
+    password: ${SPRING_DATASOURCE_PASSWORD:app}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
   rabbitmq:
     # Host RabbitMQ, z którego Notification Service konsumuje eventy.
     #
@@ -29,6 +38,12 @@ spring:
     # Produkcyjnie powinno pochodzić z secrets managera albo zmiennych środowiskowych,
     # a nie z jawnego pliku konfiguracyjnego.
     password: ${SPRING_RABBITMQ_PASSWORD:guest}
+    listener:
+      simple:
+        # Po wyczerpaniu retry błąd trafia przez DLX do DLQ, zamiast tworzyć hot loop.
+        default-requeue-rejected: false
+        # Instrumentacja wyciąga traceparent z AMQP i otwiera consumer span.
+        observation-enabled: true
 
 server:
   # Port HTTP notification-service.
