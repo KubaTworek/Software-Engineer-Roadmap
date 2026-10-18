@@ -1,523 +1,217 @@
 package com.example.autocomplete.service;
 
-import com.example.autocomplete.abtest.*;
+import com.example.autocomplete.abtest.ExperimentAssignmentService;
+import com.example.autocomplete.abtest.ExperimentVariant;
 import com.example.autocomplete.abuse.AbuseDetectionService;
 import com.example.autocomplete.cache.AutocompleteCache;
 import com.example.autocomplete.index.*;
 import com.example.autocomplete.language.LanguageDetector;
 import com.example.autocomplete.model.*;
 import com.example.autocomplete.personalization.SearchHistoryStore;
+import com.example.autocomplete.pipeline.EventSanitizer;
+import com.example.autocomplete.pipeline.QueryEvent;
+import com.example.autocomplete.pipeline.QueryTelemetrySink;
 import com.example.autocomplete.policy.SafetyPolicyFilter;
 import com.example.autocomplete.ranking.SuggestionRanker;
 import com.example.autocomplete.rollout.IndexRegistry;
 import io.micrometer.core.instrument.*;
-import io.micrometer.core.instrument.Timer;
 import org.springframework.stereotype.Service;
 
-import java.time.Duration;
-import java.util.*;
+import java.time.Clock;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 /**
- * Główna warstwa aplikacyjna Search Autocomplete.
+ * Kanoniczny serving flow: validate → normalize → abuse gate → candidate cache
+ * → snapshot/delta/fuzzy retrieval → dedup → rank → final policy gate.
  *
- * Ta klasa jest orkiestratorem całego requestu:
- * - waliduje limit,
- * - wykrywa język,
- * - normalizuje query,
- * - sprawdza abuse/rate limit,
- * - przypisuje wariant A/B,
- * - wybiera aktywną wersję indeksu,
- * - sprawdza cache,
- * - pobiera kandydatów z indeksu głównego i delta indexu,
- * - filtruje sugestie przez safety policy,
- * - rankinguje wyniki,
- * - zapisuje wynik do cache,
- * - aktualizuje historię sesji,
- * - zapisuje metryki latency i blokad.
- *
- * Controller powinien być cienki, a większość logiki requestu
- * znajduje się właśnie tutaj.
+ * Najważniejsza reguła znajduje się na końcu, nie tylko przy ingestion: żadna
+ * ścieżka (w tym cache hit) nie może ominąć aktualnej polityki bezpieczeństwa.
  */
 @Service
 public class AutocompleteService {
-
-    /**
-     * Domyślna liczba sugestii zwracana klientowi,
-     * jeśli request nie poda parametru limit.
-     */
     private static final int DEFAULT_LIMIT = 10;
-
-    /**
-     * Twardy limit bezpieczeństwa.
-     *
-     * Chroni system przed requestami typu:
-     * /autocomplete?q=iph&limit=100000
-     */
     private static final int MAX_LIMIT = 20;
-
-    /**
-     * Pobieramy więcej kandydatów niż finalnie zwracamy.
-     *
-     * Przykład:
-     * limit = 10
-     * candidate limit = 100
-     *
-     * Dzięki temu ranker ma z czego wybierać.
-     * Gdybyśmy pobrali tylko 10 kandydatów z indeksu, ranking byłby zbyt ograniczony.
-     */
     private static final int CANDIDATE_MULTIPLIER = 10;
 
-    /**
-     * Rejestr aktywnych wersji indeksu.
-     *
-     * Service nie wie, która wersja indeksu jest produkcyjna.
-     * Pyta registry.active() i dostaje aktualnie aktywny indeks.
-     *
-     * To umożliwia rollout i rollback indeksów bez restartu aplikacji.
-     */
     private final IndexRegistry registry;
-
-    /**
-     * Realtime delta index.
-     *
-     * Przechowuje świeże/trending sugestie, które nie muszą jeszcze znajdować się
-     * w głównym batchowym indeksie.
-     *
-     * Dzięki temu system może reagować szybciej niż pełny rebuild indeksu.
-     */
     private final RealtimeDeltaIndex deltaIndex;
-
-    /**
-     * Moduł rankingu.
-     *
-     * Sortuje kandydatów według wielu sygnałów:
-     * - popularność,
-     * - CTR,
-     * - konwersje,
-     * - jakość,
-     * - personalizacja,
-     * - locale/country,
-     * - trendy,
-     * - wariant eksperymentu A/B.
-     */
     private final SuggestionRanker ranker;
-
-    /**
-     * Normalizuje query.
-     *
-     * Przykład:
-     * "  iPhone-15 Pro!! " -> "iphone 15 pro"
-     *
-     * Normalizacja jest ważna dla cache key, wyszukiwania i rankingu.
-     */
     private final TextNormalizer normalizer;
-
-    /**
-     * Wykrywa lub ustala locale requestu.
-     *
-     * Jeśli klient poda locale, używamy go.
-     * Jeśli nie, można próbować wykryć język z query.
-     */
+    private final CanonicalKeyGenerator keyGenerator;
     private final LanguageDetector languageDetector;
-
-    /**
-     * Filtr bezpieczeństwa dla sugestii.
-     *
-     * Usuwa sugestie:
-     * - ręcznie zablokowane,
-     * - spamowe,
-     * - niskiej jakości,
-     * - zawierające zablokowane terminy.
-     */
     private final SafetyPolicyFilter safetyFilter;
-
-    /**
-     * Moduł ochrony przed abuse.
-     *
-     * Może blokować requesty np. po IP, gdy klient przekracza limit requestów.
-     * To chroni autocomplete przed scrapingiem i nadmiernym ruchem.
-     */
     private final AbuseDetectionService abuseDetection;
-
-    /**
-     * Stabilne przypisanie użytkownika do wariantu eksperymentu A/B.
-     *
-     * Wariant wpływa na ranking, np.:
-     * - CONTROL,
-     * - CTR_HEAVY,
-     * - TRENDING_HEAVY.
-     */
     private final ExperimentAssignmentService experimentService;
-
-    /**
-     * Historia wyszukiwań w aktualnej sesji.
-     *
-     * Używana do kontekstowego rankingu.
-     * Przykład: jeśli w sesji użytkownik szukał "macbook",
-     * kolejne sugestie Apple mogą dostać dodatkowy boost.
-     */
     private final SearchHistoryStore historyStore;
-
-    /**
-     * Lokalny cache autocomplete.
-     *
-     * Cache key zawiera nie tylko query, ale też:
-     * - userId,
-     * - sessionId,
-     * - locale,
-     * - country,
-     * - category,
-     * - wariant A/B,
-     * - wersję indeksu,
-     * - limit.
-     *
-     * To ważne, bo odpowiedź może się różnić dla różnych użytkowników
-     * i różnych wersji indeksu.
-     */
     private final AutocompleteCache cache;
+    private final EventSanitizer eventSanitizer;
+    private final QueryTelemetrySink telemetrySink;
+    private final Clock clock;
 
-    /**
-     * Metryka latency całego requestu autocomplete.
-     *
-     * Eksportowana przez Micrometer/Actuator/Prometheus.
-     */
-    private final Timer timer;
-
-    /**
-     * Licznik requestów zablokowanych przez abuse detection lub policy.
-     *
-     * W tej klasie inkrementowany przy abuse block.
-     * Można go rozszerzyć także o blokady safety/policy.
-     */
+    private final MeterRegistry meterRegistry;
+    private final Timer requestTimer;
     private final Counter blockedCounter;
+    private final Counter cacheHitCounter;
+    private final Counter zeroResultCounter;
+    private final DistributionSummary candidateCount;
 
     public AutocompleteService(IndexRegistry registry, RealtimeDeltaIndex deltaIndex, SuggestionRanker ranker,
-                               TextNormalizer normalizer, LanguageDetector languageDetector, SafetyPolicyFilter safetyFilter,
+                               TextNormalizer normalizer, CanonicalKeyGenerator keyGenerator,
+                               LanguageDetector languageDetector, SafetyPolicyFilter safetyFilter,
                                AbuseDetectionService abuseDetection, ExperimentAssignmentService experimentService,
-                               SearchHistoryStore historyStore, AutocompleteCache cache, MeterRegistry meterRegistry) {
+                               SearchHistoryStore historyStore, AutocompleteCache cache,
+                               EventSanitizer eventSanitizer, QueryTelemetrySink telemetrySink,
+                               Clock clock, MeterRegistry meterRegistry) {
         this.registry = registry;
         this.deltaIndex = deltaIndex;
         this.ranker = ranker;
         this.normalizer = normalizer;
+        this.keyGenerator = keyGenerator;
         this.languageDetector = languageDetector;
         this.safetyFilter = safetyFilter;
         this.abuseDetection = abuseDetection;
         this.experimentService = experimentService;
         this.historyStore = historyStore;
         this.cache = cache;
-
-        /*
-         * Rejestrujemy metryki techniczne.
-         *
-         * autocomplete_platform_latency:
-         * - mierzy czas obsługi requestu autocomplete.
-         *
-         * autocomplete_policy_or_abuse_blocks:
-         * - liczy requesty/sytuacje zablokowane ze względów bezpieczeństwa.
-         */
-        this.timer = meterRegistry.timer("autocomplete_platform_latency");
-        this.blockedCounter = meterRegistry.counter("autocomplete_policy_or_abuse_blocks");
+        this.eventSanitizer = eventSanitizer;
+        this.telemetrySink = telemetrySink;
+        this.clock = clock;
+        this.meterRegistry = meterRegistry;
+        this.requestTimer = Timer.builder("autocomplete.request.latency")
+                .publishPercentileHistogram().register(meterRegistry);
+        this.blockedCounter = meterRegistry.counter("autocomplete.requests", "outcome", "abuse_blocked");
+        this.cacheHitCounter = meterRegistry.counter("autocomplete.candidate_cache", "result", "hit");
+        this.zeroResultCounter = meterRegistry.counter("autocomplete.requests", "outcome", "zero_results");
+        this.candidateCount = DistributionSummary.builder("autocomplete.candidates")
+                .description("Candidate count after merge and current policy")
+                .register(meterRegistry);
     }
 
-    /**
-     * Główna metoda obsługująca autocomplete.
-     *
-     * To jest pełny request flow:
-     *
-     * 1. Pomiar czasu.
-     * 2. Sanityzacja limitu.
-     * 3. Detekcja języka.
-     * 4. Normalizacja query.
-     * 5. Zbudowanie kontekstu requestu.
-     * 6. Abuse detection.
-     * 7. Assignment do eksperymentu A/B.
-     * 8. Pobranie aktywnego indeksu.
-     * 9. Cache lookup.
-     * 10. Candidate generation.
-     * 11. Safety filtering.
-     * 12. Ranking.
-     * 13. Cache write.
-     * 14. Aktualizacja historii sesji.
-     * 15. Zapis latency.
-     * 16. Zwrócenie odpowiedzi.
-     */
-    public AutocompleteResult autocomplete(
-            String query,
-            Integer requestedLimit,
-            String userId,
-            String sessionId,
-            String locale,
-            String country,
-            String category,
-            String clientIp
-    ) {
-        /*
-         * Start pomiaru latency.
-         *
-         * Używamy nanoTime, bo nadaje się do mierzenia czasu trwania operacji.
-         */
-        long start = System.nanoTime();
-
-        /*
-         * Nie ufamy limitowi z requestu.
-         *
-         * Limit jest ograniczany do zakresu:
-         * - default: 10,
-         * - max: 20.
-         */
-        int limit = sanitizeLimit(requestedLimit);
-
-        /*
-         * Locale wpływa na ranking i dopasowanie sugestii.
-         *
-         * Jeśli klient poda locale, detector może go zaakceptować.
-         * Jeśli nie, może użyć fallbacku lub wykrywania po query.
-         */
-        String detectedLocale = languageDetector.detect(query, locale);
-
-        /*
-         * Jedna wspólna reprezentacja query dla:
-         * - cache key,
-         * - wyszukiwania,
-         * - rankingu,
-         * - historii sesji.
-         */
-        String normalized = normalizer.normalize(query);
-
-        /*
-         * Kontekst requestu agreguje wszystkie informacje wpływające na wynik.
-         *
-         * Dzięki temu niższe warstwy nie muszą dostawać wielu osobnych parametrów.
-         */
-        AutocompleteContext ctx = new AutocompleteContext(
-                userId,
-                sessionId,
-                detectedLocale,
-                country,
-                category,
-                query,
-                normalized,
-                clientIp
-        );
-
-        /*
-         * Pierwsza bramka bezpieczeństwa.
-         *
-         * Jeśli klient wygląda na abuse/bota/scrapera, nie wykonujemy:
-         * - cache lookup,
-         * - wyszukiwania,
-         * - rankingu.
-         *
-         * Oszczędza to zasoby i chroni system.
-         */
-        if (!abuseDetection.isAllowed(ctx)) {
-            blockedCounter.increment();
-
-            return new AutocompleteResult(
-                    List.of(),
-                    null,
-                    "ABUSE_BLOCKED",
-                    registry.activeVersion(),
-                    ExperimentVariant.CONTROL,
-                    elapsedMs(start)
+    public AutocompleteResult autocomplete(String query, Integer requestedLimit, String userId, String sessionId,
+                                           String locale, String country, String category, String clientIp) {
+        Timer.Sample sample = Timer.start(meterRegistry);
+        long started = System.nanoTime();
+        try {
+            int limit = sanitizeLimit(requestedLimit);
+            String normalized = normalizer.normalize(query);
+            String detectedLocale = languageDetector.detect(query, locale);
+            AutocompleteContext context = new AutocompleteContext(
+                    userId, sessionId, detectedLocale, country, category, query, normalized, clientIp
             );
+
+            // Telemetria opuszcza request path dopiero po pseudonimizacji i redakcji PII.
+            telemetrySink.record(eventSanitizer.sanitize(new QueryEvent(
+                    context.safeUserId(), context.safeSessionId(), query, context.safeLocale(),
+                    context.safeCountry(), context.safeClientIp(), clock.instant()
+            )));
+
+            if (!abuseDetection.isAllowed(context)) {
+                blockedCounter.increment();
+                return empty("ABUSE_BLOCKED", safeActiveVersion(), ExperimentVariant.CONTROL, started);
+            }
+
+            String experimentSubject = "anonymous".equals(context.safeUserId())
+                    ? "session:" + context.safeSessionId()
+                    : context.safeUserId();
+            ExperimentVariant variant = experimentService.assign(experimentSubject, "ranking-v1");
+            AutocompleteIndex activeIndex = registry.active();
+            if (normalized.length() < 2) {
+                zeroResultCounter.increment();
+                return empty("TOO_SHORT", activeIndex.version(), variant, started);
+            }
+
+            int candidateLimit = limit * CANDIDATE_MULTIPLIER;
+            String cacheKey = cache.candidateKey(normalized, context.safeLocale(), context.safeCountry(), category,
+                    activeIndex.version(), deltaIndex.version(), safetyFilter.version(), candidateLimit);
+
+            Optional<List<Suggestion>> cached = cache.getCandidates(cacheKey);
+            List<Suggestion> candidates;
+            String cacheStatus;
+            if (cached.isPresent()) {
+                cacheHitCounter.increment();
+                candidates = cached.get();
+                cacheStatus = "CANDIDATE_HIT";
+            } else {
+                candidates = retrieve(activeIndex, normalized, context, candidateLimit);
+                cache.putCandidates(cacheKey, candidates);
+                cacheStatus = "CANDIDATE_MISS";
+            }
+
+            // Defense in depth: policy jest ponawiana nawet po cache hit. Gdy polityka
+            // zmieni się pomiędzy lookupem i odpowiedzią, stara sugestia nie wycieknie.
+            candidates = candidates.stream()
+                    .filter(suggestion -> safetyFilter.evaluate(suggestion).allowed())
+                    .toList();
+            candidateCount.record(candidates.size());
+
+            List<RankedSuggestion> ranked = ranker.rank(
+                            candidates, context, activeIndex.stats().maxPopularity(), limit, variant)
+                    .stream()
+                    .filter(result -> safetyFilter.evaluate(result.suggestion()).allowed())
+                    .toList();
+
+            historyStore.recordSessionQuery(context.safeSessionId(), normalized);
+            if (ranked.isEmpty()) zeroResultCounter.increment();
+            return new AutocompleteResult(ranked, null, cacheStatus, activeIndex.version(), variant, elapsedMillis(started));
+        } finally {
+            sample.stop(requestTimer);
+        }
+    }
+
+    private List<Suggestion> retrieve(AutocompleteIndex index, String normalized,
+                                      AutocompleteContext context, int candidateLimit) {
+        List<Suggestion> base = index.candidates(normalized, candidateLimit);
+        List<Suggestion> delta = deltaIndex.candidates(normalized, Math.min(candidateLimit, 40));
+        if (base.isEmpty() && delta.isEmpty()) {
+            base = index.fuzzyCandidates(normalized, normalized.length() <= 5 ? 1 : 2, candidateLimit);
         }
 
-        /*
-         * Stabilny wariant eksperymentu rankingowego.
-         *
-         * Ten sam użytkownik powinien trafiać do tego samego wariantu,
-         * żeby wyniki były spójne i żeby można było mierzyć efekty A/B testu.
-         */
-        ExperimentVariant variant = experimentService.assign(ctx.safeUserId(), "ranking-v6");
+        // Delta ma pierwszeństwo przed snapshotem dla tego samego canonical key.
+        Map<String, Suggestion> merged = new LinkedHashMap<>();
+        base.forEach(suggestion -> merged.put(keyGenerator.canonicalKey(suggestion.displayText()), suggestion));
+        delta.forEach(suggestion -> merged.put(keyGenerator.canonicalKey(suggestion.displayText()), suggestion));
 
-        /*
-         * Pobieramy aktywny indeks z registry.
-         *
-         * To jest kluczowe dla rollout/rollback:
-         * service nie ma na sztywno przypiętej wersji indeksu.
-         */
-        AutocompleteIndex activeIndex = registry.active();
-
-        /*
-         * Cache key musi zawierać wszystkie elementy, które mogą zmienić wynik.
-         *
-         * Gdybyśmy użyli tylko query jako klucza, moglibyśmy zwrócić:
-         * - wynik innego użytkownika,
-         * - wynik dla innego kraju,
-         * - wynik z innego eksperymentu,
-         * - wynik ze starej wersji indeksu.
-         */
-        String cacheKey = cache.key(
-                normalized,
-                ctx.safeUserId(),
-                ctx.safeSessionId(),
-                ctx.safeLocale(),
-                ctx.safeCountry(),
-                category,
-                variant.name(),
-                activeIndex.version(),
-                limit
-        );
-
-        /*
-         * Fast path.
-         *
-         * Jeśli odpowiedź jest w cache, zwracamy ją od razu.
-         * Pomijamy candidate generation, safety filtering i ranking.
-         */
-        Optional<List<RankedSuggestion>> cached = cache.get(cacheKey);
-        if (cached.isPresent()) {
-            return new AutocompleteResult(
-                    cached.get(),
-                    null,
-                    "L1_HIT",
-                    activeIndex.version(),
-                    variant,
-                    elapsedMs(start)
-            );
-        }
-
-        /*
-         * Candidate generation z głównego indeksu.
-         *
-         * Pobieramy więcej kandydatów niż finalny limit,
-         * żeby ranker mógł wybrać najlepsze sugestie.
-         */
-        List<Suggestion> candidates = new ArrayList<>(
-                activeIndex.candidates(query, limit * CANDIDATE_MULTIPLIER)
-        );
-
-        /*
-         * Dodajemy świeże sugestie z delta indexu.
-         *
-         * Delta index reprezentuje dane near-real-time:
-         * - trendy,
-         * - świeże zapytania,
-         * - nowe encje,
-         * - hot topics.
-         *
-         * Dzięki temu nie trzeba czekać na pełny batch rebuild indeksu.
-         */
-        candidates.addAll(deltaIndex.candidates(query, limit * 2));
-
-        /*
-         * Safety filtering przed rankingiem.
-         *
-         * Usuwamy sugestie, które nie powinny zostać pokazane użytkownikowi.
-         * To powinno dziać się przed rankingiem, żeby ranker nie promował
-         * treści, które i tak są niedozwolone.
-         */
-        candidates = candidates.stream()
-                .filter(s -> safetyFilter.evaluate(s).allowed())
+        return merged.values().stream()
+                .filter(suggestion -> matchesLocale(suggestion, context))
+                .filter(suggestion -> safetyFilter.evaluate(suggestion).allowed())
+                .limit(candidateLimit)
                 .toList();
-
-        /*
-         * Ranking finalny.
-         *
-         * Ranker bierze pod uwagę:
-         * - metryki sugestii,
-         * - kontekst użytkownika,
-         * - locale/country,
-         * - historię sesji,
-         * - trendy,
-         * - wariant A/B.
-         */
-        List<RankedSuggestion> ranked = ranker.rank(
-                candidates,
-                ctx,
-                activeIndex.stats().maxPopularity(),
-                limit,
-                variant
-        );
-
-        /*
-         * Zapisujemy wynik do cache.
-         *
-         * Kolejne identyczne requesty dla tego samego kontekstu
-         * będą obsłużone szybciej.
-         */
-        cache.put(cacheKey, ranked);
-
-        /*
-         * Aktualizujemy historię sesji po wyliczeniu odpowiedzi.
-         *
-         * Ta historia może wpłynąć na ranking kolejnych requestów
-         * w tej samej sesji.
-         */
-        historyStore.recordSessionQuery(ctx.safeSessionId(), normalized);
-
-        /*
-         * Zapis latency do metryk.
-         *
-         * Ta metryka pozwala monitorować p95/p99 i wykrywać regresje.
-         */
-        timer.record(Duration.ofMillis(elapsedMs(start)));
-
-        /*
-         * Zwracamy wynik wraz z metadanymi technicznymi.
-         *
-         * Metadata jest ważna do debugowania:
-         * - cacheStatus,
-         * - indexVersion,
-         * - experimentVariant,
-         * - latencyMs.
-         */
-        return new AutocompleteResult(
-                ranked,
-                null,
-                "MISS",
-                activeIndex.version(),
-                variant,
-                elapsedMs(start)
-        );
     }
 
-    /**
-     * Ogranicza limit wyników do bezpiecznego zakresu.
-     *
-     * To zabezpiecza backend przed nadmiernie dużymi odpowiedziami
-     * i utrzymuje przewidywalne latency.
-     */
-    public int sanitizeLimit(Integer l) {
-        return l == null || l < 1
-                ? DEFAULT_LIMIT
-                : Math.min(l, MAX_LIMIT);
+    private boolean matchesLocale(Suggestion suggestion, AutocompleteContext context) {
+        boolean locale = suggestion.locales().isEmpty() || suggestion.locales().contains(context.safeLocale());
+        boolean country = suggestion.countries().isEmpty() || suggestion.countries().contains(context.safeCountry());
+        return locale && country;
     }
 
-    /**
-     * Zwraca statystyki aktywnego indeksu.
-     *
-     * Używane przez endpoint diagnostyczny/adminowy.
-     */
+    private AutocompleteResult empty(String status, String indexVersion, ExperimentVariant variant, long started) {
+        return new AutocompleteResult(List.of(), null, status, indexVersion, variant, elapsedMillis(started));
+    }
+
+    private long elapsedMillis(long started) {
+        return (System.nanoTime() - started) / 1_000_000;
+    }
+
+    private String safeActiveVersion() {
+        try {
+            return registry.activeVersion();
+        } catch (RuntimeException ignored) {
+            return "unavailable";
+        }
+    }
+
+    public int sanitizeLimit(Integer limit) {
+        return limit == null || limit < 1 ? DEFAULT_LIMIT : Math.min(limit, MAX_LIMIT);
+    }
+
     public IndexStats indexStats() {
         return registry.active().stats();
     }
 
-    /**
-     * Liczy czas od startu requestu w milisekundach.
-     */
-    private long elapsedMs(long start) {
-        return (System.nanoTime() - start) / 1_000_000;
-    }
-
-    /**
-     * DTO wyniku zwracanego z warstwy service do controllera.
-     *
-     * Zawiera nie tylko sugestie, ale też metadane runtime:
-     * - correctedQuery: miejsce pod spell correction,
-     * - cacheStatus: HIT/MISS/BLOCK,
-     * - indexVersion: użyta wersja indeksu,
-     * - experimentVariant: wariant A/B,
-     * - latencyMs: czas obsługi requestu.
-     */
-    public record AutocompleteResult(
-            List<RankedSuggestion> suggestions,
-            String correctedQuery,
-            String cacheStatus,
-            String indexVersion,
-            ExperimentVariant experimentVariant,
-            long latencyMs
-    ) {
-    }
+    public record AutocompleteResult(List<RankedSuggestion> suggestions, String correctedQuery,
+                                     String cacheStatus, String indexVersion,
+                                     ExperimentVariant experimentVariant, long latencyMs) {}
 }

@@ -53,7 +53,10 @@ public class TextNormalizer {
      *
      * Wszystko inne, np. "-", "!", ".", "_", zamieniamy później na spację.
      */
-    private static final Pattern NON_SEARCH_CHARS = Pattern.compile("[^a-z0-9\\s]");
+    // Zachowujemy litery i cyfry ze wszystkich alfabetów. Sprowadzanie tekstu
+    // wyłącznie do ASCII usuwałoby całe zapytania zapisane cyrylicą, po japońsku
+    // lub po chińsku i przeczyłoby obietnicy indeksów per locale.
+    private static final Pattern NON_SEARCH_CHARS = Pattern.compile("[^\\p{L}\\p{N}\\s]");
 
     /**
      * Regex wykrywający wiele spacji lub białych znaków obok siebie.

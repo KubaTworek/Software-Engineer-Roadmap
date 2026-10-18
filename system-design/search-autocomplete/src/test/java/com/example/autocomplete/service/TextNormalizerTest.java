@@ -25,4 +25,9 @@ class TextNormalizerTest {
         assertThat(textNormalizer.normalize(null))
                 .isEmpty();
     }
+
+    @Test
+    void shouldPreserveNonLatinScripts() {
+        assertThat(textNormalizer.normalize("Москва 東京")).isEqualTo("москва 東京");
+    }
 }

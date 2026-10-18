@@ -143,7 +143,8 @@ public class SuggestionRanker {
                 /*
                  * Najlepsze sugestie idą na górę.
                  */
-                .sorted(Comparator.comparingDouble(RankedSuggestion::score).reversed())
+                .sorted(Comparator.comparingDouble(RankedSuggestion::score).reversed()
+                        .thenComparing(r -> r.suggestion().id()))
 
                 /*
                  * Zwracamy tylko tyle sugestii, ile oczekuje klient.

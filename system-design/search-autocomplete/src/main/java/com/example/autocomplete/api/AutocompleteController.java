@@ -9,6 +9,11 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.validation.annotation.Validated;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Size;
+import org.springframework.security.core.Authentication;
 
 import java.time.Duration;
 import java.util.List;
@@ -25,6 +30,7 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/api/v1")
+@Validated
 public class AutocompleteController {
 
     /**
@@ -63,10 +69,10 @@ public class AutocompleteController {
      * Główny endpoint autocomplete.
      *
      * Przykład:
-     * GET /api/v1/autocomplete?q=iph&userId=u-apple&sessionId=s1&locale=en-US&country=US
+     * GET /api/v1/autocomplete?q=iph&sessionId=s1&locale=en-US&country=US
      *
      * Parametry kontekstowe są ważne, bo wpływają na ranking:
-     * - userId: personalizacja,
+     * - uwierzytelniona tożsamość: personalizacja bez zaufania do userId podanego przez klienta,
      * - sessionId: kontekst aktualnej sesji,
      * - locale: język,
      * - country: lokalne trendy,
@@ -75,13 +81,13 @@ public class AutocompleteController {
      */
     @GetMapping("/autocomplete")
     public ResponseEntity<AutocompleteResponse> autocomplete(
-            @RequestParam("q") String query,
-            @RequestParam(value = "limit", required = false) Integer limit,
-            @RequestParam(value = "userId", required = false) String userId,
-            @RequestParam(value = "sessionId", required = false) String sessionId,
-            @RequestParam(value = "locale", required = false) String locale,
-            @RequestParam(value = "country", required = false) String country,
-            @RequestParam(value = "category", required = false) String category,
+            @RequestParam("q") @Size(min = 1, max = 100) String query,
+            @RequestParam(value = "limit", required = false) @Min(1) @Max(20) Integer limit,
+            @RequestParam(value = "sessionId", required = false) @Size(max = 128) String sessionId,
+            @RequestParam(value = "locale", required = false) @Size(max = 32) String locale,
+            @RequestParam(value = "country", required = false) @Size(max = 8) String country,
+            @RequestParam(value = "category", required = false) @Size(max = 64) String category,
+            Authentication authentication,
             HttpServletRequest request,
             HttpServletResponse response
     ) {
@@ -115,7 +121,7 @@ public class AutocompleteController {
         var result = service.autocomplete(
                 query,
                 effectiveLimit,
-                userId,
+                authentication == null ? "anonymous" : authentication.getName(),
                 sessionId,
                 locale,
                 country,
@@ -150,7 +156,8 @@ public class AutocompleteController {
          * cachePrivate oznacza, że odpowiedź może być cache'owana prywatnie
          * przez klienta/przeglądarkę, ale nie powinna być współdzielona publicznie.
          *
-         * To ważne, bo odpowiedź może zależeć od userId, sessionId i personalizacji.
+         * To ważne, bo odpowiedź może zależeć od uwierzytelnionej tożsamości,
+         * sessionId i personalizacji.
          */
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.maxAge(Duration.ofSeconds(30)).cachePrivate())

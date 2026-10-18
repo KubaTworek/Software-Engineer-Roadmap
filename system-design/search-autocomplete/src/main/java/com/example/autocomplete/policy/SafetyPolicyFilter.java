@@ -2,9 +2,12 @@ package com.example.autocomplete.policy;
 
 import com.example.autocomplete.model.Suggestion;
 import com.example.autocomplete.service.TextNormalizer;
+import com.example.autocomplete.privacy.QueryPrivacyService;
 import org.springframework.stereotype.Component;
 
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Filtr bezpieczeństwa dla sugestii autocomplete.
@@ -31,6 +34,7 @@ public class SafetyPolicyFilter {
      * "FREE!!! Free   Free" -> "free free free"
      */
     private final TextNormalizer normalizer;
+    private final QueryPrivacyService privacyService;
 
     /**
      * Prosta lista zablokowanych fraz.
@@ -48,16 +52,18 @@ public class SafetyPolicyFilter {
      * - "credit card dump" blokuje frazy finansowo-abuse'owe,
      * - "private ssn" blokuje sugestie związane z prywatnymi danymi.
      */
-    private final Set<String> blockedTerms = Set.of(
+    private final AtomicReference<Set<String>> blockedTerms = new AtomicReference<>(Set.of(
             "free free free",
             "spam",
             "leaked password",
             "credit card dump",
             "private ssn"
-    );
+    ));
+    private final AtomicLong version = new AtomicLong(1);
 
-    public SafetyPolicyFilter(TextNormalizer normalizer) {
+    public SafetyPolicyFilter(TextNormalizer normalizer, QueryPrivacyService privacyService) {
         this.normalizer = normalizer;
+        this.privacyService = privacyService;
     }
 
     /**
@@ -94,6 +100,10 @@ public class SafetyPolicyFilter {
          */
         String text = normalizer.normalize(suggestion.displayText());
 
+        if (privacyService.containsPii(suggestion.displayText())) {
+            return PolicyDecision.block("pii_detected");
+        }
+
         /*
          * Blokujemy sugestię, jeśli zawiera którąkolwiek frazę z blocklisty.
          *
@@ -104,7 +114,7 @@ public class SafetyPolicyFilter {
          * displayText = "best credit card dump forum"
          * blockedTerm = "credit card dump"
          */
-        for (String term : blockedTerms) {
+        for (String term : blockedTerms.get()) {
             if (text.contains(term)) {
                 return PolicyDecision.block("blocked_term:" + term);
             }
@@ -132,5 +142,21 @@ public class SafetyPolicyFilter {
          * sugestia może przejść dalej do rankingu/odpowiedzi.
          */
         return PolicyDecision.allow();
+    }
+
+    /**
+     * Atomowa podmiana snapshotu polityki. Rosnąca wersja trafia do klucza
+     * cache, więc odpowiedź policzona pod starą polityką nie jest już hitem.
+     */
+    public void replaceBlockedTerms(Set<String> terms) {
+        blockedTerms.set(terms == null ? Set.of() : terms.stream()
+                .map(normalizer::normalize)
+                .filter(term -> !term.isBlank())
+                .collect(java.util.stream.Collectors.toUnmodifiableSet()));
+        version.incrementAndGet();
+    }
+
+    public long version() {
+        return version.get();
     }
 }
