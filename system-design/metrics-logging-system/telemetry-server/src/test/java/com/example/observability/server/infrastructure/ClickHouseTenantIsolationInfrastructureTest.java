@@ -222,7 +222,9 @@ class ClickHouseTenantIsolationInfrastructureTest {
         dataSource.setDriverClassName("com.clickhouse.jdbc.ClickHouseDriver");
         var repository = new TelemetryRepository(new JdbcTemplate(dataSource), new ObjectMapper(), 100, 5000);
 
-        Instant observedAt = Instant.parse("2026-01-15T10:30:00Z");
+        // ClickHouse evaluates the real 30-day retention TTL. A fixed historical
+        // fixture eventually expires, turning a timezone test into a retention test.
+        Instant observedAt = Instant.now().minusSeconds(60).truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
         var sample = new MetricSampleDto();
         sample.setEventId("00000000-0000-0000-0000-000000000100");
         sample.setTimestamp(observedAt);

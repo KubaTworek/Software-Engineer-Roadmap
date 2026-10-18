@@ -25,8 +25,14 @@ function Get-HeadingIds([string]$content) {
 }
 Push-Location $root
 try {
-    $docs = @(rg --files -g '*.md' -g '!**/target/**' -g '!**/build/**')
-    if ($LASTEXITCODE -ne 0) { throw 'Cannot enumerate repository Markdown files with rg.' }
+    # Git jest już wymagany przez checkout CI. Lista obejmuje też nowe lokalne
+    # dokumenty, respektuje .gitignore i nie wymaga instalowania ripgrep.
+    # Separator NUL zachowuje spacje oraz polskie znaki w ścieżkach.
+    $listing = & git -c "safe.directory=$($root.Replace('\', '/'))" ls-files -z --cached --others --exclude-standard -- '*.md' ':!:**/target/**' ':!:**/build/**'
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot enumerate repository Markdown files with git.' }
+    $docs = @($listing -split "`0" | Where-Object {
+        $_ -and (Test-Path -LiteralPath (Join-Path $root $_) -PathType Leaf)
+    } | Sort-Object -Unique)
     $headingCache = @{}
     $linkCount = 0
     foreach ($doc in $docs) {

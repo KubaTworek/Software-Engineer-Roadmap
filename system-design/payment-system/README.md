@@ -996,6 +996,14 @@ CREATE TABLE idempotency_keys (
 
 ### Zasada
 
+Przejęcie nowego klucza jest operacją **insert-only**, nie upsertem.
+`IdempotencyClaimWriter` używa `EntityManager.persist()` i `flush()` w osobnej
+transakcji. `saveAndFlush()` przy ręcznie nadanym identyfikatorze złożonym może
+wykonać `merge()`: drugi request nadpisze rekord zwycięzcy zamiast przegrać
+na ograniczeniu unikalności. Test `IdempotencyClaimWriterTest` odtwarza ten
+przeplot deterministycznie, a `PaymentGuaranteesTest` sprawdza dwóch równoległych
+klientów. Dopiero zatwierdzony INSERT daje prawo do wykonania operacji.
+
 Pierwszy request atomowo zapisuje `PROCESSING` przed wywołaniem PSP. Kolejny request z tym samym hashem zwraca zapisany rezultat albo informację, że operacja wciąż trwa. Po niejednoznacznym timeoutcie stan `UNKNOWN` jest celowo fail-closed: nie wolno automatycznie przejąć wygasłego lease i ponownie obciążyć PSP; rezultat rozstrzyga webhook lub reconciliation.
 
 Jeśli ten sam `Idempotency-Key` przychodzi z tym samym payloadem, zwracamy tę samą odpowiedź.
