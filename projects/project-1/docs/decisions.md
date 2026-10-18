@@ -1,5 +1,8 @@
 # Decyzje projektowe
 
+> Cały `project-1` realizuje Stage 1 `backend-engineering`. Nagłówki grupują
+> decyzje według problemu; stabilnym identyfikatorem decyzji są numery ADR.
+
 ## 0001 — Start jako zwykły monolit warstwowy
 
 Projekt zaczyna się jako klasyczny monolit Spring Boot z warstwami:
@@ -63,7 +66,34 @@ Późniejsze etapy nadal implementują wariant naiwny i strategie lockowania, al
 
 ---
 
-# Etap 2 — Concurrency
+## 0004 — Trwały deadline rezerwacji i batch expiry w PostgreSQL
+
+Każda rezerwacja zapisuje `expires_at` wyliczone z wstrzykniętego `Clock` i
+konfigurowalnego `hold-duration`. Scheduler okresowo pobiera mały batch przez:
+
+```sql
+ORDER BY expires_at, id
+LIMIT ?
+FOR UPDATE SKIP LOCKED
+```
+
+Po przejściu do `EXPIRED` miejsce jest zwalniane w tej samej transakcji. Encja
+`Reservation` ma `@Version`, aby wyścig `confirm` / `cancel` / `expire` nie
+zatwierdził dwóch sprzecznych przejść.
+
+Powód:
+
+- deadline w bazie przeżywa restart JVM;
+- kilka instancji może podzielić rekordy bez przetwarzania tego samego wiersza;
+- jawny `Clock` pozwala testować dokładną granicę bez `sleep`;
+- rollback obejmuje zarówno zmianę statusu, jak i zwolnienie capacity.
+
+Ograniczenie: `SKIP LOCKED` koordynuje transakcje tej bazy, ale nie jest ogólną
+blokadą rozproszoną ani fencing tokenem. Te gwarancje należą do Stage 3.
+
+---
+
+# Concurrency
 
 ## Decyzja: produkcyjny flow rezerwacji preferuje atomowy update SQL
 
@@ -111,7 +141,7 @@ Jeżeli logika rezerwacji stanie się bardziej złożona i będzie zależała od
 
 ---
 
-# Etap 3 — Asynchroniczność
+# Asynchroniczność
 
 ## Decyzja: async pozostaje wewnątrz monolitu
 
@@ -165,7 +195,7 @@ W tym projekcie stan płatności jest celowo uproszczony i trzymany w statusie r
 
 ---
 
-# Etap 4 — Spring pod maską
+# Spring pod maską
 
 ## Decyzja: pułapki Springa są odizolowane w osobnym pakiecie
 
@@ -202,7 +232,7 @@ Nie jest to domyślna rekomendacja projektowa.
 
 ---
 
-# Etap 5 — SQL i performance
+# SQL i performance
 
 ## Decyzja: pełny dataset nie jest częścią zwykłych testów
 
@@ -312,7 +342,7 @@ Wariant produkcyjny powinien używać jednego z rozwiązań:
 
 ---
 
-# Etap 6 — JVM i profilowanie
+# JVM i profilowanie
 
 ## Decyzja: endpointy profilujące są syntetyczne i edukacyjne
 
@@ -351,12 +381,12 @@ Te endpointy mają stworzyć warunki do pomiaru:
 
 ---
 
-## Decyzja: JMH jest osobnym projektem Mavenowym
+## Decyzja: JMH jest odseparowany od domyślnej suite profilem Maven
 
-Benchmarki JMH są trzymane w katalogu:
+Benchmarki JMH są trzymane w testowym source secie:
 
 ```text
-benchmarks
+src/test/java/pl/jakubtworek/booking/benchmark
 ```
 
 Powód:
@@ -367,7 +397,9 @@ Zwykłe:
 mvn test
 ```
 
-nie powinno uruchamiać mikrobenchmarków.
+nie wykonuje pomiaru. Dopiero profil `jmh-smoke` włącza krótki test poprawności
+uruchomienia harnessu; pełny eksperyment wymaga parametrów opisanych w
+`docs/jvm-profiling.md`.
 
 Testy aplikacyjne sprawdzają tylko, czy scenariusze profilujące da się uruchomić.
 
@@ -385,7 +417,7 @@ Rzeczywiste pomiary wykonuje się przez:
 Test:
 
 ```text
-JvmProfilingStage6IntegrationTest
+JvmProfilingIntegrationTest
 ```
 
 nie udowadnia wydajności.
@@ -407,7 +439,7 @@ Benchmark musi uwzględniać warmup, JIT, izolację środowiska, powtarzalność
 
 ---
 
-# Etap 7 — Security i autoryzacja
+# Security i autoryzacja
 
 ## Decyzja: security pokazujemy jako autoryzację po danych, nie tylko role
 
@@ -435,9 +467,11 @@ Użytkownik z rolą `HR` nie powinien widzieć pracowników z innych tenantów.
 
 ---
 
-## Decyzja: wcześniejsze endpointy edukacyjne pozostają publiczne
+## Decyzja: publiczny read model, chroniony write model
 
-Istniejące endpointy z wcześniejszych etapów pozostają publiczne, a Etap 7 dodaje osobny obszar:
+Publiczne pozostają odczyty katalogu wydarzeń i jawne laboratoria. Główne
+operacje zmieniające eventy i rezerwacje wymagają authentication oraz
+autoryzacji opartej o właściciela danych. Osobny obszar:
 
 ```text
 /api/secure/**
@@ -445,19 +479,17 @@ Istniejące endpointy z wcześniejszych etapów pozostają publiczne, a Etap 7 d
 
 Powód:
 
-Projekt jest etapowy.
+Projekt jest etapowy, dlatego mechanizmy Spring/JVM/NoSQL nie muszą przechodzić
+przez JWT. Testy głównego HTTP flow korzystają jednak z kontrolowanych
+tożsamości, dzięki czemu dowodzą również granicy tenanta. Pozostawione publiczne
+są wyłącznie laboratoria niezależne od security, takie jak:
 
-Gdyby wszystkie wcześniejsze endpointy zostały nagle zabezpieczone, starsze testy:
-
-* MVP,
-* concurrency,
-* async,
 * Spring pitfalls,
 * performance,
+* NoSQL.
 
-przestałyby sprawdzać to, co miały sprawdzać.
-
-Etap 7 pokazuje security na osobnych endpointach, bez psucia wcześniejszych etapów.
+`401` oznacza brak poprawnej tożsamości, a `403` poprawnie uwierzytelnionego
+aktora, który próbuje użyć zasobu innego klienta lub organizacji.
 
 ---
 
@@ -513,7 +545,7 @@ Support może zobaczyć status operacyjny płatności, ale nie powinien widzieć
 
 ---
 
-# Etap 8 — NoSQL i cache
+# NoSQL i cache
 
 ## Decyzja: Redis i MongoDB są dodatkami do monolitu
 

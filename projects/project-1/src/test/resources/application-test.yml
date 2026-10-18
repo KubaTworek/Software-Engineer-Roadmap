@@ -1,4 +1,11 @@
 spring:
+  autoconfigure:
+    # Zwykła suite korzysta z adapterów in-memory. Nie tworzymy klientów Redis/Mongo,
+    # które próbowałyby łączyć się z niedostępną infrastrukturą podczas każdego testu.
+    exclude:
+      - org.springframework.boot.mongodb.autoconfigure.MongoAutoConfiguration
+      - org.springframework.boot.data.mongodb.autoconfigure.DataMongoAutoConfiguration
+      - org.springframework.boot.data.redis.autoconfigure.DataRedisAutoConfiguration
   datasource:
     # Testowa baza H2 uruchamiana w pamięci.
     #
@@ -52,7 +59,7 @@ security:
     #
     # Musi być wystarczająco długi dla algorytmu podpisu,
     # ale nie powinien być używany poza testami.
-    secret: test-only-stage-7-secret-key-change-me-minimum-32-characters
+    secret: test-only-auth-secret-key-change-me-minimum-32-characters
 
     # Czas życia access tokenu w sekundach.
     #
@@ -63,3 +70,10 @@ security:
     #
     # 604800 sekund = 7 dni.
     refresh-token-seconds: 604800
+
+booking:
+  reservation:
+    hold-duration: PT15M
+    expiration-batch-size: 25
+    # Scheduler nie powinien sam uruchamiać się podczas zwykłych testów.
+    expiration-poll-interval: PT24H

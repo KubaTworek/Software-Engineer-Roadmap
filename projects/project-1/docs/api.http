@@ -43,81 +43,81 @@ POST http://localhost:8080/api/reservations/{{reservationId}}/confirm-async?paym
 ### Async confirm with declined payment, expected 400 and reservation remains PENDING
 POST http://localhost:8080/api/reservations/{{reservationId}}/confirm-async?paymentScenario=DECLINED
 
-### Stage 4: transactional self-invocation pitfall
+### Spring: transactional self-invocation pitfall
 GET http://localhost:8080/api/spring-pitfalls/transactional/self-invocation
 
-### Stage 4: lazy loading broken endpoint
+### Spring: lazy loading broken endpoint
 # Replace reservationId with an existing reservation id.
 GET http://localhost:8080/api/spring-pitfalls/reservations/{{reservationId}}/lazy-broken
 
-### Stage 4: lazy loading fixed by transaction boundary
+### Spring: lazy loading fixed by transaction boundary
 GET http://localhost:8080/api/spring-pitfalls/reservations/{{reservationId}}/lazy-fixed-transaction
 
-### Stage 4: lazy loading fixed by DTO projection
+### Spring: lazy loading fixed by DTO projection
 GET http://localhost:8080/api/spring-pitfalls/reservations/{{reservationId}}/lazy-fixed-projection
 
-### Stage 4: lazy loading fixed by fetch join
+### Spring: lazy loading fixed by fetch join
 GET http://localhost:8080/api/spring-pitfalls/reservations/{{reservationId}}/lazy-fixed-fetch-join
 
-### Stage 4: lazy loading fixed by entity graph
+### Spring: lazy loading fixed by entity graph
 GET http://localhost:8080/api/spring-pitfalls/reservations/{{reservationId}}/lazy-fixed-entity-graph
 
-### Stage 4: AOP through this, aspect bypassed
+### Spring: AOP through this, aspect bypassed
 POST http://localhost:8080/api/spring-pitfalls/aop/through-this?input=spring
 
-### Stage 4: AOP through proxy, aspect executed
+### Spring: AOP through proxy, aspect executed
 POST http://localhost:8080/api/spring-pitfalls/aop/through-proxy?input=spring
 
-### Stage 4: bean lifecycle
+### Spring: bean lifecycle
 GET http://localhost:8080/api/spring-pitfalls/bean-lifecycle
 
-### Stage 5 — event search optimized by composite index
+### SQL: event search optimized by composite index
 GET http://localhost:8080/api/events?city=Warsaw&from=2026-06-01T00:00:00Z&category=music
 
-### Stage 5 — organization reservations, offset pagination
+### SQL: organization reservations, offset pagination
 GET http://localhost:8080/api/organizations/00000000-0000-0000-0000-000000000000/reservations?status=CONFIRMED&page=0&size=50
 
-### Stage 5 — customer reservations, offset pagination
+### SQL: customer reservations, offset pagination
 GET http://localhost:8080/api/customers/00000000-0000-0000-0000-000000000000/reservations?page=0&size=50
 
-### Stage 5 — customer reservations, keyset pagination
+### SQL: customer reservations, keyset pagination
 GET http://localhost:8080/api/customers/00000000-0000-0000-0000-000000000000/reservations/keyset?size=50
 
-### Stage 5 — event stats
+### SQL: event stats
 GET http://localhost:8080/api/events/00000000-0000-0000-0000-000000000000/stats
 
-### Stage 5 — N+1 intentionally naive
+### SQL: N+1 intentionally naive
 GET http://localhost:8080/api/events/00000000-0000-0000-0000-000000000000/reservations/n-plus-one
 
-### Stage 5 — N+1 fixed by fetch join
+### SQL: N+1 fixed by fetch join
 GET http://localhost:8080/api/events/00000000-0000-0000-0000-000000000000/reservations/fetch-join
 
-### Stage 5 — N+1 fixed by EntityGraph
+### SQL: N+1 fixed by EntityGraph
 GET http://localhost:8080/api/events/00000000-0000-0000-0000-000000000000/reservations/entity-graph
 
-### Stage 5 — EXPLAIN ANALYZE for event search, PostgreSQL only
+### SQL: EXPLAIN ANALYZE for event search, PostgreSQL only
 GET http://localhost:8080/api/performance/explain/event-search?city=Warsaw&category=music&from=2026-06-01T00:00:00Z
 
-### Stage 6: short reservation burst
+### JVM profiling: short reservation burst
 POST http://localhost:8080/api/profiling/events/{{eventId}}/short-reservations?requests=1000
 
-### Stage 6: parallel reservation burst
+### JVM profiling: parallel reservation burst
 POST http://localhost:8080/api/profiling/events/{{eventId}}/parallel-reservations?requests=1000&threads=64
 
-### Stage 6: organization report profiling
+### JVM profiling: organization report profiling
 GET http://localhost:8080/api/profiling/organizations/{{organizationId}}/report
 
-### Stage 6: allocation pressure
+### JVM profiling: allocation pressure
 GET http://localhost:8080/api/profiling/allocations?objects=500000
 
-### Stage 6: lock contention
+### JVM profiling: lock contention
 GET http://localhost:8080/api/profiling/lock-contention?threads=64&incrementsPerThread=100000
 
-### Stage 6: CPU thread pool experiment
+### JVM profiling: CPU thread pool experiment
 GET http://localhost:8080/api/profiling/thread-pool?threads=8&tasks=500&workloadType=CPU
 
-### Stage 6: IO thread pool experiment
+### JVM profiling: IO thread pool experiment
 GET http://localhost:8080/api/profiling/thread-pool?threads=64&tasks=500&workloadType=IO
 
-### Stage 6: BigDecimal allocation scenario
+### JVM profiling: BigDecimal allocation scenario
 GET http://localhost:8080/api/profiling/big-decimal-allocation?iterations=500000

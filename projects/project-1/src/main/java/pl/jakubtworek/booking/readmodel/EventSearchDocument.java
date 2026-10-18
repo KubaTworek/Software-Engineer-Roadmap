@@ -6,6 +6,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.Map;
 import java.util.UUID;
 
@@ -86,7 +87,13 @@ public class EventSearchDocument {
      *
      * Używana do sortowania wyników wyszukiwania, np. najbliższe eventy pierwsze.
      */
-    private OffsetDateTime startsAt;
+    /*
+     * MongoDB BSON Date reprezentuje punkt na osi czasu, dlatego w dokumencie
+     * zapisujemy Instant. Offset jest informacją prezentacyjną i nie powinien
+     * decydować o sortowaniu. Trzymanie tu OffsetDateTime wymagałoby własnego
+     * kodeka i łatwo prowadziłoby do różnych reprezentacji tej samej chwili.
+     */
+    private Instant startsAt;
 
     /**
      * Identyfikator organizacji.
@@ -190,7 +197,7 @@ public class EventSearchDocument {
         this.name = name;
         this.city = city;
         this.category = category;
-        this.startsAt = startsAt;
+        this.startsAt = startsAt.toInstant();
         this.organizationId = organizationId;
         this.organizationName = organizationName;
         this.totalCapacity = totalCapacity;
@@ -200,12 +207,6 @@ public class EventSearchDocument {
     }
 
     /**
-     * Gettery są używane przez:
-     *
-     * - Spring Data MongoDB,
-     * - warstwę serwisową,
-     * - mapowanie na DTO odpowiedzi API.
-     *
      * Brak setterów jest celowy: dokument powinien być traktowany jako snapshot.
      * Jeśli dane się zmienią, prościej i bezpieczniej odbudować dokument niż
      * mutować losowe pola w wielu miejscach.
@@ -227,7 +228,9 @@ public class EventSearchDocument {
     }
 
     public OffsetDateTime getStartsAt() {
-        return startsAt;
+        // Publiczny DTO zachowuje dotychczasowy kontrakt, ale read model zwraca
+        // kanoniczną reprezentację UTC niezależnie od offsetu wejściowego.
+        return startsAt.atOffset(ZoneOffset.UTC);
     }
 
     public UUID getOrganizationId() {

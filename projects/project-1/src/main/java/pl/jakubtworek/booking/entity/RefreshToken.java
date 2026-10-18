@@ -101,7 +101,7 @@ public class RefreshToken {
      * Jeśli revokedAt jest null, token nie został ręcznie unieważniony.
      * Jeśli revokedAt ma wartość, token był już użyty albo cofnięty.
      *
-     * W projekcie Stage 7 refresh token jest rotowany:
+     * W laboratorium bezpieczeństwa refresh token jest rotowany:
      * po użyciu stary token dostaje revokedAt i nie może być użyty ponownie.
      */
     @Column
@@ -161,8 +161,6 @@ public class RefreshToken {
     }
 
     /**
-     * Gettery udostępniają dane do AuthService, testów i repozytoriów.
-     *
      * Brak setterów jest celowy.
      * Token powinien zmieniać stan tylko przez jawne metody, np. revoke().
      */

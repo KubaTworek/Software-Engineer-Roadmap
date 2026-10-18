@@ -2,8 +2,11 @@ package pl.jakubtworek.booking.service;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import pl.jakubtworek.booking.cache.AvailabilitySnapshotCache;
 import pl.jakubtworek.booking.cache.EventDetailsCache;
+import pl.jakubtworek.booking.config.ReservationPolicyProperties;
 import pl.jakubtworek.booking.dto.ReservationCreateRequest;
 import pl.jakubtworek.booking.dto.ReservationResponse;
 import pl.jakubtworek.booking.entity.Customer;
@@ -12,11 +15,11 @@ import pl.jakubtworek.booking.entity.Reservation;
 import pl.jakubtworek.booking.exception.CapacityUnavailableException;
 import pl.jakubtworek.booking.exception.NotFoundException;
 import pl.jakubtworek.booking.repository.CapacityPoolRepository;
-import pl.jakubtworek.booking.repository.CustomerRepository;
 import pl.jakubtworek.booking.repository.EventRepository;
 import pl.jakubtworek.booking.repository.ReservationRepository;
 
 import java.util.UUID;
+import java.time.Clock;
 
 /**
  * Główny serwis aplikacyjny odpowiedzialny za rezerwacje.
@@ -57,7 +60,7 @@ public class ReservationService {
      * Produkcyjnie warto byłoby mieć osobny proces zarządzania użytkownikami,
      * ale na tym etapie to uproszczenie jest akceptowalne.
      */
-    private final CustomerRepository customerRepository;
+    private final CustomerRegistrationService customerRegistrationService;
 
     /**
      * Repozytorium rezerwacji.
@@ -108,6 +111,8 @@ public class ReservationService {
      * Decyzja o rezerwacji nadal musi przejść przez PostgreSQL.
      */
     private final AvailabilitySnapshotCache availabilitySnapshotCache;
+    private final Clock clock;
+    private final ReservationPolicyProperties reservationPolicy;
 
     /**
      * Constructor injection.
@@ -119,18 +124,22 @@ public class ReservationService {
      */
     public ReservationService(
             EventRepository eventRepository,
-            CustomerRepository customerRepository,
+            CustomerRegistrationService customerRegistrationService,
             ReservationRepository reservationRepository,
             CapacityPoolRepository capacityPoolRepository,
             EventDetailsCache eventDetailsCache,
-            AvailabilitySnapshotCache availabilitySnapshotCache
+            AvailabilitySnapshotCache availabilitySnapshotCache,
+            Clock clock,
+            ReservationPolicyProperties reservationPolicy
     ) {
         this.eventRepository = eventRepository;
-        this.customerRepository = customerRepository;
+        this.customerRegistrationService = customerRegistrationService;
         this.reservationRepository = reservationRepository;
         this.capacityPoolRepository = capacityPoolRepository;
         this.eventDetailsCache = eventDetailsCache;
         this.availabilitySnapshotCache = availabilitySnapshotCache;
+        this.clock = clock;
+        this.reservationPolicy = reservationPolicy;
     }
 
     /**
@@ -184,10 +193,10 @@ public class ReservationService {
          * requesty dla tego samego nowego emaila mogą próbować utworzyć klienta
          * jednocześnie.
          */
-        Customer customer = customerRepository.findByEmail(request.customerEmail())
-                .orElseGet(() -> customerRepository.save(
-                        new Customer(request.customerFullName(), request.customerEmail())
-                ));
+        Customer customer = customerRegistrationService.resolve(
+                request.customerFullName(),
+                request.customerEmail()
+        );
 
         /*
          * Zapisujemy rezerwację w statusie początkowym, zwykle PENDING.
@@ -195,7 +204,12 @@ public class ReservationService {
          * Sam fakt utworzenia rezerwacji oznacza, że miejsce zostało już zdjęte
          * z dostępnej puli.
          */
-        Reservation reservation = reservationRepository.save(new Reservation(event, customer));
+        Reservation reservation = reservationRepository.save(new Reservation(
+                event,
+                customer,
+                clock.instant(),
+                reservationPolicy.holdDuration()
+        ));
 
         /*
          * Po zmianie dostępności unieważniamy cache eventu.
@@ -238,7 +252,7 @@ public class ReservationService {
          * Dzięki temu serwis nie musi wiedzieć, z jakiego statusu można przejść
          * do CONFIRMED. Encja pilnuje własnych reguł.
          */
-        reservation.confirm();
+        reservation.confirm(clock.instant());
 
         /*
          * Nie ma jawnego reservationRepository.save(...), bo encja jest zarządzana
@@ -270,7 +284,7 @@ public class ReservationService {
          * Zwrócenie boolean jest praktyczne, bo serwis wie wtedy, czy ma wykonać
          * efekt uboczny: zwolnienie miejsca.
          */
-        boolean cancelledNow = reservation.cancel();
+        boolean cancelledNow = reservation.cancel(clock.instant());
 
         if (cancelledNow) {
             UUID eventId = reservation.getEvent().getId();
@@ -282,7 +296,15 @@ public class ReservationService {
              * nie przekroczy total_capacity. Inaczej błąd w logice anulowania mógłby
              * sztucznie zwiększyć dostępność.
              */
-            capacityPoolRepository.releaseOneSeat(eventId);
+            int releasedRows = capacityPoolRepository.releaseOneSeat(eventId);
+            if (releasedRows != 1) {
+                /*
+                 * Brak zmienionego wiersza oznacza niespójność: rezerwacja mówi,
+                 * że blokowała miejsce, ale pula nie może go przyjąć. Rzucenie
+                 * wyjątku wycofuje w tej samej transakcji także zmianę statusu.
+                 */
+                throw new IllegalStateException("Could not release capacity for reservation " + reservationId);
+            }
 
             /*
              * Zmieniliśmy dostępność, więc snapshoty cache nie są już wiarygodne.
@@ -325,8 +347,22 @@ public class ReservationService {
      * - po zmianie danych usuwamy stary wpis z cache.
      */
     private void evictEventCaches(UUID eventId) {
-        eventDetailsCache.evict(eventId);
-        availabilitySnapshotCache.evict(eventId);
+        Runnable eviction = () -> {
+            eventDetailsCache.evict(eventId);
+            availabilitySnapshotCache.evict(eventId);
+        };
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            eviction.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                // Cache zostaje usunięty dopiero po zatwierdzeniu źródła prawdy.
+                // Rollback nie publikuje stanu, który nigdy nie istniał w bazie.
+                eviction.run();
+            }
+        });
     }
 
     /**
@@ -348,6 +384,7 @@ public class ReservationService {
                 reservation.getCustomer().getEmail(),
                 reservation.getStatus(),
                 reservation.getCreatedAt(),
+                reservation.getExpiresAt(),
                 reservation.getConfirmedAt(),
                 reservation.getCancelledAt()
         );

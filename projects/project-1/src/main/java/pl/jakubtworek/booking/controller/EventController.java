@@ -2,12 +2,15 @@ package pl.jakubtworek.booking.controller;
 
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import pl.jakubtworek.booking.dto.EventCreateRequest;
 import pl.jakubtworek.booking.dto.EventResponse;
 import pl.jakubtworek.booking.dto.EventSearchResponse;
 import pl.jakubtworek.booking.service.EventService;
 import pl.jakubtworek.booking.service.SqlPerformanceService;
+import pl.jakubtworek.booking.service.security.AuthenticationAccess;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -75,8 +78,15 @@ public class EventController {
      */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public EventResponse create(@Valid @RequestBody EventCreateRequest request) {
-        return eventService.create(request);
+    @PreAuthorize("@eventSecurity.canCreate(authentication)")
+    public EventResponse create(@Valid @RequestBody EventCreateRequest request, Authentication authentication) {
+        /*
+         * organizationId nie pochodzi z JSON-a. Gdyby klient mógł wskazać
+         * dowolny tenant w request body, poprawna rola nadal pozwalałaby mu
+         * tworzyć zasoby w cudzej organizacji (klasyczne IDOR).
+         */
+        var principal = AuthenticationAccess.principal(authentication);
+        return eventService.create(request, principal.organizationId());
     }
 
     /**

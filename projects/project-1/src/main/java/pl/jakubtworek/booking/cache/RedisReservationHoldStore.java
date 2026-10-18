@@ -1,7 +1,7 @@
 package pl.jakubtworek.booking.cache;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import org.springframework.context.annotation.Profile;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
@@ -99,7 +99,7 @@ public class RedisReservationHoldStore implements ReservationHoldStore {
                     objectMapper.writeValueAsString(hold),
                     ttl
             );
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             /*
              * Jeśli nie umiemy zapisać holda do JSON, to jest błąd techniczny
              * aplikacji, nie błąd biznesowy użytkownika.
@@ -131,7 +131,7 @@ public class RedisReservationHoldStore implements ReservationHoldStore {
 
         try {
             return Optional.of(objectMapper.readValue(json, ReservationHold.class));
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             /*
              * Jeśli wpis w Redisie jest uszkodzony albo ma niekompatybilny format,
              * usuwamy go i traktujemy jako brak holda.

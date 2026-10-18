@@ -195,29 +195,20 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
     );
 
     /**
-     * Pobiera rezerwacje klienta przez uproszczoną keyset pagination.
+     * Pobiera rezerwacje klienta przez pełną keyset pagination.
      *
      * Zamiast pytać o konkretny numer strony, klient przekazuje kursor:
      *
-     * afterCreatedAt
+     * (afterCreatedAt, afterId)
      *
      * Zapytanie zwraca rekordy starsze niż ostatni rekord z poprzedniej strony:
      *
-     * reservation.createdAt < :afterCreatedAt
+     * (reservation.createdAt, reservation.id) < (:afterCreatedAt, :afterId)
      *
      * To pozwala bazie iść po indeksie zamiast pomijać tysiące rekordów offsetem.
      *
-     * Uwaga: to jest uproszczona wersja. Ponieważ sortowanie jest:
-     *
-     * order by createdAt desc, id desc
-     *
-     * pełny cursor powinien zawierać:
-     *
-     * - afterCreatedAt,
-     * - afterId.
-     *
-     * Bez afterId można pominąć albo zdublować rekordy, jeśli wiele rezerwacji
-     * ma identyczny createdAt.
+     * Druga część predykatu jest tie-breakerem. Bez niej dwa rekordy utworzone
+     * w tej samej chwili mogłyby zostać pominięte pomiędzy stronami.
      */
     @Query("""
             select new pl.jakubtworek.booking.dto.ReservationListItemResponse(
@@ -233,12 +224,17 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
               join reservation.event event
               join reservation.customer customer
              where customer.id = :customerId
-               and (:afterCreatedAt is null or reservation.createdAt < :afterCreatedAt)
+               and (
+                    :afterCreatedAt is null
+                    or reservation.createdAt < :afterCreatedAt
+                    or (reservation.createdAt = :afterCreatedAt and reservation.id < :afterId)
+               )
              order by reservation.createdAt desc, reservation.id desc
             """)
     List<ReservationListItemResponse> findCustomerReservationsKeyset(
             @Param("customerId") UUID customerId,
             @Param("afterCreatedAt") Instant afterCreatedAt,
+            @Param("afterId") UUID afterId,
             Pageable pageable
     );
 
@@ -337,4 +333,22 @@ public interface ReservationRepository extends JpaRepository<Reservation, UUID> 
              order by reservation.createdAt desc
             """)
     List<Reservation> findByEventIdUsingEntityGraph(@Param("eventId") UUID eventId);
+
+    /**
+     * PostgreSQL blokuje wyłącznie wybraną paczkę. {@code SKIP LOCKED} pozwala
+     * kilku instancjom schedulera dzielić pracę bez czekania na te same rekordy.
+     */
+    @Query(value = """
+            SELECT id
+              FROM reservations
+             WHERE status IN ('PENDING', 'PAYMENT_TIMEOUT')
+               AND expires_at <= :now
+             ORDER BY expires_at, id
+             LIMIT :batchSize
+             FOR UPDATE SKIP LOCKED
+            """, nativeQuery = true)
+    List<UUID> findExpirableIdsForUpdateSkipLocked(
+            @Param("now") Instant now,
+            @Param("batchSize") int batchSize
+    );
 }

@@ -179,8 +179,6 @@ public class CapacityPool {
     }
 
     /**
-     * Gettery udostępniają stan encji do mapowania DTO i testów.
-     *
      * Brak publicznych setterów jest celowy.
      * Zmiana dostępności powinna przechodzić przez metody domenowe albo
      * kontrolowane zapytania repozytorium, a nie przez dowolne setAvailableCapacity(...).

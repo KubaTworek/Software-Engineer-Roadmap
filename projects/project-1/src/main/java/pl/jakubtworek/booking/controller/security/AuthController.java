@@ -94,7 +94,7 @@ public class AuthController {
      *
      * Body requestu zawiera refreshToken.
      *
-     * W projekcie Stage 7 refresh token powinien być rotowany:
+     * W laboratorium bezpieczeństwa refresh token jest rotowany:
      *
      * - klient wysyła aktualny refresh token,
      * - serwis sprawdza, czy token istnieje i nie został zużyty,
