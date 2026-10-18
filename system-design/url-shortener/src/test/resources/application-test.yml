@@ -14,6 +14,8 @@ spring:
     banner-mode: off
 
 app:
+  projection-outbox:
+    relay-enabled: false
   public-base-url: http://sho.rt
   cache:
     url-ttl: PT24H

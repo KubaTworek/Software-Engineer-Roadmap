@@ -9,9 +9,10 @@ public record UrlLookupRecord(
     UrlStatus status,
     Instant expiresAt,
     String regionId,
-    Instant updatedAt
+    Instant updatedAt,
+    long version
 ) {
     public boolean isExpired(Instant now) {
-        return expiresAt != null && expiresAt.isBefore(now);
+        return expiresAt != null && !expiresAt.isAfter(now);
     }
 }

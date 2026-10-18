@@ -1,0 +1,23 @@
+groups:
+  - name: url-shortener
+    rules:
+      - alert: UrlShortenerRedirectErrorBudgetBurn
+        expr: sum(rate(http_server_requests_seconds_count{uri="/{shortCode}",status=~"5.."}[5m])) / sum(rate(http_server_requests_seconds_count{uri="/{shortCode}"}[5m])) > 0.01
+        for: 5m
+        labels: {severity: page}
+        annotations: {summary: "Redirect error rate exceeds 1%"}
+      - alert: UrlShortenerProjectionBacklog
+        expr: url_shortener_outbox_pending{kind="projection"} > 100
+        for: 10m
+        labels: {severity: ticket}
+        annotations: {summary: "URL projection outbox is not draining"}
+      - alert: UrlShortenerProjectionDeadLetter
+        expr: url_shortener_outbox_dead_letters{kind="projection"} > 0
+        for: 1m
+        labels: {severity: page}
+        annotations: {summary: "A projection update requires operator action"}
+      - alert: UrlShortenerAnalyticsPublishFailures
+        expr: increase(url_shortener_analytics_publish_total{result="failure"}[10m]) > 10
+        for: 5m
+        labels: {severity: ticket}
+        annotations: {summary: "Best-effort analytics events are being lost"}

@@ -386,20 +386,14 @@ public class DashboardService {
         /*
          * Liczba kliknięć dzisiaj.
          *
-         * Obecna implementacja pobiera wszystkie DailyUrlStats przez findAll(),
-         * następnie filtruje je w pamięci po dacie dzisiejszej i sumuje kliknięcia.
-         *
-         * To jest poprawne dla małych danych, ale nieoptymalne przy większej skali.
-         * Lepsze byłoby dedykowane zapytanie w repozytorium, np.:
+         * Agregacja odbywa się w bazie, dzięki czemu liczba rekordów dziennych nie
+         * zwiększa zużycia pamięci aplikacji. Odpowiada jej zapytanie:
          *
          * SELECT COALESCE(SUM(clicks), 0)
          * FROM url_daily_stats
          * WHERE date = :today
          */
-        long clicksToday = dailyUrlStatsRepository.findAll().stream()
-                .filter(stats -> stats.getDate().equals(today))
-                .mapToLong(DailyUrlStats::getClicks)
-                .sum();
+        long clicksToday = dailyUrlStatsRepository.sumClicksByDate(today);
 
         /*
          * Zwracamy DTO z globalnym podsumowaniem dashboardu.

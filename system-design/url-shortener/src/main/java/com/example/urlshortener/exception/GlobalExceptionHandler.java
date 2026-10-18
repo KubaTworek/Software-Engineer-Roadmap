@@ -15,6 +15,18 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    @ExceptionHandler(OwnershipDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleOwnership(OwnershipDeniedException exception, HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(
+                ErrorResponse.of(403, "FORBIDDEN", exception.getMessage(), request.getRequestURI()));
+    }
+
+    @ExceptionHandler(StaleUrlVersionException.class)
+    public ResponseEntity<ErrorResponse> handleStaleVersion(StaleUrlVersionException exception, HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.PRECONDITION_FAILED).body(
+                ErrorResponse.of(412, "PRECONDITION_FAILED", exception.getMessage(), request.getRequestURI()));
+    }
+
     @ExceptionHandler(InvalidUrlException.class)
     public ResponseEntity<ErrorResponse> handleInvalidUrl(InvalidUrlException exception, HttpServletRequest request) {
         return ResponseEntity.badRequest().body(
@@ -33,6 +45,13 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleAliasConflict(CustomAliasAlreadyExistsException exception, HttpServletRequest request) {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(
             ErrorResponse.of(409, "CUSTOM_ALIAS_ALREADY_EXISTS", exception.getMessage(), request.getRequestURI())
+        );
+    }
+
+    @ExceptionHandler(IdempotencyConflictException.class)
+    public ResponseEntity<ErrorResponse> handleIdempotencyConflict(IdempotencyConflictException exception, HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(
+            ErrorResponse.of(409, "IDEMPOTENCY_CONFLICT", exception.getMessage(), request.getRequestURI())
         );
     }
 

@@ -1,2117 +1,775 @@
-# URL Shortener — System Design
+# URL Shortener — wykonywalne studium System Design
 
-Kompleksowy projekt systemu skracania URL-i w wersji produkcyjnej. Dokument opisuje wymagania, architekturę, API, model danych, generowanie short code, cache, skalowanie, bezpieczeństwo, analytics, obserwowalność oraz kompromisy projektowe.
+## Zacznij tutaj
 
----
+| Element | Odpowiedź |
+|---|---|
+| Najważniejszy niezmiennik | Jeden `shortCode` wskazuje najwyżej jeden URL, a rekord `BLOCKED`, `DELETED` lub wygasły nigdy nie może zostać przekierowany. |
+| Krytyczny przepływ | `GET /{shortCode}` → wersjonowana projekcja Redis → fallback do primary PostgreSQL → `302` → best-effort event kliknięcia. |
+| Najgroźniejszy błąd | Stary wpis cache lub opóźniony event `ACTIVE` może wskrzesić zablokowany link. |
+| Rekomendowany szybki test | `ShortUrlApiControllerTest`, `ShortUrlTest`, `VersionedUrlLookupStoreTest`. |
+| Rekomendowany test infrastruktury | `CacheRevocationInfrastructureTest`, `PostgreSqlUrlInvariantInfrastructureTest`, `RedisCounterInfrastructureTest`, `RabbitAnalyticsInfrastructureTest`. |
+| Świadome ograniczenie | Globalny magazyn jest portem produkcyjnym i lokalnym adapterem JPA; prawdziwa replikacja geograficzna jest reprezentowana przez deterministyczną symulację wersji. |
 
-## 1. Cel systemu
+Projekt nie jest zbiorem endpointów CRUD. Pokazuje konsekwencje asymetrii ruchu
+URL shortenera: tworzenie jest rzadkie, redirect bardzo częsty, a blokada musi
+rozchodzić się szybciej niż zwykła aktualizacja danych.
 
-System skracania URL-i pozwala użytkownikowi zamienić długi adres, np.
+## Problem i wymagania
 
-```text
-https://example.com/products/category/very/long/path?utm_source=...
-```
+URL shortener zamienia długi adres na krótki identyfikator i później odtwarza
+oryginalny cel. Samo mapowanie jest proste; interesujący problem projektowy
+zaczyna się wtedy, gdy odczytów jest o kilka rzędów wielkości więcej niż zapisów,
+popularny link staje się hot key, a usunięcie lub blokada musi szybko unieważnić
+kopie rozproszone po cache'ach.
 
-na krótki link:
+### Wymagania funkcjonalne
 
-```text
-https://sho.rt/aB92xK
-```
+- utworzenie krótkiego linku generowanego przez system lub z własnym aliasem;
+- opcjonalny termin ważności;
+- przekierowanie wyłącznie dla aktywnego, niewygasłego rekordu;
+- blokowanie i ponowne aktywowanie przez administrację;
+- bezpieczne ponowienie komendy create przez `Idempotency-Key`;
+- rejestrowanie kliknięć bez pogarszania dostępności redirectu;
+- lookup wykonywany także z warstwy edge.
 
-Po wejściu w krótki link użytkownik powinien zostać szybko przekierowany na oryginalny URL.
+### Wymagania niefunkcjonalne
 
-System powinien obsługiwać:
+- jednoznaczność: kod nie może wskazywać dwóch celów;
+- bardzo niski p95/p99 redirectu i wysoka dostępność ścieżki odczytu;
+- read-your-writes po utworzeniu linku;
+- ograniczone okno widoczności zablokowanego linku w projekcjach;
+- odporność na retry, duplikaty eventów i zmianę kolejności aktualizacji;
+- ograniczenie abuse bez uzależniania każdego redirectu od sprawnego Redisa;
+- brak sekretów, pełnych URL-i i surowych adresów IP w telemetryce.
 
-```text
-Create short URL
-Resolve short URL
-Optional custom aliases
-Expiration dates
-Analytics / click tracking
-Abuse prevention
-High read throughput
-Low latency redirects
-```
+### Świadomy out of scope
 
----
+Interfejs użytkownika, rozliczenia, prywatne linki i integracja z konkretnym
+globalnym datastore nie są częścią wykonywalnego rdzenia. Projekt pokazuje
+własność linku w granicy enterprise API key, lecz nie modeluje pełnego cyklu
+życia konta. README opisuje miejsca podłączenia pozostałych elementów, ale nie
+przypisuje atrapom gwarancji produkcyjnych.
 
-## 2. Założenia
-
-Przyjmujemy realistyczną skalę:
-
-```text
-100 mln nowych linków rocznie
-10 mld redirectów miesięcznie
-Read-heavy system: redirectów jest dużo więcej niż tworzenia linków
-Średni długi URL: 500 znaków
-Krótki kod: 7–10 znaków
-Retencja danych: kilka lat
-```
-
-Stosunek odczyt/zapis może wynosić np.:
-
-```text
-100:1 albo 1000:1
-```
-
-To istotne, bo architektura musi być zoptymalizowana głównie pod szybkie redirecty, nie pod tworzenie linków.
-
----
-
-## 3. Wymagania funkcjonalne
-
-### Podstawowe
-
-System musi umożliwiać:
-
-1. Utworzenie krótkiego linku dla długiego URL-a.
-2. Przekierowanie z krótkiego linku do oryginalnego URL-a.
-3. Obsługę wygasania linków.
-4. Obsługę błędów, np. link nie istnieje, wygasł, został zablokowany.
-5. Opcjonalnie: custom alias, np. `sho.rt/promo2026`.
-
-### Rozszerzone
-
-Dodatkowo warto przewidzieć:
+## Model mentalny architektury
 
 ```text
-Analytics: liczba kliknięć, kraj, referrer, device
-Rate limiting
-User accounts
-Publiczne i prywatne linki
-Blokowanie złośliwych URL-i
-QR code generation
-Bulk URL creation
-API keys dla klientów biznesowych
+                              ┌─────────────────────┐
+POST create ─────────────────▶│ PostgreSQL          │◀──── admin moderation
+                              │ source of truth     │
+                              │ URL + outbox        │
+                              └─────────┬───────────┘
+                                        │ after commit / retry
+                                        ▼
+edge/CDN ─▶ redirect API ─────────────▶ Redis lookup projection
+                    │ cache miss          │
+                    └─────────────────────┘
+                    │
+                    └── best-effort click ─▶ RabbitMQ ─▶ SQL analytics
 ```
 
----
+Architektura rozdziela dane kanoniczne od projekcji. PostgreSQL rozstrzyga
+poprawność zapisu, Redis skraca ścieżkę odczytu, a RabbitMQ izoluje analitykę od
+redirectu. Każda dodatkowa kopia poprawia latency lub skalowanie, lecz tworzy
+nowy problem spójności i odtwarzania. Dlatego projekt nie mówi po prostu
+„użyj cache”; określa również wersję rekordu, moment publikacji i zachowanie po
+awarii aktualizacji.
 
-## 4. Wymagania niefunkcjonalne
+## Zakres implementacji
 
-Najważniejsze:
+| Obszar | Stan | Gwarancja lub granica |
+|---|---|---|
+| PostgreSQL + Flyway | `correct` | źródło prawdy, unikalny `short_code`, wersja optimistic locking |
+| ID → Base62 | `correct` | brak kolizji przy jednej sekwencji PostgreSQL; luki w sekwencji są dozwolone |
+| Custom alias | `correct` | normalizacja i constraint rozstrzygający równoległy wyścig |
+| `Idempotency-Key` | `correct` | namespace aktora i operacji, fingerprint oraz odpowiedź zapisane atomowo z efektem |
+| Redis lookup | `correct` w granicy jednej instancji Redis | Lua odrzuca starszą wersję; status/expiry tworzą bounded negative cache |
+| Revocation | `correct` + mierzalne SLO | wersjonowany tombstone, outbox z lease/backoff/DLQ i port purge CDN |
+| Fixed-window rate limit | `correct` | Lua wykonuje atomowo `INCR + PEXPIRE`; świadomy tryb fail-open |
+| Analytics | `correct` dla efektu SQL | atomowy marker `event_id` i upsert agregatu eliminują duplikat oraz lost update |
+| Publikacja analytics | dwa jawne tryby | durable outbox ma claim/lease, backoff i publisher confirm przed `published_at` |
+| RabbitMQ retry/DLQ | `production practice` | at-least-once, retry listenera i DLQ sprawdzane z brokerem |
+| Edge worker | `production boundary` | kontrakt cache jest testowany lokalnie; purge konkretnego CDN wymaga adaptera dostawcy |
+| Ownership i lifecycle | `correct` w granicy API key | owner z uwierzytelnionego principal, `If-Match`, soft delete i audit log |
+| Rotacja sekretów | `production practice` | aktywny i poprzedni token/HMAC są akceptowane w kontrolowanym oknie |
+| Multi-region | `simulation` | single-writer versioning oraz model konfliktu active-active bez wall clock |
+| Read replica | `production boundary` | redirect po cache miss czyta primary, aby nie zwrócić fałszywego 404 |
+
+## Mapa najważniejszego kodu
+
+- `ShortUrlService` — cienka fasada stabilizująca API warstwy aplikacyjnej.
+- `CreateShortUrlUseCase`, `ResolveShortUrlUseCase`, `ModerateShortUrlUseCase`
+  oraz `ShortUrlQuery` — osobne granice transakcji i odpowiedzialności.
+- `ShortUrlCacheService` — wersjonowana projekcja lookup w Redisie.
+- `UrlProjectionOutboxService` — zapisuje intencję projekcji w transakcji URL-a.
+- `UrlProjectionUpdater` — szybka dostawa `AFTER_COMMIT`.
+- `UrlProjectionOutboxRelay` — ponawia niedostarczone projekcje at-least-once.
+- `UrlProjectionOutboxClaims` — lease i `SKIP LOCKED` dla wielu instancji relaya.
+- `IdempotentCreateService` — waliduje klucz, fingerprint i odtwarza odpowiedź.
+- `IdempotentBulkCreateService` — izoluje ten sam klucz pomiędzy tenantami.
+- `RateLimitService` — atomowy fixed window w Redisie.
+- `ClickEventPublisher` i `AnalyticsService` — best-effort publikacja oraz trwała,
+  idempotentna konsumpcja.
+- `VersionedUrlLookupStore` — deterministyczna symulacja reorderu multi-region.
+- `edge/cloudflare/worker.js` — cienka warstwa cache i redirectu na edge.
+- `EdgeCacheInvalidator` — port purge; lokalny adapter jawnie nie udaje dostawcy CDN.
+- `DurableClickPublisher` i `ClickPublishOutboxRelay` — opcjonalna trwała ścieżka analytics.
+- `ClickPublishOutboxClaims` — rozłączne batch claims i odzyskiwalny lease relaya.
+- `ClickAnalyticsWriter` — atomowy marker eventu i bezpieczna inkrementacja agregatu.
+- `ProjectionReconciliationService` — dry-run i kontrolowana naprawa projekcji Redis.
+- `TrustedClientAddressResolver` — bezpieczna interpretacja `X-Forwarded-For`.
+
+## Niezmienniki
+
+1. `short_code` jest globalnie unikalny w obrębie źródłowej bazy.
+2. To constraint, a nie wcześniejsze `exists`, rozstrzyga concurrent custom alias.
+3. W chwili `expiresAt` link jest już nieważny; jest to granica wyłączna.
+4. `BLOCKED`, `DISABLED`, `DELETED` i `EXPIRED` zwracają `410`, nie redirect.
+5. Projekcja nie może stać się widoczna przed commitem źródła.
+6. Starsza wersja `ACTIVE` nie może nadpisać nowszego `BLOCKED`/`DELETED`.
+7. Ten sam event kliknięcia może zmienić trwałe agregaty tylko raz.
+8. Ten sam aktor, operacja, `Idempotency-Key` i request zwracają tę samą odpowiedź;
+   inny request w tym samym namespace zwraca `409`, a tenanty nie współdzielą kluczy.
+
+## Create flow
 
 ```text
-Bardzo niska latencja redirectu
-Wysoka dostępność
-Skalowalność horyzontalna
-Odporność na awarie
-Brak kolizji short code
-Bezpieczeństwo przed abuse
-Dobra obserwowalność
+POST /api/v1/urls
+  → Bean Validation
+  → walidacja publicznego HTTP(S) URL
+  → rezerwacja Idempotency-Key (opcjonalnie)
+  → nextval(url_id_seq) → Base62 albo custom alias
+  → INSERT urls + INSERT url_projection_outbox
+  → COMMIT
+  → AFTER_COMMIT: Redis/global lookup
+  → relay ponawia niedostarczony outbox
 ```
 
-Docelowo redirect powinien być bardzo szybki:
+Sekwencja PostgreSQL jest kanonicznym mechanizmem obecnej implementacji. Nie
+udajemy, że jest to Snowflake. Przy wielu niezależnych regionach zapisu należałoby
+zastosować globalnie unikalny identyfikator, zakresy ID albo ownership shardów.
+
+Sekwencyjny Base62 jest możliwy do enumeracji. Krótki kod nie jest kontrolą
+dostępu. Prywatny link wymaga autoryzacji albo losowego sekretu o odpowiedniej
+entropii.
+
+## Teoria generowania krótkich kodów
+
+Base62 używa cyfr oraz małych i wielkich liter, więc kod długości `k` daje
+`62^k` możliwych wartości. Dla siedmiu znaków jest to ponad 3,5 biliona kodów.
+Sama wielkość przestrzeni nie mówi jednak nic o kolizjach — zależą one od
+algorytmu przydziału.
+
+W projekcie liczbowy identyfikator z sekwencji PostgreSQL jest kodowany do Base62:
 
 ```text
-p50 < 20 ms
-p95 < 100 ms
-p99 < 200 ms
+database sequence → unikalne ID → zapis pozycyjny Base62 → shortCode
 ```
 
-W praktyce redirect endpoint powinien być najprostszy i najmocniej zoptymalizowanym elementem systemu.
+Zaletami są brak losowych kolizji, krótki kod i prosty retry. Wadami są możliwość
+enumeracji, zależność ścieżki zapisu od generatora ID oraz brak globalnej
+unikalności przy kilku niezależnych bazach. Alternatywy mają inne koszty:
 
----
+| Strategia | Zaleta | Koszt |
+|---|---|---|
+| losowy kod + unique constraint | brak centralnej sekwencji, trudniejsza enumeracja | prawdopodobieństwo kolizji i retry rośnie wraz z zajęciem przestrzeni |
+| UUID/ULID | łatwe generowanie rozproszone | dłuższy kod; UUID pogarsza lokalność indeksu |
+| Snowflake-like ID | globalna unikalność i przybliżony porządek czasu | zależność od worker ID, zegara i procedur na clock rollback |
+| przydzielane zakresy ID | szybkie lokalne generowanie | niewykorzystane zakresy i potrzeba koordynatora |
 
-## 5. Główne komponenty systemu
+Luki w sekwencji po rollbacku są prawidłowe. ID jest identyfikatorem, a nie
+licznikiem biznesowym. Próba „odzyskiwania” numerów zwiększałaby koordynację bez
+poprawy wymaganej gwarancji.
 
-Architektura wysokopoziomowa:
+## Redirect i revocation flow
 
 ```text
-Client
-  |
-  v
-CDN / Edge
-  |
-  v
-Load Balancer
-  |
-  v
-API Gateway / Reverse Proxy
-  |
-  +-------------------------+
-  |                         |
-  v                         v
-URL Service              Redirect Service
-  |                         |
-  v                         v
-Primary DB               Cache
-  |                         |
-  v                         v
-Analytics Queue          Primary DB fallback
-  |
-  v
-Analytics Workers
-  |
-  v
-Analytics DB / Data Warehouse
+GET /abc
+  → Redis url:abc
+      hit: sprawdź status + expiresAt
+      miss/error: primary PostgreSQL
+  → 302 Location
+  → publikacja click.created (best effort)
 ```
 
-System można logicznie podzielić na kilka usług:
+Cache jest derived state. Wartość zawiera `status`, `expiresAt` i `version`, nie
+tylko docelowy URL. Blokada zapisuje wersjonowany rekord do outboxa. Dopiero po
+commicie atomowy skrypt Lua nadpisuje cache tombstonem `BLOCKED`. Skrypt porównuje
+wersję już zapisaną w Redisie, więc opóźniony `ACTIVE v7` nie może nadpisać
+`BLOCKED v8`. Odczyt tombstone zwraca `410`, ale nie usuwa go: bounded negative
+cache chroni zarówno bazę przed powtarzanymi missami, jak i link przed replayem.
+
+Nie istnieje darmowa gwarancja natychmiastowej invalidacji wszystkich cache'y.
+Przyjęte wymaganie operacyjne to:
+
+- Redis/origin projection: p99 poniżej 5 sekund;
+- CDN/edge: TTL nie większy niż zaakceptowany revocation SLO albo purge dostawcy;
+- alert, gdy najstarszy rekord outbox przekracza SLO;
+- dla linków niezweryfikowanych lub wysokiego ryzyka: `Cache-Control: no-store`.
+
+Publiczny redirect nie używa permanentnego `301`, ponieważ system zachowuje
+kontrolę nad blokowaniem i wygaszaniem celu.
+
+### Dlaczego `302`, a nie `301`?
+
+Przeglądarki i pośrednie cache mogą pamiętać permanentny redirect długo poza
+kontrolą originu. `302` pozostawia serwisowi możliwość zmiany polityki, blokady i
+wygaśnięcia. `307` dodatkowo zachowuje metodę i body, co nie jest potrzebne dla
+zwykłego `GET`. W systemie, w którym cel nigdy nie może się zmienić ani zostać
+cofnięty, `301` może dać lepszy cache hit ratio, ale jest to decyzja produktu, nie
+automatyczna optymalizacja.
+
+## API
+
+| Metoda | Ścieżka | Znaczenie |
+|---|---|---|
+| `POST` | `/api/v1/urls` | tworzenie; opcjonalny `Idempotency-Key` |
+| `GET` | `/api/v1/urls/{code}` | metadane rekordu |
+| `GET` | `/{code}` | `302`, `404` albo `410` |
+| `POST` | `/api/v1/admin/urls/{code}/block` | wersjonowana moderacja |
+| `POST` | `/api/v1/admin/urls/{code}/unblock` | przywrócenie, jeśli link nie wygasł |
+| `DELETE` | `/api/v1/admin/urls/{code}` | soft delete z audytem i propagacją tombstone |
+| `PATCH` | `/api/v1/enterprise/urls/{code}` | owner-only zmiana destination, opcjonalne `If-Match` |
+| `DELETE` | `/api/v1/enterprise/urls/{code}` | owner-only soft delete |
+| `POST` | `/api/v1/enterprise/urls/bulk` | tenantowy bulk create; opcjonalny `Idempotency-Key` |
+| `POST` | `/api/v1/admin/urls/projections/reconcile` | dry-run lub naprawa Redis względem primary |
+| `GET` | `/api/v1/dashboard/urls/{code}/analytics` | read model statystyk |
+| `GET` | `/internal/edge/urls/{code}` | lookup chroniony tokenem edge |
+
+Publiczny create tworzy link anonimowy. Endpoint enterprise ustala `ownerId` z
+uwierzytelnionego API key — nigdy z pola body — i tylko ten principal może zmienić
+cel lub usunąć rekord. `If-Match` przenosi optimistic locking do kontraktu HTTP:
+stara wersja zwraca `412 Precondition Failed`, zamiast nadpisać nowszą decyzję.
+Administracja pozostaje nadrzędną granicą moderacji i zapisuje actor/action/reason
+w tabeli audytowej.
+
+Prywatne URL-e nie są obietnicą tej wersji. Wymagałyby sprawdzania uprawnienia na
+każdym redirectcie, co zmienia cache key, CDN policy, latency oraz model udostępniania.
+
+### Semantyka API i kompatybilność
+
+- `POST` nie jest z natury idempotentny; bezpieczeństwo retry zapewnia klucz komendy;
+- `PATCH` zmienia część zasobu i wymaga wersji, gdy klient chce ochrony przed lost update;
+- `DELETE` jest idempotentne semantycznie: stan końcowy pozostaje `DELETED`;
+- `404` oznacza nieznany kod, natomiast `410` znany, lecz niedostępny link;
+- `409` oznacza konflikt aliasu albo ponowne użycie klucza dla innej intencji;
+- `412` mówi, że precondition `If-Match` nie odpowiada już wersji źródła.
+
+Ewolucja publicznego kontraktu powinna być addytywna: nowe pola odpowiedzi muszą
+być opcjonalne dla starych klientów, a znaczenia statusów nie wolno zmieniać bez
+wersjonowania. Kod URL-a jest częścią publicznego identyfikatora i nie może zostać
+ponownie przypisany po soft delete.
+
+## Model danych i access patterns
+
+### `urls`
+
+Najważniejszy access pattern to lookup po `short_code`. Unikalny indeks służy
+jednocześnie poprawności i wydajności. `version` chroni równoległą moderację.
+
+Model danych zaczyna się od zapytań, nie od encji JPA:
+
+| Access pattern | Mechanizm |
+|---|---|
+| znajdź cel po kodzie | unikalny indeks `urls(short_code)` |
+| utwórz kod bez kolizji | sekwencja + constraint |
+| rozstrzygnij równoległą moderację | optimistic locking przez `version` |
+| znajdź statystyki kodu i dnia | indeks/projekcja analytics |
+| ponów niedostarczoną projekcję | indeks po `sent_at` w outboxie |
+
+Constraint jest ostatecznym arbitrem, ponieważ schemat `exists → insert` zawiera
+okno wyścigu. Dwa procesy mogą jednocześnie zobaczyć brak aliasu. Dopiero atomowy
+constraint bazy pozwala jednemu wygrać, a drugiemu zwrócić kontrolowany konflikt.
+
+### `idempotency_records`
+
+Primary key jest hashem namespace `(aktor, operacja, surowy klucz)`, dzięki czemu
+ten sam tekst klucza dwóch tenantów nie powoduje konfliktu ani replayu cudzej
+odpowiedzi. Rekord zawiera SHA-256 fingerprint kanonicznego requestu,
+zserializowaną odpowiedź i expiry. Marker oraz efekt biznesowy commitują się razem. Awaria
+przed commitem nie pozostawia fałszywego sukcesu.
+
+Idempotencja nie oznacza „ignoruj każde kolejne żądanie”. Klucz identyfikuje jedną
+intencję klienta, a fingerprint chroni przed przypadkowym użyciem go dla innej
+komendy. Możliwe wyniki to:
+
+| Stan | Odpowiedź |
+|---|---|
+| brak klucza | wykonaj komendę i atomowo zapisz wynik |
+| ten sam klucz i fingerprint | odtwórz pierwotną odpowiedź |
+| ten sam klucz, inny fingerprint | `409 Conflict` |
+| klucz wygasł | nowa komenda według ustalonej polityki retencji |
+
+Marker bez atomowego efektu biznesowego tworzyłby dwa niebezpieczne okna: zapisany
+marker bez URL-a albo URL bez odpowiedzi możliwej do odtworzenia. Dlatego oba
+rekordy należą do tej samej transakcji.
+
+### `url_projection_outbox`
+
+Outbox przechowuje wersjonowany payload. Dostawa jest at-least-once, dlatego
+odbiorca musi wykonywać idempotentny upsert i ignorować starsze wersje.
+
+Publikacja bezpośrednio do Redisa w środku transakcji bazy tworzyłaby dual write:
+Redis może przyjąć zmianę, po czym PostgreSQL wykona rollback. Publikacja wyłącznie
+po commicie usuwa ten przypadek, ale sama może się nie udać. Outbox zamienia więc
+problem „czy oba zapisy się udały?” na prostszy „czy niedostarczony rekord zostanie
+ponowiony?”. Nie daje exactly-once delivery; daje trwałą intencję i at-least-once.
+
+Relay jest bezpieczny dla wielu instancji. Krótka transakcja wybiera porcję przez
+`FOR UPDATE SKIP LOCKED`, zwiększa `attempts` i zakłada lease. Po awarii workera
+`locked_until` wygasa, więc inna instancja może odzyskać rekord. Nieudana dostawa
+otrzymuje wykładniczy backoff, a po limicie prób albo błędzie deserializacji trafia
+do stanu dead-letter. Poison record nie blokuje kolejnych URL-i; operator naprawia
+go według runbooka i odbudowuje projekcję ze źródła prawdy.
+
+Kolejność globalna nie jest wymagana. Dwie aktualizacje tego samego kodu mogą
+dotrzeć odwrotnie, dlatego odbiorca porównuje wersję. Zamiast uzyskiwać kosztowny
+total order dla całego systemu, chronimy niezmiennik lokalnym ordering key i
+idempotentną regułą aplikowania.
+
+### Analytics
+
+`click_events.event_id` jest markerem deduplikacji. `INSERT ... ON CONFLICT DO
+NOTHING` atomowo rozstrzyga równoległe redelivery, a agregat dzienny używa
+atomowego upsertu zamiast podatnego na lost update `read → increment → save`.
+Obie operacje należą do jednej transakcji SQL. Redis counters są projekcją wykonywaną po
+commicie. Brak FK do `urls` jest świadomy: dane analityczne mogą podlegać innej
+retencji niż rekord operacyjny, ale usuwanie danych użytkownika musi uwzględnić
+obie tabele.
+
+Surowe eventy mają ograniczoną retencję, natomiast agregaty dzienne mogą żyć
+dłużej. Cleanup usuwa rekordy po `clicked_at`, nie odtwarza efektów biznesowych i
+nie usuwa agregatów. Przy dużej skali `click_events` powinno być partycjonowane po
+czasie, aby retencja polegała na szybkim odłączeniu partycji zamiast masowego
+`DELETE` generującego WAL i vacuum.
+
+## Source of truth, cache i modele spójności
+
+Source of truth to miejsce, które rozstrzyga konflikt i z którego można odbudować
+pozostałe kopie. Tutaj jest nim PostgreSQL. Redis i edge są derived state — ich
+utrata może pogorszyć wydajność, ale nie może zmienić znaczenia linku.
+
+Ścieżka używa odmiany cache-aside:
+
+1. odczytaj projekcję z Redisa;
+2. przy miss lub awarii odczytaj rekord kanoniczny;
+3. sprawdź status oraz expiry;
+4. odbuduj cache z ograniczonym TTL.
+
+Cache-aside dobrze skaluje odczyty, ale dopuszcza staleness. Sam TTL ogranicza
+czas błędu, nie gwarantuje natychmiastowej spójności. Dla revocation potrzebne są
+łącznie: wersjonowany tombstone, aktualizacja po commicie, retry z outboxa oraz
+SLO określające maksymalne akceptowane okno. W systemie bezpieczeństwa o wymogu
+zero-staleness redirect musiałby sprawdzać autorytatywne źródło albo używać
+krótkotrwałego, kryptograficznie weryfikowalnego uprawnienia.
+
+Read-your-writes oznacza, że klient po udanym create nie powinien dostać 404 dla
+tego samego kodu. Read replica może jeszcze nie mieć nowego rekordu, dlatego cold
+lookup celowo trafia do primary. To kosztuje część capacity zapisu, ale usuwa
+anomalię widoczną dla użytkownika.
+
+### Dlaczego relacyjna baza, a nie od razu key-value store?
+
+Dominujący lookup `shortCode → destination` pasuje do rozproszonego magazynu
+key-value, ale bieżący zakres potrzebuje również unikalnego aliasu, atomowego
+idempotency record, optimistic locking, audytu i outboxa. PostgreSQL zapewnia te
+reguły w jednej granicy transakcji i jest prostszym punktem startowym. Migracja do
+key-value ma sens dopiero wtedy, gdy pomiary pokazują, że write throughput, rozmiar
+indeksu lub wymagania multi-region przekraczają ten model.
+
+W DynamoDB/Cassandrze trzeba zaprojektować dane od access patterns, jawnie wybrać
+poziomy consistency i odtworzyć reguły: conditional put dla aliasu, osobny model
+idempotencji, trwały change stream/outbox oraz rozwiązywanie konfliktów. Zmiana
+silnika nie usuwa niezmienników; przenosi miejsce ich egzekwowania.
+
+### Negative caching, stampede i awaria cache
+
+Cache'owanie `404` może ograniczyć skanowanie losowych kodów, lecz tworzy konflikt
+z read-your-writes: negatywny wpis sprzed create nie może zasłonić nowego URL-a.
+Jeśli jest stosowany, musi mieć krótki TTL i zostać unieważniony wersjonowanym
+zdarzeniem create. Bloom filter może odrzucać zdecydowanie nieistniejące kody
+przed bazą, ale false positive nadal wymaga lookupu, a rebuild musi uwzględniać
+nowe wpisy.
+
+Po utracie Redisa wiele jednoczesnych missów może wywołać cache stampede.
+Request coalescing/single-flight, jitter TTL, lokalny cache i ograniczenie liczby
+concurrent fallbacków chronią bazę. Lock do przebudowy cache nie może stać się
+warunkiem poprawności redirectu: po jego timeoutcie nadal istnieje source of truth.
+
+## Rate limiting
+
+Implementacja pokazuje fixed window. Skrypt Lua tworzy licznik i TTL atomowo, więc
+awaria procesu nie pozostawi permanentnego klucza bez expiry.
+
+Tryb fail-open jest właściwy dla dostępności publicznego redirectu, ale zwiększa
+ryzyko nadużycia podczas awarii Redisa. Endpoint administracyjny lub kosztowny
+bulk create może wymagać fail-closed. Fixed window pozwala też na burst na granicy
+dwóch okien; sliding window albo token bucket są alternatywami dla ostrzejszego
+wygładzania ruchu.
+
+### Porównanie algorytmów
+
+| Algorytm | Stan | Charakterystyka |
+|---|---|---|
+| fixed window | jeden licznik na okno | tani, lecz dopuszcza podwójny burst na granicy okien |
+| sliding log | timestamp każdego requestu | dokładny, ale kosztowny pamięciowo |
+| sliding window counter | kilka agregatów | kompromis dokładności i kosztu |
+| token bucket | tokeny uzupełniane w czasie | pozwala na kontrolowany burst i ogranicza średnie tempo |
+| leaky bucket | kolejka opróżniana stałym tempem | wygładza wyjście, ale może zwiększać latency |
+
+Atomowość skryptu Lua jest istotna: osobne `INCR` oraz `EXPIRE` pozostawiają okno,
+w którym proces może zginąć po zwiększeniu licznika. Powstały klucz bez TTL
+blokowałby klienta bezterminowo.
+
+## Analytics i delivery semantics
+
+Redirect ma pierwszeństwo przed analityką. Publikacja RabbitMQ jest świadomie
+best effort: błąd brokera jest mierzony, ale nie psuje `302`. Jeśli biznes wymaga
+bezstratnych billingowych statystyk, click event musi trafić do durable logu/outboxa
+przed odpowiedzią albo zostać zebrany z logów edge.
+
+Projekt udostępnia oba warianty przez `app.queue.durable-publishing`:
+
+| Tryb | Ścieżka redirectu | Gwarancja | Koszt |
+|---|---|---|---|
+| `false` | próba publikacji bez trwałego lokalnego zapisu | wysoka dostępność, możliwa utrata eventu | najmniejsze latency |
+| `true` | zapis `click_publish_outbox`, później relay | trwała intencja producenta | redirect zależy od PostgreSQL i wykonuje write |
+
+Sam successful `convertAndSend` nie jest jeszcze potwierdzeniem trwałości brokera.
+Durable relay zakłada rozłączny lease, czeka na publisher confirm i dopiero po ACK
+ustawia `published_at`. NACK, timeout lub błąd otrzymuje backoff, a po limicie prób
+stan dead-letter. Awaria po ACK, lecz przed zapisem `published_at`, nadal może
+spowodować duplikat — to właściwa granica at-least-once, obsługiwana przez consumer.
+
+Consumer działa at-least-once:
+
+- retry dotyczy błędów przejściowych;
+- trwały poison record trafia do DLQ;
+- `event_id` deduplikuje redelivery;
+- atomowy `ON CONFLICT DO NOTHING` pozwala duplikatowi zakończyć się bez wyjątku
+  i bez aktualizacji agregatu;
+- upsert licznika dziennego nie traci równoległych, różnych kliknięć;
+- Redis counter nie jest aktualizowany przed commitem SQL.
+
+Gdy kolejka jest lokalnie wyłączona, analytics działa synchronicznie. Jest to
+tryb demonstracyjny, a nie równoważna charakterystyka wydajności produkcji.
+
+### At-most-once, at-least-once i exactly-once
+
+- at-most-once może zgubić event, ale nie dostarczy go ponownie;
+- at-least-once ponawia brak potwierdzenia, więc consumer musi tolerować duplikaty;
+- exactly-once jest zawsze gwarancją w określonej granicy, np. transakcji brokera,
+  a nie magiczną własnością całego przepływu przez broker, SQL, Redis i zewnętrzne API.
+
+Ten projekt wybiera at-least-once dla konsumenta i osiąga exactly-once effect dla
+trwałego agregatu SQL przez unikalny `event_id`. Redis pozostaje odbudowywalną
+projekcją. Ważne rozróżnienie: deduplikacja zapisu nie oznacza, że dowolny efekt
+zewnętrzny — e-mail, webhook czy charge — automatycznie wykona się tylko raz.
+
+## Multi-region i spójność
+
+Kanoniczny wariant to single-write-region:
+
+- primary przyjmuje create i moderację;
+- inne regiony konsumują wersjonowane projekcje;
+- redirect może być lokalny, ale starsza wersja nie może wskrzesić linku;
+- `DELETED` jest tombstonem, a nie fizycznym brakiem;
+- cache miss po utworzeniu czyta primary, aby zachować read-your-writes.
+
+`VersionedUrlLookupStore` kontroluje reorder deterministycznie. Nie jest adapterem
+do DynamoDB, Cassandry ani Spannera. Active-active wymaga dodatkowo globalnych ID,
+rozwiązywania konfliktów, ownership i semantyki zegara logicznego.
+
+Z perspektywy CAP partycja sieciowa wymusza wybór zachowania, a nie jednej etykiety
+dla całego systemu. Redirect może preferować dostępność i przez krótki czas użyć
+starej projekcji. Moderacja bezpieczeństwa może preferować consistency i odrzucić
+zapis w regionie bez kontaktu z właścicielem danych. Single writer upraszcza ten
+konflikt: jeden region nadaje kolejne wersje, a pozostałe tylko je aplikują.
+
+Timestamp zegara ściennego nie jest bezpieczną wersją konfliktu — clock skew może
+sprawić, że starsza operacja wygląda na nowszą. Monotoniczna wersja ze źródła,
+logiczny zegar lub fencing token opisują kolejność bez polegania na zgodności
+zegarów maszyn.
+
+## Skalowanie, partycjonowanie i hot keys
+
+Warstwa HTTP jest bezstanowa, więc można ją skalować horyzontalnie za load
+balancerem. Stan trafia do PostgreSQL, Redisa i brokera. Skalowanie instancji
+aplikacji nie zwiększy capacity, jeśli wąskim gardłem pozostaje pool połączeń lub
+pojedynczy shard danych.
+
+Naturalnym kluczem partycjonowania lookupów jest stabilny hash `short_code`.
+Range sharding skupiałby nowe, sekwencyjne kody w jednym zakresie. Consistent
+hashing ogranicza liczbę przenoszonych kluczy podczas dodania noda, lecz wymaga
+virtual nodes, rebalancingu i procedury obsługi utraty właściciela shardu.
+
+Hot key jest innym problemem niż duża liczba kluczy. Viralowy link może obciążyć
+jeden shard mimo równomiernego hash partitioningu. Pomagają wielopoziomowy cache,
+request coalescing, lokalny cache procesu i CDN. Replikowanie hot value jest
+bezpieczne tylko wtedy, gdy invalidacja nadal mieści się w revocation SLO.
+
+Write path zwykle nie wymaga sharding na początku, bo stosunek read/write jest
+bardzo wysoki. Gdy indeks `short_code` przestaje mieścić się w pamięci lub primary
+nie spełnia SLO, można partycjonować rekordy po hash kodu. Generator ID, custom
+alias uniqueness, ownership i routing zapisu muszą wtedy otrzymać globalną regułę;
+sam podział tabeli nie rozwiązuje tych niezmienników.
+
+Backpressure obowiązuje również w relayach. Batch, lease, limit prób i backoff
+ograniczają ilość pracy. Nieskończone retry bez opóźnienia podczas awarii Redisa
+tworzyłoby retry storm i konkurowało z ruchem użytkowników o połączenia z bazą.
+
+## Failure modes
+
+| Awaria | Zachowanie | Ryzyko / sygnał |
+|---|---|---|
+| Redis lookup | fallback do primary DB | wzrost latency i DB QPS, cache miss/error |
+| Redis rate limit | fail-open | zwiększony abuse, licznik błędów limitera |
+| PostgreSQL | brak tworzenia i cold redirectów | cache może obsłużyć część ruchu tylko do TTL |
+| RabbitMQ publish | redirect działa, event może zginąć | `analytics.publish.failure` |
+| Consumer | retry, następnie DLQ | lag, retry count, DLQ depth |
+| Projection target | outbox pozostaje pending | oldest pending age i failure counter |
+| Read replica lag | redirect czyta primary po cache miss | większy koszt primary w zamian za poprawność |
+| CDN stale entry | możliwy redirect do czasu TTL/purge | revocation propagation SLO |
+
+## Security i privacy
+
+- Akceptowane są wyłącznie publiczne URL-e HTTP/HTTPS bez user info.
+- Walidator sprawdza wszystkie odpowiedzi DNS, IPv4/IPv6, loopback, private,
+  link-local i multicast.
+- To nie rozwiązuje DNS rebindingu dla przyszłego server-side preview. Taki klient
+  musi ponownie walidować każdy redirect DNS i przypiąć połączenie do sprawdzonego IP.
+- Błąd DNS podczas tworzenia linku jest obecnie fail-open. To kompromis dostępności;
+  crawler lub skaner wykonujący request serwerowy powinien działać fail-closed w
+  izolowanym segmencie egress. Sam redirect przeglądarki nie jest SSRF-em backendu.
+- Tokeny admin/edge są porównywane constant-time.
+- API keys i adresy IP są pseudonimizowane przez HMAC-SHA256 z sekretem.
+- `X-Forwarded-For` i `X-Real-IP` są honorowane tylko, gdy bezpośredni peer należy
+  do `app.trusted-proxies.cidrs`; łańcuch jest analizowany od najbliższego hopu.
+- Profil `prod` odmawia startu z pustymi lub przykładowymi sekretami.
+- Rotacja tokenów admin/edge i enterprise HMAC akceptuje bieżący oraz poprzedni
+  sekret. Poprzedni należy usunąć po czasie dłuższym niż maksymalny rollout.
+- Nie logujemy pełnego URL-a, tokenów, kluczy API ani surowego IP.
+
+Forwarded header jest wejściem niezaufanym. Branie pierwszego adresu bez sprawdzenia
+bezpośredniego proxy pozwala klientowi ominąć rate limit i zatruć analytics. Lista
+CIDR musi obejmować wyłącznie load balancery kontrolowane przez właściciela systemu;
+publiczne zakresy całego dostawcy są zbyt szerokim trust boundary.
+
+HMAC pseudonimizuje IP, ale nie anonimizuje danych. Stabilny marker nadal pozwala
+łączyć zachowanie jednego użytkownika, więc podlega retencji i kontroli dostępu.
+Rotacja sekretu przerywa korelację nowych i starych markerów; jeśli biznes wymaga
+ciągłości, trzeba zapisać `key_version` lub w kontrolowanym procesie przeliczyć
+markery przed wycofaniem poprzedniego klucza.
+
+Samo przekierowanie przeglądarki nie jest SSRF-em wykonywanym przez backend.
+Preview crawler, webhook lub skaner bezpieczeństwa tworzy nową trust boundary i
+powinien mieć osobny egress policy.
+
+## Observability
+
+Własne metryki używają wyłącznie ograniczonych tagów:
+
+- `url_shortener.redirect.lookup{source=cache|database}`;
+- `url_shortener.projection.update{result=failure}`;
+- `url_shortener.projection.propagation` jako histogram/timer;
+- `url_shortener.analytics.publish{result=failure}`.
+- `url_shortener.outbox.pending{kind=projection|click-publish}`;
+- `url_shortener.outbox.dead_letters{kind=projection}`.
+
+`shortCode`, URL, IP, API key ani user ID nie mogą być tagami — ich cardinality
+jest nieograniczona. Do diagnozy konkretnego przypadku służą strukturalne logi z
+request/event ID, z zachowaniem zasad privacy.
+
+Przykładowe SLI/SLO, które należy ustalić przed produkcją:
+
+- redirect availability i p95/p99 latency;
+- cache hit ratio oraz DB fallback latency;
+- p99 revocation propagation lag;
+- wiek najstarszego pending outbox;
+- consumer lag, retry rate i DLQ depth;
+- odsetek zgubionych best-effort click events oszacowany z logów edge.
+
+Publisher i consumer tworzą osobne observations, a Micrometer Tracing z mostem
+OpenTelemetry i instrumentacja Spring AMQP propagują standardowy kontekst trace w
+nagłówkach wiadomości. `requestId` podróżuje dodatkowo w `ClickMessage` jako
+identyfikator biznesowy — korelacja po request ID nie zastępuje trace/span ID.
+Eksporter OTLP i Collector pozostają zależnością wdrożeniową; bez nich trace jest
+tworzony i propagowany, ale nie trafia do trwałego backendu telemetrycznego.
+
+Reguły Prometheusa znajdują się w `observability/prometheus-alerts.yml`, a
+procedury reakcji w `observability/RUNBOOK.md`. Alert powinien odpowiadać na SLO i
+prowadzić do działania — sam dashboard bez ownera oraz runbooka nie skraca czasu
+naprawy.
+
+## Capacity — jawne założenia, nie wyniki
+
+Przykład do dyskusji architektonicznej:
+
+- 100 mln redirectów/dzień ≈ 1158 RPS średnio;
+- peak factor 20 daje około 23 tys. RPS;
+- 1 mln nowych URL-i/dzień ≈ 12 zapisów/s średnio;
+- przy 500 bajtach rekordu 1 mld URL-i to około 500 GB danych bez indeksów i narzutu;
+- cache working set należy policzyć z rozkładu popularności, a nie z całej tabeli.
+
+Te liczby nie są benchmarkiem projektu. Decyzja o sharding, CDN lub innym storage
+powinna wynikać z pomiaru cache hit ratio, QPS primary, rozmiaru indeksu i SLO.
+
+Podstawowe rachunki warto wykonywać jawnie:
 
 ```text
-URL Service       - tworzenie i zarządzanie linkami
-Redirect Service  - szybkie przekierowania
-Analytics Service - zbieranie i agregowanie kliknięć
-Admin Service     - moderation, abuse, blokady
-Auth Service      - użytkownicy, API keys
+average RPS = requests per day / 86 400
+peak RPS    = average RPS × peak factor
+origin RPS  = total RPS × (1 - cache hit ratio)
+storage     = records × average record bytes × replication factor
+bandwidth   = RPS × average response bytes
 ```
 
-W mniejszym projekcie można zacząć od jednego backendu modularnego, ale granice domen warto mieć od początku.
+Średnia nie służy do wymiarowania. Pool połączeń, Redis, broker i primary DB muszą
+obsłużyć peak oraz kontrolowaną degradację. Hot key może przeciążyć pojedynczy
+shard mimo niskiego globalnego RPS; lokalny cache lub CDN pomaga, o ile polityka
+invalidacji nadal spełnia revocation SLO.
 
----
+## Jak czytać kompromisy tego laboratorium
 
-## 6. API
+Każdy mechanizm odpowiada na konkretny failure mode:
 
-### 6.1 Create short URL
+| Problem | Naiwne rozwiązanie | Mechanizm w projekcie | Pozostała granica |
+|---|---|---|---|
+| concurrent alias | `exists` przed `insert` | unique constraint | konflikt trzeba mapować na stabilne API |
+| retry create | wykonaj ponownie | marker + fingerprint + response | retencja określa długość gwarancji |
+| dual write DB/cache | zapis do obu po kolei | transactional outbox | delivery nadal jest at-least-once |
+| stale revocation | usuń tylko lokalny cache | versioned tombstone + TTL | CDN purge zależy od dostawcy |
+| duplicate click | sprawdź, potem zapisz | unique `event_id` w SQL | efekty poza transakcją wymagają własnej idempotencji |
+| Redis outage | zwróć 500 | fallback / świadomy fail-open | primary i abuse system przyjmują większe obciążenie |
+| multi-region reorder | last arrival wins | monotoniczna wersja | active-active potrzebuje reguły konfliktu |
+
+Warto uruchamiać test wskazany dla danego wiersza i następnie celowo usuwać
+mechanizm ochronny. W projekcie edukacyjnym kontrprzykład jest często bardziej
+wartościowy niż samo zobaczenie zielonego testu.
+
+## Dostępność, backup i disaster recovery
+
+High availability ogranicza przerwy przy typowych awariach instancji lub strefy;
+disaster recovery odtwarza system po utracie regionu albo danych. To różne cele.
+Przed produkcją trzeba ustalić:
+
+- RPO — ile najnowszych zapisów wolno utracić;
+- RTO — jak długo może trwać przywrócenie redirectów i create;
+- kolejność odtwarzania: source DB, projekcje lookup, kolejki i analytics;
+- czy cache może tymczasowo obsługiwać redirecty, gdy primary jest niedostępne;
+- gdzie znajduje się ostatni sprawdzony backup oraz wynik restore drillu.
+
+PostgreSQL wymaga backupu bazowego i archiwizacji WAL/PITR zgodnej z RPO. Redis nie
+musi być backupowany, jeśli jest w pełni odbudowywalną projekcją; po restarcie
+należy jednak chronić bazę przed cache stampede. Outbox nie może zostać pominięty
+w backupie, bo reprezentuje niedostarczone skutki zatwierdzonych transakcji.
+
+Failover single-writer wymaga fencing starego primary. Sam wybór nowego lidera nie
+wystarcza: poprzedni region po odzyskaniu sieci nie może nadal przyjmować zapisów.
+Po odtworzeniu należy wykonać reconciliation: porównać source rows, wersje projekcji,
+pending outbox, liczbę DLQ i próbkę redirectów przed otwarciem pełnego ruchu.
+Endpoint administracyjny `POST /api/v1/admin/urls/projections/reconcile` domyślnie
+wykonuje dry-run. `repair=true` ponownie aplikuje brakujące, starsze i rozbieżne
+rekordy, ale celowo nie nadpisuje projekcji o wersji wyższej niż primary — taki
+przypadek wymaga dochodzenia, a nie automatycznego niszczenia dowodu rozbieżności.
+
+## Testy
+
+### Szybka suite bez infrastruktury
+
+```powershell
+.\mvnw.cmd --batch-mode --no-transfer-progress test
+```
+
+Dowodzi kontraktów HTTP, idempotencji sekwencyjnej, statusów, walidacji,
+Base62, dokładnej granicy expiry, deduplikacji, ownership i audytu lifecycle,
+trusted proxy chain, rotacji sekretów oraz konfliktów single-writer i active-active.
+`ProjectionReconciliationServiceTest` dowodzi bezpiecznej granicy automatycznej naprawy.
+H2 nie jest dowodem semantyki blokad PostgreSQL ani Lua/RabbitMQ.
+
+### Kontrakty infrastrukturalne
+
+```powershell
+.\mvnw.cmd --batch-mode --no-transfer-progress -Pinfrastructure-tests verify
+```
+
+Profil uruchamia przez Testcontainers:
+
+- PostgreSQL: migracje, równoległy custom alias, optimistic locking, idempotencję,
+  lease `SKIP LOCKED`, poison projection i usunięcie redundantnych indeksów;
+- Redis: rzeczywisty atomowy fixed window z TTL;
+- PostgreSQL + Redis: aktywny cache → commit blokady → `410` oraz reorder
+  `BLOCKED v8 → ACTIVE v7`, który nie wskrzesza linku;
+- PostgreSQL + RabbitMQ: duplikaty at-least-once oraz poison record w DLQ.
+
+Brak Dockera powoduje jawne pominięcie tych testów; zwykła suite pozostaje szybka.
+
+### Edge contract
+
+```powershell
+cd edge/cloudflare
+npm test
+```
+
+Test dowodzi, że 5xx nie jest cache'owane, odpowiedź 302 ma poprawne nagłówki,
+a query string nie fragmentuje cache dla tego samego short code.
+
+### Load, spike i degradacja
+
+Najpierw utwórz znany `SHORT_CODE`, potem:
+
+```powershell
+k6 run -e BASE_URL=http://localhost:8080 -e SHORT_CODE=load-test -e RATE=100 load-tests/redirect.js
+```
+
+Scenariusz używa otwartego modelu `constant-arrival-rate`, żeby wolna aplikacja nie
+ukrywała popytu przez coordinated omission. Mierzymy p95/p99, błędy, dropped
+iterations i saturation. Eksperyment należy przerwać przy przekroczeniu error
+budget, zagrożeniu danych albo nasyceniu zależności poza bezpiecznym limitem.
+
+Osobne przebiegi powinny pokazać: warm cache, cold miss, hot key, Redis down,
+Rabbit down, spike oraz soak. Wyników liczbowych nie zapisujemy jako uniwersalnych.
+
+## Uruchomienie lokalne
+
+Wymagane są Java 21 oraz Docker dla zależności:
+
+```powershell
+docker compose up -d
+.\mvnw.cmd spring-boot:run
+```
+
+Podstawowy request:
 
 ```http
-POST /api/v1/urls
+POST /api/v1/urls HTTP/1.1
+Host: localhost:8080
 Content-Type: application/json
-Authorization: Bearer <token>
-```
-
-Request:
-
-```json
-{
-  "longUrl": "https://example.com/very/long/url",
-  "customAlias": "promo2026",
-  "expiresAt": "2026-12-31T23:59:59Z"
-}
-```
-
-Response:
-
-```json
-{
-  "id": "url_123",
-  "shortUrl": "https://sho.rt/promo2026",
-  "shortCode": "promo2026",
-  "longUrl": "https://example.com/very/long/url",
-  "expiresAt": "2026-12-31T23:59:59Z",
-  "createdAt": "2026-06-05T10:00:00Z"
-}
-```
-
-Dla aliasów generowanych automatycznie:
-
-```json
-{
-  "longUrl": "https://example.com/very/long/url"
-}
-```
-
-Response:
-
-```json
-{
-  "shortUrl": "https://sho.rt/aB92xK7"
-}
-```
-
-### 6.2 Redirect
-
-```http
-GET /{shortCode}
-```
-
-Przykład:
-
-```http
-GET /aB92xK7
-```
-
-Response:
-
-```http
-302 Found
-Location: https://example.com/very/long/url
-```
-
-Dla trwałego linku można rozważyć `301`, ale ostrożnie. W praktyce często lepiej używać `302` albo `307`, bo `301` może być agresywnie cache’owany przez przeglądarki i utrudnia zmianę docelowego URL-a.
-
-Najbezpieczniejszy domyślny wybór:
-
-```text
-302 Found
-```
-
-### 6.3 Get URL details
-
-```http
-GET /api/v1/urls/{shortCode}
-```
-
-Response:
-
-```json
-{
-  "shortCode": "aB92xK7",
-  "longUrl": "https://example.com/very/long/url",
-  "createdAt": "2026-06-05T10:00:00Z",
-  "expiresAt": null,
-  "status": "ACTIVE"
-}
-```
-
-### 6.4 Delete / deactivate URL
-
-```http
-DELETE /api/v1/urls/{shortCode}
-```
-
-Albo miękkie usunięcie:
-
-```http
-PATCH /api/v1/urls/{shortCode}
-```
-
-```json
-{
-  "status": "DISABLED"
-}
-```
-
-W systemie produkcyjnym lepiej robić soft delete niż fizyczne usunięcie, przynajmniej dla linków publicznych, bo ułatwia audyt i bezpieczeństwo.
-
-### 6.5 Analytics
-
-```http
-GET /api/v1/urls/{shortCode}/analytics
-```
-
-Response:
-
-```json
-{
-  "shortCode": "aB92xK7",
-  "totalClicks": 123456,
-  "uniqueVisitors": 45678,
-  "topCountries": [
-    { "country": "PL", "clicks": 50000 },
-    { "country": "DE", "clicks": 20000 }
-  ],
-  "topReferrers": [
-    { "referrer": "google.com", "clicks": 30000 }
-  ]
-}
-```
-
----
-
-## 7. Model danych
-
-### 7.1 Tabela `urls`
-
-Relacyjny model może wyglądać tak:
-
-```sql
-CREATE TABLE urls (
-    id BIGINT PRIMARY KEY,
-    short_code VARCHAR(16) NOT NULL UNIQUE,
-    long_url TEXT NOT NULL,
-    user_id BIGINT NULL,
-    status VARCHAR(32) NOT NULL,
-    created_at TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP NOT NULL,
-    expires_at TIMESTAMP NULL,
-    metadata JSONB NULL
-);
-```
-
-Indeksy:
-
-```sql
-CREATE UNIQUE INDEX idx_urls_short_code ON urls(short_code);
-CREATE INDEX idx_urls_user_id ON urls(user_id);
-CREATE INDEX idx_urls_expires_at ON urls(expires_at);
-CREATE INDEX idx_urls_status ON urls(status);
-```
-
-Najważniejszy indeks:
-
-```text
-short_code -> long_url
-```
-
-To lookup wykonywany przy każdym redirectcie.
-
-### 7.2 Tabela `click_events`
-
-Surowe eventy kliknięć:
-
-```sql
-CREATE TABLE click_events (
-    id BIGINT PRIMARY KEY,
-    short_code VARCHAR(16) NOT NULL,
-    clicked_at TIMESTAMP NOT NULL,
-    ip_hash VARCHAR(128),
-    user_agent TEXT,
-    referrer TEXT,
-    country VARCHAR(8),
-    device_type VARCHAR(32)
-);
-```
-
-Przy bardzo dużej skali nie należy trzymać surowych eventów wyłącznie w klasycznej bazie transakcyjnej. Lepiej wysyłać je do kolejki, a potem do systemu analitycznego.
-
-### 7.3 Agregaty analytics
-
-```sql
-CREATE TABLE url_daily_stats (
-    short_code VARCHAR(16) NOT NULL,
-    date DATE NOT NULL,
-    clicks BIGINT NOT NULL,
-    unique_visitors BIGINT,
-    PRIMARY KEY (short_code, date)
-);
-```
-
-Do szybkiego dashboardu nie powinno się za każdym razem liczyć wszystkiego z miliardów eventów.
-
----
-
-## 8. Generowanie short code
-
-To jedna z najważniejszych decyzji projektowych.
-
-### Opcja A: auto-increment ID + Base62
-
-Generujemy rosnące ID:
-
-```text
-12500001
-```
-
-Kodujemy je do Base62:
-
-```text
-aZ93kL
-```
-
-Base62 używa:
-
-```text
-0-9
-a-z
-A-Z
-```
-
-Czyli łącznie:
-
-```text
-62 znaki
-```
-
-Liczba możliwych kodów:
-
-```text
-62^7 ≈ 3.5 biliona
-62^8 ≈ 218 bilionów
-```
-
-Dla 100 mln linków rocznie 7 znaków wystarcza na bardzo długo.
-
-Zalety:
-
-```text
-Brak kolizji
-Szybkie generowanie
-Krótkie kody
-Proste mapowanie ID -> code
-```
-
-Wady:
-
-```text
-Sekwencyjność
-Możliwość zgadywania kolejnych linków
-Wymaga centralnego generatora ID albo rozproszonego ID generatora
-```
-
-Żeby ograniczyć zgadywalność, można:
-
-```text
-dodać salt
-użyć bijective hash
-wymieszać ID
-użyć Snowflake ID
-```
-
-### Opcja B: losowy kod Base62
-
-Generujemy losowy string, np. 7–10 znaków.
-
-Zalety:
-
-```text
-Trudniejszy do zgadnięcia
-Brak widocznej sekwencji
-Łatwy w systemie rozproszonym
-```
-
-Wady:
-
-```text
-Ryzyko kolizji
-Trzeba sprawdzać unikalność w bazie
-Przy dużym zapełnieniu przestrzeni rośnie koszt retry
-```
-
-Przykład:
-
-```pseudo
-function generateShortCode(length):
-    alphabet = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    code = randomString(alphabet, length)
-    if exists(code):
-        retry
-    return code
-```
-
-Dla małego i średniego systemu to jest bardzo dobre rozwiązanie. Dla ogromnej skali preferowany jest jednak ID + Base62 albo pre-generated key pool.
-
-### Opcja C: pre-generated key pool
-
-Osobny system generuje wcześniej pulę dostępnych kodów:
-
-```text
-aB92xK7
-x93KsL2
-Pq82Lm9
-```
-
-Przy tworzeniu linku URL Service pobiera wolny kod z puli.
-
-Zalety:
-
-```text
-Bardzo szybkie tworzenie linków
-Brak kolizji w runtime
-Możliwość batchowego generowania
-```
-
-Wady:
-
-```text
-Większa złożoność
-Trzeba zarządzać pulą
-Trzeba zapewnić brak podwójnego wydania kodu
-```
-
-To podejście jest dobre przy bardzo dużej skali.
-
-### Rekomendacja
-
-Dla solidnego systemu produkcyjnego rekomendowane podejście:
-
-```text
-Snowflake-style distributed ID -> Base62 -> opcjonalne mieszanie ID
-```
-
-Dlaczego?
-
-```text
-Nie ma kolizji
-Działa horyzontalnie
-Jest szybkie
-Nie wymaga losowych retry
-Dobrze skaluje się globalnie
-```
-
-Przykład:
-
-```text
-ID: 847392847239
-Base62: k9Az21B
-Short URL: https://sho.rt/k9Az21B
-```
-
----
-
-## 9. Redirect flow
-
-Najważniejsza ścieżka systemu:
-
-```text
-User clicks short URL
-  |
-  v
-CDN / Edge receives request
-  |
-  v
-Redirect Service
-  |
-  v
-Check cache: shortCode -> longUrl
-  |
-  +-- Cache hit --> return 302 immediately
-  |
-  +-- Cache miss --> query DB
-                  |
-                  v
-              validate status / expiry
-                  |
-                  v
-              populate cache
-                  |
-                  v
-              return 302
-```
-
-Pseudo-kod:
-
-```pseudo
-GET /{shortCode}:
-    url = cache.get(shortCode)
-
-    if url is null:
-        record = db.findByShortCode(shortCode)
-
-        if record is null:
-            return 404
-
-        if record.status != ACTIVE:
-            return 410
-
-        if record.expiresAt != null and record.expiresAt < now:
-            return 410
-
-        cache.set(shortCode, record.longUrl, ttl=24h)
-        url = record.longUrl
-
-    enqueueClickEvent(shortCode, requestMetadata)
-
-    return redirect(302, url)
-```
-
-Ważna rzecz: analytics nie może blokować redirectu. Event kliknięcia powinien być wysłany asynchronicznie.
-
----
-
-## 10. Cache
-
-Cache jest krytyczny.
-
-Najczęstszy lookup:
-
-```text
-short_code -> long_url
-```
-
-Do tego nadaje się:
-
-```text
-Redis
-Memcached
-CDN edge cache
-Local in-memory cache
-```
-
-### Strategia cache
-
-Dla aktywnych linków:
-
-```text
-TTL: 1h - 24h
-```
-
-Dla bardzo popularnych linków:
-
-```text
-dłuższy TTL
-cache warming
-edge caching
-```
-
-Dla linków nieistniejących warto rozważyć negative caching:
-
-```text
-shortCode -> NOT_FOUND
-TTL: 1-5 min
-```
-
-Chroni to bazę przed spamem i brute force.
-
-### Problem z aktualizacją URL-a
-
-Jeżeli system pozwala edytować docelowy URL, musi unieważniać cache:
-
-```text
-update DB
-delete cache key
-publish invalidation event
-```
-
-Jeśli linki są niemutowalne, system jest prostszy i bezpieczniejszy.
-
-Rekomendacja:
-
-```text
-Domyślnie short URL jest niemutowalny.
-Zmiany tylko dla kont biznesowych albo adminów.
-```
-
----
-
-## 11. Baza danych
-
-### Opcja 1: PostgreSQL
-
-Dobre na start i średnią skalę.
-
-Zalety:
-
-```text
-Silna spójność
-Unikalne indeksy
-Transakcje
-Prosty development
-Dobre wsparcie dla analytics w małej skali
-```
-
-Wady:
-
-```text
-Trzeba uważać na ogromny ruch read
-Wymaga read replicas
-Sharding przy dużej skali jest trudniejszy
-```
-
-Architektura:
-
-```text
-Primary PostgreSQL - writes
-Read replicas      - reads fallback
-Redis              - hot reads
-```
-
-### Opcja 2: DynamoDB / Cassandra / ScyllaDB
-
-Dobre dla bardzo dużej skali redirectów.
-
-Primary access pattern:
-
-```text
-PK: short_code
-Value: long_url, status, expires_at
-```
-
-Zalety:
-
-```text
-Bardzo duża skalowalność
-Niska latencja przy key-value lookup
-Łatwy sharding
-```
-
-Wady:
-
-```text
-Mniej wygodne zapytania ad hoc
-Inny model danych
-Trudniejsza lokalna praca i migracje
-```
-
-### Rekomendacja
-
-Dla MVP:
-
-```text
-PostgreSQL + Redis
-```
-
-Dla dużej skali:
-
-```text
-DynamoDB / Cassandra / ScyllaDB + Redis / CDN cache
-```
-
-Najrozsądniejszy etapowy wybór:
-
-```text
-Start: PostgreSQL
-Scale: PostgreSQL read replicas + Redis
-Massive scale: KV store sharded by short_code
-```
-
----
-
-## 12. Sharding
-
-Jeśli system jest bardzo duży, można shardować po:
-
-```text
-short_code
-hash(short_code)
-user_id
-creation_time
-```
-
-Najlepszy wybór dla redirectów:
-
-```text
-hash(short_code)
-```
-
-Bo główne zapytanie wygląda tak:
-
-```text
-find by short_code
-```
-
-Przykład:
-
-```pseudo
-shard = hash(shortCode) % numberOfShards
-```
-
-Każdy shard przechowuje podzbiór linków.
-
-Problem: jeśli short code generowany jest sekwencyjnie, można przypadkiem przeciążyć jeden shard. Dlatego lepiej shardować po hashu short code, nie po samym ID.
-
----
-
-## 13. Analytics design
-
-Nie należy robić tego synchronicznie:
-
-```text
-Redirect request -> write click event to DB -> redirect
-```
-
-To zwiększyłoby latencję i ryzyko awarii.
-
-Lepszy flow:
-
-```text
-Redirect Service
-  |
-  v
-Kafka / Kinesis / Pub/Sub
-  |
-  v
-Stream processors
-  |
-  +--> Real-time counters
-  +--> Data warehouse
-  +--> Fraud detection
-```
-
-Event:
-
-```json
-{
-  "shortCode": "aB92xK7",
-  "clickedAt": "2026-06-05T10:00:00Z",
-  "ipHash": "abc123",
-  "userAgent": "Mozilla/5.0...",
-  "referrer": "https://google.com",
-  "country": "PL"
-}
-```
-
-### Liczniki kliknięć
-
-Można użyć:
-
-```text
-Redis counters dla realtime
-Batch aggregation dla dokładnych statystyk
-ClickHouse / BigQuery / Snowflake dla analityki
-```
-
-Podejście praktyczne:
-
-```text
-Redis: szybki licznik total_clicks
-Kafka: surowe eventy
-ClickHouse: analityka czasowa
-PostgreSQL: agregaty dzienne do dashboardu
-```
-
----
-
-## 14. Rate limiting
-
-System URL shortener jest podatny na abuse:
-
-```text
-spam
-phishing
-malware
-masowe generowanie linków
-brute-force short code
-DDoS na popularne linki
-```
-
-Rate limiting powinien działać na kilku poziomach:
-
-```text
-IP
-user_id
-API key
-short_code
-country / ASN w skrajnych przypadkach
-```
-
-Przykład limitów:
-
-```text
-Anonymous create URL: 10/min/IP
-Logged-in create URL: 100/min/user
-API clients: zależnie od planu
-Redirect: dużo wyższe limity, ale z ochroną DDoS
-```
-
-Dla redirectów trzeba uważać, żeby nie zablokować viralowego linku.
-
----
-
-## 15. Security
-
-### Walidacja URL
-
-Należy sprawdzić:
-
-```text
-Czy URL ma poprawny format
-Czy scheme to http albo https
-Czy nie prowadzi do localhost / private IP
-Czy nie zawiera podejrzanych payloadów
-Czy domena nie jest na blockliście
-```
-
-Blokować należy m.in.:
-
-```text
-http://localhost:8080
-http://127.0.0.1
-http://169.254.169.254
-http://10.0.0.1
-file://...
-javascript:alert(1)
-```
-
-To chroni przed SSRF i nadużyciami.
-
-### Abuse detection
-
-Można dodać:
-
-```text
-Google Safe Browsing / podobny mechanizm reputacyjny
-Własne blocklisty domen
-Manual moderation
-Automatyczne flagowanie linków z wysokim bounce/spam rate
-```
-
-### Preview page
-
-Dla podejrzanych linków zamiast natychmiastowego redirectu można pokazać stronę ostrzegawczą:
-
-```text
-Ten link prowadzi do zewnętrznej strony:
-https://suspicious-domain.example
-Kontynuuj?
-```
-
-### Custom aliases
-
-Custom aliases powinny być walidowane:
-
-```text
-brak obraźliwych słów
-brak podszywania się pod marki
-brak aliasów systemowych typu api, admin, login
-brak znaków specjalnych
-minimalna i maksymalna długość
-```
-
-Reserved aliases:
-
-```text
-api
-admin
-login
-signup
-health
-metrics
-robots.txt
-favicon.ico
-```
-
----
-
-## 16. Statusy linków
-
-Proponowany enum:
-
-```text
-ACTIVE
-EXPIRED
-DISABLED
-BLOCKED
-DELETED
-PENDING_REVIEW
-```
-
-Redirect behavior:
-
-```text
-ACTIVE          -> 302
-EXPIRED         -> 410 Gone
-DISABLED        -> 410 Gone
-BLOCKED         -> warning page albo 403
-DELETED         -> 404 albo 410
-PENDING_REVIEW  -> 403 / warning
-```
-
-`410 Gone` jest lepsze niż `404`, jeśli link kiedyś istniał, ale już nie jest dostępny.
-
----
-
-## 17. Wygasanie linków
-
-Są dwa podejścia.
-
-### Lazy expiration
-
-Sprawdzamy `expires_at` podczas redirectu.
-
-```pseudo
-if expiresAt < now:
-    return 410
-```
-
-Zalety:
-
-```text
-Proste
-Nie wymaga jobów
-```
-
-Wady:
-
-```text
-Stare dane zostają w bazie
-Cache musi uwzględniać expires_at
-```
-
-### Background expiration job
-
-Proces okresowo oznacza wygasłe linki jako `EXPIRED`.
-
-```text
-cron / worker co kilka minut
-```
-
-Najlepiej połączyć oba podejścia:
-
-```text
-Lazy check dla poprawności
-Background job dla porządku i sprzątania
-```
-
----
-
-## 18. Consistency
-
-Tworzenie linków wymaga silnej spójności dla `short_code`.
-
-```text
-short_code musi być unikalny
-```
-
-Redirect może tolerować eventual consistency, ale ostrożnie.
-
-Problem:
-
-```text
-User tworzy link
-Od razu klika link
-Read replica jeszcze nie ma danych
-Dostaje 404
-```
-
-Rozwiązania:
-
-```text
-Po utworzeniu linku zapisuj go od razu do cache
-Redirect fallback do primary DB przez krótki czas
-Read-after-write consistency dla nowych linków
-```
-
-Najprościej:
-
-```text
-Create URL:
-  write to DB
-  write to Redis
-  return short URL
-```
-
-Dzięki temu świeży link działa od razu, nawet jeśli replika ma lag.
-
----
-
-## 19. High availability
-
-Dla produkcji:
-
-```text
-Multiple app instances
-Multiple availability zones
-Redis cluster albo managed Redis with failover
-DB replication
-Backups
-CDN in front
-Health checks
-Circuit breakers
-Graceful degradation
-```
-
-Najważniejsza zasada:
-
-```text
-Redirect Service nie powinien zależeć od Analytics Service.
-```
-
-Jeśli analytics padnie, redirecty nadal mają działać.
-
----
-
-## 20. Failure scenarios
-
-### Cache down
-
-Fallback:
-
-```text
-Redirect Service czyta z DB
-Latencja rośnie
-System nadal działa
-```
-
-Ryzyko:
-
-```text
-DB może zostać przeciążona
-```
-
-Mitigacja:
-
-```text
-rate limiting
-read replicas
-local in-memory cache
-circuit breaker
-```
-
-### DB down
-
-Jeśli cache działa:
-
-```text
-Popularne linki nadal działają
-Nowe linki nie mogą być tworzone
-Cache miss może nie działać
-```
-
-Można rozważyć:
-
-```text
-read-only degraded mode
-stale cache serving
-```
-
-### Queue down
-
-Redirecty nie powinny padać.
-
-```text
-Drop analytics event
-Buffer lokalny
-Retry z limitem
-```
-
-Lepiej stracić część analytics niż zepsuć redirect.
-
-### Redis stale data
-
-Jeśli link został zablokowany, a Redis nadal ma stary URL, to problem bezpieczeństwa.
-
-Dla blokad trzeba robić natychmiastową invalidację:
-
-```text
-Admin blocks URL
-DB update
-Cache delete
-Publish invalidation event
-Edge cache purge
-```
-
-Dla złośliwych linków bezpieczeństwo jest ważniejsze niż wydajność.
-
----
-
-## 21. CDN i edge
-
-CDN może pomóc przy bardzo popularnych linkach.
-
-Ale jest haczyk: jeśli każdy redirect ma generować analytics, pełne cache’owanie na CDN może omijać backend.
-
-### Strategia A: backend always hit
-
-Każdy redirect trafia do Redirect Service.
-
-Zalety:
-
-```text
-Dokładne analytics
-Prostsza kontrola bezpieczeństwa
-```
-
-Wady:
-
-```text
-Większy koszt
-Większa latencja
-```
-
-### Strategia B: CDN caches redirects
-
-CDN cache’uje odpowiedzi `302`.
-
-Zalety:
-
-```text
-Bardzo szybkie redirecty
-Mniejsze obciążenie backendu
-```
-
-Wady:
-
-```text
-Trudniejsze analytics
-Trudniejsze blokowanie linków
-Ryzyko stale redirectów
-```
-
-### Strategia C: edge worker
-
-Edge wykonuje lookup w edge KV albo cache, a analytics wysyła asynchronicznie.
-
-Zalety:
-
-```text
-Bardzo niska latencja
-Globalna skala
-```
-
-Wady:
-
-```text
-Większa złożoność
-Vendor lock-in
-Trudniejsze consistency
-```
-
-Rekomendacja:
-
-```text
-MVP: backend + Redis
-Duża skala: CDN + edge caching dla hot links
-Bardzo duża skala: edge workers + regional KV/cache
-```
-
----
-
-## 22. Multi-region design
-
-Dla globalnego systemu:
-
-```text
-Users worldwide
-Low latency redirects
-High availability during regional failures
-```
-
-Możliwa architektura:
-
-```text
-Global DNS / Anycast
-  |
-  v
-Nearest region
-  |
-  v
-Regional Redirect Service
-  |
-  v
-Regional cache
-  |
-  v
-Global replicated KV store
-```
-
-Writes są trudniejsze niż reads.
-
-### Single write region
-
-```text
-Wszystkie create URL idą do jednej głównej regii
-Redirecty obsługiwane globalnie
-Dane replikowane do innych regionów
-```
-
-Prostsze, ale większa latencja dla tworzenia linków.
-
-### Multi-write
-
-```text
-Każdy region może tworzyć linki
-ID generator musi być globalnie unikalny
-Dane replikują się między regionami
-```
-
-Trudniejsze, ale lepsze dla dużej skali.
-
-Dla większości systemów rekomendacja:
-
-```text
-Single write region + global read replicas/cache
-```
-
-Dopiero później multi-write.
-
----
-
-## 23. Observability
-
-Należy mierzyć:
-
-### Redirect metrics
-
-```text
-redirect_requests_total
-redirect_latency_p50/p95/p99
-cache_hit_ratio
-db_lookup_latency
-404_rate
-410_rate
-blocked_redirects
-top_short_codes
-```
-
-### Create URL metrics
-
-```text
-url_create_requests_total
-url_create_errors_total
-short_code_collision_count
-custom_alias_conflicts
-rate_limited_requests
-```
-
-### Analytics metrics
-
-```text
-queue_lag
-events_ingested_per_second
-events_dropped
-aggregation_delay
-```
-
-### Alerts
-
-Alerty na:
-
-```text
-wysoki 5xx rate
-spadek cache hit ratio
-wzrost DB latency
-wzrost 404/blocked rate
-queue lag
-Redis unavailable
-DB replication lag
-```
-
----
-
-## 24. Logging
-
-Dla redirectów logi muszą być lekkie, bo wolumen jest ogromny.
-
-Nie należy logować pełnego IP ani pełnych danych osobowych. Lepiej:
-
-```text
-request_id
-short_code
-status_code
-latency_ms
-cache_hit
-country
-hashed_ip
-user_agent_family
-```
-
-Unikać:
-
-```text
-pełne IP
-pełne user-agent w nieskończonej retencji
-wrażliwe query params
-```
-
----
-
-## 25. Privacy i compliance
-
-URL-e mogą zawierać dane wrażliwe w query parametrach.
-
-Przykład:
-
-```text
-https://example.com/reset-password?token=secret
-```
-
-System powinien:
-
-```text
-nie pokazywać long URL publicznie bez autoryzacji
-maskować query params w panelu, jeśli trzeba
-ograniczać retencję click eventów
-hashować IP
-umożliwić usunięcie danych użytkownika
-```
-
-Dla analytics:
-
-```text
-IP -> hash z rotowanym saltem
-GeoIP liczony chwilowo, potem IP usuwane
-User-Agent parsowany do device/browser, raw UA usuwany po czasie
-```
-
----
-
-## 26. Idempotency
-
-Tworzenie URL-i przez API powinno wspierać idempotency key.
-
-```http
-Idempotency-Key: 8e3b1c0f-...
-```
-
-Przydatne, gdy klient retry’uje request po timeoutcie.
-
-Bez tego można przypadkiem utworzyć wiele krótkich linków dla tego samego długiego URL-a.
-
-Tabela:
-
-```sql
-CREATE TABLE idempotency_keys (
-    key VARCHAR(128) PRIMARY KEY,
-    user_id BIGINT NOT NULL,
-    response JSONB NOT NULL,
-    created_at TIMESTAMP NOT NULL
-);
-```
-
----
-
-## 27. Deduplication
-
-Pytanie projektowe: czy ten sam długi URL powinien zawsze dostać ten sam short URL?
-
-### Bez deduplikacji
-
-Każde wywołanie tworzy nowy short URL.
-
-Zalety:
-
-```text
-Proste
-Każda kampania może mieć osobne analytics
-```
-
-Wady:
-
-```text
-Więcej rekordów
-```
-
-### Dedup per user
-
-Ten sam user + ten sam long URL może dostać ten sam short URL.
-
-Zalety:
-
-```text
-Mniej duplikatów
-```
-
-Wady:
-
-```text
-Mniej elastyczne kampanie
-Trudniejsze analytics
-```
-
-Rekomendacja:
-
-```text
-Nie deduplikować domyślnie.
-Pozwolić klientowi wymusić reuse opcjonalnym parametrem.
-```
-
-Przykład:
-
-```json
-{
-  "longUrl": "https://example.com",
-  "reuseExisting": true
-}
-```
-
----
-
-## 28. Custom aliases
-
-Przy custom alias trzeba zrobić atomic insert.
-
-```sql
-INSERT INTO urls(short_code, long_url, ...)
-VALUES ('promo2026', 'https://example.com', ...)
-```
-
-Jeżeli alias istnieje:
-
-```http
-409 Conflict
-```
-
-Response:
-
-```json
-{
-  "error": "CUSTOM_ALIAS_ALREADY_EXISTS"
-}
-```
-
-Custom alias powinien mieć ograniczenia:
-
-```text
-min 3 znaki
-max 32 znaki
-[a-zA-Z0-9-_]
-brak aliasów zarezerwowanych
-case sensitivity jasno określone
-```
-
-Rekomendacja:
-
-```text
-Short code generowany automatycznie: case-sensitive Base62
-Custom alias: najlepiej case-insensitive albo lower-case only
-```
-
-Dlaczego? Bo `Promo`, `promo` i `PROMO` jako różne aliasy to proszenie się o błędy użytkowników i phishing.
-
----
-
-## 29. HTTP status codes
-
-Dla API:
-
-```text
-201 Created       - URL utworzony
-400 Bad Request   - niepoprawny URL
-401 Unauthorized  - brak auth
-403 Forbidden     - brak uprawnień
-404 Not Found     - short code nie istnieje
-409 Conflict      - alias zajęty
-410 Gone          - link wygasł/usunięty
-429 Too Many Requests - rate limit
-500 Internal Server Error
-```
-
-Dla redirect:
-
-```text
-302 Found       - domyślny redirect
-307 Temporary Redirect - jeśli chcesz zachować metodę HTTP
-301 Moved Permanently - ostrożnie, dla permanentnych publicznych linków
-404 Not Found
-410 Gone
-403 Forbidden
-```
-
----
-
-## 30. Algorytm Base62
-
-Przykład:
-
-```pseudo
-alphabet = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-
-function encodeBase62(number):
-    if number == 0:
-        return alphabet[0]
-
-    result = ""
-
-    while number > 0:
-        remainder = number % 62
-        result = alphabet[remainder] + result
-        number = number / 62
-
-    return result
-```
-
-Dla ID:
-
-```text
-100000000 -> 6LAze
-```
-
-Można paddingować do minimalnej długości:
-
-```text
-0006LAze
-```
-
-Ale padding może wyglądać gorzej. Lepsze jest mieszanie ID lub rozpoczęcie od większego offsetu.
-
----
-
-## 31. Capacity estimation
-
-Załóżmy:
-
-```text
-100 mln URL-i rocznie
-Retencja: 5 lat
-Łącznie: 500 mln URL-i
-```
-
-Rozmiar jednego rekordu:
-
-```text
-short_code: ~16 B
-long_url: ~500 B średnio
-metadata/status/timestamps: ~200 B
-index overhead: ~100-300 B
-```
-
-Szacunkowo:
-
-```text
-~1 KB na URL
-500 mln URL-i ≈ 500 GB danych podstawowych
-z indeksami: 1-2 TB
-```
-
-To jest wykonalne, ale wymaga przemyślanej bazy, replikacji i backupów.
-
-Redirecty:
-
-```text
-10 mld / miesiąc
-≈ 333 mln / dzień
-≈ 3 850 / sek średnio
-```
-
-Peak może być 10–20x większy:
-
-```text
-40k - 80k redirectów/s
-```
-
-To już wymaga cache i skalowania horyzontalnego.
-
----
-
-## 32. Hot links
-
-Niektóre linki mogą być ekstremalnie popularne.
-
-Przykład:
-
-```text
-jeden link w viralowej kampanii
-miliony wejść w krótkim czasie
-```
-
-Mitigacje:
-
-```text
-Redis cache
-local in-memory cache
-CDN cache
-edge workers
-request coalescing na cache miss
-rate limiting tylko dla nadużyć, nie dla normalnego viral traffic
-```
-
-Local cache w Redirect Service może trzymać np. top 100k linków przez kilka minut.
-
----
-
-## 33. Cache stampede
-
-Problem:
-
-```text
-Popularny link wypada z cache
-Tysiące requestów naraz uderzają w DB
-```
-
-Rozwiązania:
-
-```text
-TTL jitter
-single-flight / request coalescing
-background refresh
-stale-while-revalidate
-```
-
-Przykład:
-
-```text
-Cache TTL: 24h ± losowe 10%
-```
-
----
-
-## 34. Deployment
-
-Można wdrożyć w Kubernetes albo prostszym managed środowisku.
-
-Komponenty:
-
-```text
-redirect-service
-url-service
-analytics-worker
-admin-service
-redis
-postgres / dynamodb
-kafka / pubsub
-clickhouse / warehouse
-```
-
-Deployment strategy:
-
-```text
-rolling deploy
-blue-green dla krytycznych zmian
-canary dla Redirect Service
-automatyczny rollback po wzroście 5xx/latency
-```
-
----
-
-## 35. CI/CD
-
-Pipeline:
-
-```text
-lint
-unit tests
-integration tests
-contract tests
-security scan
-migration check
-load tests dla Redirect Service
-deploy to staging
-canary production
-full rollout
-```
-
-Szczególnie ważne testy:
-
-```text
-short code uniqueness
-redirect correctness
-expiration
-cache invalidation
-custom alias conflicts
-rate limiting
-blocked URL behavior
-```
-
----
-
-## 36. Backup i disaster recovery
-
-Dla danych URL:
-
-```text
-regular backups
-point-in-time recovery
-cross-region replication
-restore drills
-```
-
-RPO/RTO:
-
-```text
-RPO: kilka minut
-RTO: < 1h dla pełnego restore
-```
-
-Dla redirectów można utrzymać częściową dostępność przez cache nawet podczas awarii DB.
-
----
-
-## 37. Proponowany stack technologiczny
-
-### MVP / średnia skala
-
-```text
-Backend: Java/Kotlin Spring Boot, Go, Node.js/NestJS albo Python/FastAPI
-DB: PostgreSQL
-Cache: Redis
-Queue: Kafka / RabbitMQ / cloud Pub/Sub
-Analytics: ClickHouse albo PostgreSQL aggregates na start
-Infra: Docker + Kubernetes albo managed platform
-```
-
-### Duża skala
-
-```text
-Redirect Service: Go / Rust / Java
-Storage: DynamoDB / Cassandra / ScyllaDB
-Cache: Redis Cluster + CDN
-Queue: Kafka / Kinesis / Pub/Sub
-Analytics: ClickHouse / BigQuery / Snowflake
-Edge: Cloudflare Workers / Fastly Compute / Lambda@Edge
-```
-
-Preferencja:
-
-```text
-Go + Redis + PostgreSQL na start
-Kafka + ClickHouse dla analytics
-DynamoDB/Scylla dopiero przy naprawdę dużej skali
-```
-
-Nie warto przepłacać za skomplikowany distributed KV store, dopóki zwykły Postgres z Redisem wystarcza.
-
----
-
-## 38. Prosty diagram architektury
-
-```text
-                         +----------------+
-                         |     Client     |
-                         +--------+-------+
-                                  |
-                                  v
-                         +----------------+
-                         |   CDN / WAF    |
-                         +--------+-------+
-                                  |
-                                  v
-                         +----------------+
-                         | Load Balancer  |
-                         +--------+-------+
-                                  |
-             +--------------------+--------------------+
-             |                                         |
-             v                                         v
-    +------------------+                     +------------------+
-    |  URL Service     |                     | Redirect Service |
-    +--------+---------+                     +--------+---------+
-             |                                        |
-             v                                        v
-    +------------------+                     +------------------+
-    | Primary Database |<--------------------|      Redis       |
-    +--------+---------+                     +------------------+
-             |
-             v
-    +------------------+
-    | Outbox / Events  |
-    +--------+---------+
-             |
-             v
-    +------------------+
-    | Kafka / Queue    |
-    +--------+---------+
-             |
-             v
-    +------------------+
-    | Analytics Worker |
-    +--------+---------+
-             |
-             v
-    +------------------+
-    | Analytics Store  |
-    +------------------+
-```
-
----
-
-## 39. Endpoint redirectu — najważniejsze optymalizacje
-
-Dla `GET /{shortCode}`:
-
-```text
-Nie robić ciężkiego auth
-Nie robić synchronicznego zapisu analytics
-Nie parsować niepotrzebnie całego requestu
-Nie wykonywać wielu zapytań do DB
-Nie czekać na zewnętrzne API bezpieczeństwa
-Nie logować zbyt dużo synchronicznie
-```
-
-Ten endpoint powinien robić prawie wyłącznie:
-
-```text
-lookup
-validation
-async event
-redirect
-```
-
----
-
-## 40. Najważniejsze kompromisy projektowe
-
-### 301 vs 302
-
-Rekomendacja:
-
-```text
-302 domyślnie
-```
-
-Powód:
-
-```text
-większa kontrola
-łatwiejsze blokowanie
-bezpieczniejsze przy zmianach
-```
-
-### Random code vs Base62 ID
-
-Rekomendacja:
-
-```text
-Base62 z distributed ID
-```
-
-Powód:
-
-```text
-brak kolizji i dobra skalowalność
-```
-
-### Relacyjna DB vs NoSQL
-
-Rekomendacja:
-
-```text
-PostgreSQL na start, KV/NoSQL przy ogromnej skali
-```
-
-Powód:
-
-```text
-prostszy development, mniej złożoności operacyjnej
-```
-
-### Analytics sync vs async
-
-Rekomendacja:
-
-```text
-async zawsze
-```
-
-Powód:
-
-```text
-redirect ma być szybki i odporny na awarie analytics
-```
-
-### Editable links vs immutable links
-
-Rekomendacja:
-
-```text
-immutable domyślnie
-```
-
-Powód:
-
-```text
-łatwiejszy cache, mniej ryzyk bezpieczeństwa
-```
-
----
-
-## 41. Minimalny MVP
-
-Na początek wystarczy:
-
-```text
-POST /api/v1/urls
-GET /{shortCode}
-PostgreSQL
-Redis
-Base62 ID
-Basic rate limiting
-Basic analytics counter
-Expiration support
-```
-
-MVP architecture:
-
-```text
-Monolith backend
-PostgreSQL
-Redis
-Background worker
-```
-
-To jest sensowniejsze niż od razu mikroserwisy.
-
----
-
-## 42. Produkcyjna wersja docelowa
-
-Docelowo:
-
-```text
-Separate Redirect Service
-Separate URL Management Service
-Redis Cluster
-Primary DB + read replicas albo distributed KV
-Kafka for events
-ClickHouse for analytics
-WAF + abuse detection
-Admin moderation panel
-Multi-region read path
-CDN / edge cache for hot links
-```
-
----
-
-## 43. Proponowana kolejność budowy
-
-### Etap 1
-
-```text
-URL create
-Redirect
-PostgreSQL
-Base62
-Basic validation
-```
-
-### Etap 2
-
-```text
-Redis cache
-Expiration
-Custom aliases
-Rate limiting
-```
-
-### Etap 3
-
-```text
-Async analytics
-Click counters
-Dashboard
-Admin blocking
-```
-
-### Etap 4
-
-```text
-Queue
-Advanced analytics
-Abuse detection
-Read replicas
-```
-
-### Etap 5
-
-```text
-CDN / edge
-Multi-region
-Distributed storage
-Enterprise API
-```
-
----
-
-## 44. Najważniejsze ryzyka
-
-Największe ryzyka w tym systemie to nie samo skracanie URL-i, tylko:
-
-```text
-phishing i malware
-nadużycia custom aliasów
-wysoka skala redirectów
-cache invalidation dla zablokowanych linków
-dokładność analytics
-ochrona prywatności
-hot links
-brute-force discovery
-```
-
-Technicznie URL shortener wygląda prosto, ale produkcyjnie jest to system z dużym naciskiem na bezpieczeństwo, latency i abuse prevention.
-
----
-
-## 45. Finalna rekomendowana architektura
-
-Najlepszy kompromis dla solidnego projektu:
-
-```text
-Backend:
-  URL Service
-  Redirect Service
-  Analytics Worker
-
-Storage:
-  PostgreSQL jako primary DB
-  Redis jako cache
-  Kafka/PubSub jako kolejka eventów
-  ClickHouse jako analytics store
-
-Short code:
-  distributed ID -> Base62
-  custom alias jako osobny path z unikalnym constraintem
-
-Redirect:
-  Redis first
-  DB fallback
-  async analytics event
-  302 response
-
-Security:
-  URL validation
-  blocklists
-  rate limiting
-  WAF
-  admin moderation
-  cache invalidation for blocked links
-
-Scalability:
-  horizontal app scaling
-  read replicas
-  Redis cluster
-  CDN/edge for hot links
-  eventual move to KV store if needed
-```
-
-Najważniejsza decyzja projektowa: **nie komplikować startu mikroserwisami i globalnym NoSQL-em, dopóki skala tego nie wymusza**. Dobrze zaprojektowany `PostgreSQL + Redis + async analytics` obsłuży bardzo dużo, a przejście do bardziej rozproszonej architektury można zrobić później, jeśli granice domen i access patterns są od początku dobrze zaprojektowane.
+Idempotency-Key: demo-create-1
+
+{"longUrl":"https://example.com/docs","customAlias":"docs-demo"}
+```
+
+## Trade-offy i kiedy zmienić architekturę
+
+- PostgreSQL + Redis wystarcza długo, jeśli write QPS jest mały, a working set
+  mieści się w cache. Nie dodawaj NoSQL wyłącznie z powodu nazwy „URL shortener”.
+- CDN obniża origin QPS, ale komplikuje revocation. Dla treści wysokiego ryzyka
+  bezpieczeństwo może być ważniejsze niż hit ratio.
+- Best-effort analytics chroni redirect, ale nie nadaje się do billingu.
+- Single writer upraszcza ID i ordering. Active-active opłaca się dopiero przy
+  realnym wymaganiu zapisu podczas utraty regionu.
+- Fixed window jest tani, lecz pozwala na burst. Token bucket jest lepszy, gdy
+  ważna jest płynność ruchu.
+- Editable destination zwiększa wymagania dotyczące wersji, ETag, audytu i purge.
+
+## Granice pozostające produkcyjne
+
+Projekt celowo nie integruje konkretnego secret managera, CDN purge API, globalnej
+bazy ani systemu geolokalizacji. Te miejsca są oznaczone jako port lub symulacja.
+Przed wdrożeniem potrzebne byłyby także: OAuth2/OIDC zamiast tokenu administracji,
+fizyczne partycje analytics, automatyczny CDN purge, wykonany
+backup/restore drill, tracing bridge/exporter, autoscaling na właściwych sygnałach
+oraz test failoveru z fencing starego primary. Projekt implementuje regułę
+ownership dla enterprise, lecz źródłem principal w prawdziwym środowisku powinien
+być IAM/OIDC, a nie samodzielnie zarządzany API key dla użytkowników końcowych.

@@ -17,6 +17,11 @@ public class ShortUrl {
     @Id
     private Long id;
 
+    /** Optimistic version prevents concurrent moderation from silently losing an update. */
+    @Version
+    @Column(name = "version", nullable = false)
+    private long version;
+
     @Column(name = "short_code", unique = true, length = 32)
     private String shortCode;
 
@@ -70,11 +75,10 @@ public class ShortUrl {
 
     public Long getId() { return id; }
     public String getShortCode() { return shortCode; }
-    public void setShortCode(String shortCode) { this.shortCode = shortCode; }
     public String getLongUrl() { return longUrl; }
     public Long getUserId() { return userId; }
     public UrlStatus getStatus() { return status; }
-    public void setStatus(UrlStatus status) { this.status = status; }
+    public long getVersion() { return version; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
     public Instant getExpiresAt() { return expiresAt; }
@@ -93,5 +97,24 @@ public class ShortUrl {
         this.blockedAt = null;
     }
 
-    public boolean isExpired(Instant now) { return expiresAt != null && expiresAt.isBefore(now); }
+    public boolean isExpired(Instant now) {
+        // expiresAt is an exclusive upper bound: at that instant the link is gone.
+        return expiresAt != null && !expiresAt.isAfter(now);
+    }
+
+    public void delete() {
+        this.status = UrlStatus.DELETED;
+        this.blockedReason = null;
+        this.blockedAt = null;
+    }
+
+    public void assignOwner(Long ownerId) {
+        if (this.userId != null) throw new IllegalStateException("URL owner is immutable");
+        this.userId = ownerId;
+    }
+
+    public void updateDestination(String longUrl) {
+        if (status != UrlStatus.ACTIVE) throw new IllegalStateException("Only an active URL can change destination");
+        this.longUrl = longUrl;
+    }
 }

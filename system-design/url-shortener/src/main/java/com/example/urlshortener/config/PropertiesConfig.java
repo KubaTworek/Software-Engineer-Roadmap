@@ -7,6 +7,7 @@ import com.example.urlshortener.queue.QueueProperties;
 import com.example.urlshortener.region.RegionProperties;
 import com.example.urlshortener.edge.EdgeProperties;
 import com.example.urlshortener.enterprise.EnterpriseProperties;
+import com.example.urlshortener.security.TrustedProxyProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
@@ -20,7 +21,8 @@ import org.springframework.context.annotation.Configuration;
     ReadReplicaProperties.class,
     RegionProperties.class,
     EdgeProperties.class,
-    EnterpriseProperties.class
+    EnterpriseProperties.class,
+    TrustedProxyProperties.class
 })
 public class PropertiesConfig {
 }

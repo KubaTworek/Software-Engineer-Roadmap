@@ -1,5 +1,8 @@
 export default {
   async fetch(request, env, ctx) {
+    if (request.method !== 'GET' && request.method !== 'HEAD') {
+      return new Response('Method not allowed', { status: 405, headers: { Allow: 'GET, HEAD' } });
+    }
     const url = new URL(request.url);
     const shortCode = url.pathname.replace(/^\//, '');
 
@@ -8,7 +11,8 @@ export default {
     }
 
     const cache = caches.default;
-    const cacheKey = new Request(url.toString(), request);
+    // Query parameters do not affect lookup and must not fragment the edge cache.
+    const cacheKey = new Request(`${url.origin}/${encodeURIComponent(shortCode)}`);
     const cached = await cache.match(cacheKey);
     if (cached) return cached;
 
@@ -18,19 +22,26 @@ export default {
     });
 
     if (!originResponse.ok) {
-      const ttl = originResponse.status === 404 ? 30 : 10;
+      const cacheableNegative = originResponse.status === 404 || originResponse.status === 410;
+      const ttl = originResponse.status === 404 ? 30 : 5;
       const response = new Response(await originResponse.text(), {
         status: originResponse.status,
-        headers: { 'Cache-Control': `public, max-age=${ttl}` }
+        headers: { 'Cache-Control': cacheableNegative ? `public, max-age=${ttl}` : 'no-store' }
       });
-      ctx.waitUntil(cache.put(cacheKey, response.clone()));
+      if (cacheableNegative) ctx.waitUntil(cache.put(cacheKey, response.clone()));
       return response;
     }
 
     const payload = await originResponse.json();
-    const response = Response.redirect(payload.longUrl, 302);
-    response.headers.set('Cache-Control', `public, max-age=${payload.cacheTtlSeconds}, stale-while-revalidate=300`);
-    response.headers.set('X-URL-Shortener-Region', payload.regionId);
+    // A constructed response has mutable headers; Response.redirect() may expose an immutable guard.
+    const response = new Response(null, {
+      status: 302,
+      headers: {
+        Location: payload.longUrl,
+        'Cache-Control': `public, max-age=${payload.cacheTtlSeconds}`,
+        'X-URL-Shortener-Region': payload.regionId
+      }
+    });
     ctx.waitUntil(cache.put(cacheKey, response.clone()));
     return response;
   }

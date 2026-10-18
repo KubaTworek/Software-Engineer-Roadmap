@@ -9,7 +9,8 @@ public record QueueProperties(
     String clickRoutingKey,
     String clickQueue,
     String clickDeadLetterExchange,
-    String clickDeadLetterQueue
+    String clickDeadLetterQueue,
+    boolean durablePublishing
 ) {
     public QueueProperties {
         clickExchange = defaultIfBlank(clickExchange, "url-shortener.clicks.exchange");
