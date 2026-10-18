@@ -13,7 +13,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest(properties = {"notification.security.jwt-secret=01234567890123456789012345678901",
-        "notification.worker.fixed-delay-ms=3600000"})
+        "notification.scheduling.enabled=false"})
 @AutoConfigureMockMvc
 @ActiveProfiles("secure-runtime")
 class SecureRuntimeApiTest {

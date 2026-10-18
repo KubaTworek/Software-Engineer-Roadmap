@@ -56,6 +56,13 @@ Diagramy docelowe i warianty rozwoju czytaj razem z mapą implementacji; sam opi
 
 ## Co rzeczywiście uruchamia projekt
 
+Scheduler jest domyślnie włączony (`notification.scheduling.enabled=true`).
+Testy sterujące ręcznie outboxem i workerem ustawiają tę właściwość na `false`,
+aby callbacki `@Scheduled` nie przetwarzały równolegle tych samych jobów.
+Duże `fixed-delay` nie wyłącza schedulera — nie opóźnia pierwszego uruchomienia.
+Wyłączenie schedulera pozostawia serwisy dostępne do jawnych wywołań; w zwykłym
+uruchomieniu aplikacji należy zachować domyślną wartość.
+
 Projekt ma kilka celowo kompozycyjnych profili:
 
 | Profil | Zastosowanie | Gwarancje | Czego nie dowodzi |

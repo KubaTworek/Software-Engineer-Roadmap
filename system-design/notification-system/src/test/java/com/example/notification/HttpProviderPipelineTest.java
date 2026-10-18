@@ -23,7 +23,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /** Pełny flow intention -> outbox -> job -> prawdziwa granica HTTP. */
-@SpringBootTest(properties = {"notification.worker.fixed-delay-ms=3600000", "notification.outbox.fixed-delay-ms=3600000"})
+@SpringBootTest(properties = "notification.scheduling.enabled=false")
 @ActiveProfiles("http-provider")
 class HttpProviderPipelineTest {
     private static final CopyOnWriteArrayList<String> IDEMPOTENCY_KEYS = new CopyOnWriteArrayList<>();
@@ -56,8 +56,13 @@ class HttpProviderPipelineTest {
     @Autowired OutboxPublisher outbox;
     @Autowired NotificationWorker worker;
     @Autowired Ports.NotificationJobRepository jobs;
+    @Autowired org.springframework.context.ApplicationContext context;
 
     @Test void completePipelineUsesStableIdempotencyKeyAtHttpBoundary() {
+        // Protect the actual application wiring too: adding @EnableScheduling
+        // elsewhere must not silently reintroduce a competing background worker.
+        assertThat(context.getBeansOfType(
+                org.springframework.scheduling.annotation.ScheduledAnnotationBeanPostProcessor.class)).isEmpty();
         IDEMPOTENCY_KEYS.clear();
         var accepted = notifications.create("tenant-a", "test", "user", NotificationType.PAYMENT_FAILED,
                 List.of(Channel.EMAIL), new ContactPoint("user@example.com", null, null),

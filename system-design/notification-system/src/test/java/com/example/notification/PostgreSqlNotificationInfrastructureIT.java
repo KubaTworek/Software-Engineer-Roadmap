@@ -30,8 +30,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.*;
 
 /** Kontrakty, których H2 ani ConcurrentHashMap nie mogą udowodnić. */
-@SpringBootTest(properties = {"notification.worker.fixed-delay-ms=3600000", "notification.outbox.fixed-delay-ms=3600000",
-        "notification.reconciliation.fixed-delay-ms=3600000", "notification.webhook.inbox-retry-ms=3600000"})
+@SpringBootTest(properties = "notification.scheduling.enabled=false")
 @ActiveProfiles({"infrastructure-tests", "postgres-runtime"})
 @Testcontainers(disabledWithoutDocker = true)
 class PostgreSqlNotificationInfrastructureIT {

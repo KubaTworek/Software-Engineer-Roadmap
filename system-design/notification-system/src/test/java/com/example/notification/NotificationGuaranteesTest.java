@@ -14,12 +14,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.*;
 
 @SpringBootTest(properties = {
-        "notification.worker.fixed-delay-ms=3600000",
-        "notification.outbox.fixed-delay-ms=3600000",
-        "notification.digest.fixed-delay-ms=3600000",
-        "notification.archive.fixed-delay-ms=3600000",
-        "notification.reconciliation.fixed-delay-ms=3600000",
-        "notification.webhook.inbox-retry-ms=3600000",
+        "notification.scheduling.enabled=false",
         "notification.rate-limit.tenant-per-minute=10000",
         "notification.rate-limit.user-per-minute=10000"
 })

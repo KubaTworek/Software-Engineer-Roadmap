@@ -12,9 +12,7 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /** Chroni przed dashboardem i alertami odwołującymi się do nieistniejących metryk. */
-@SpringBootTest(properties = {
-        "notification.worker.fixed-delay-ms=3600000", "notification.outbox.fixed-delay-ms=3600000",
-        "notification.metrics.snapshot-ms=3600000"})
+@SpringBootTest(properties = "notification.scheduling.enabled=false")
 class ObservabilityContractTest {
     @Autowired MeterRegistry registry;
 
