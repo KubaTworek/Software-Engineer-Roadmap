@@ -4,6 +4,7 @@ import com.example.ratelimiter.config.RateLimiterProperties;
 import com.example.ratelimiter.quota.QuotaService;
 import com.example.ratelimiter.usage.UsageEventPublisher;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.micrometer.observation.ObservationRegistry;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -55,6 +56,62 @@ class RateLimiterEngineFallbackTest {
         assertThat(decision.ruleDecisions().getFirst().source()).isEqualTo("fail-closed");
     }
 
+    @Test
+    void rejectedAttemptStillConsumesEveryMatchingProtectionBudget() {
+        RateLimiterProperties properties = baseProperties(RateLimiterProperties.FailureStrategy.FAIL_CLOSED);
+        RateLimiterProperties.Rule global = rule("global", RateLimiterProperties.FailureStrategy.FAIL_CLOSED);
+        RateLimiterProperties.Rule endpoint = rule("endpoint", RateLimiterProperties.FailureStrategy.FAIL_CLOSED);
+        RuleMatcher matcher = mock(RuleMatcher.class);
+        when(matcher.match(any())).thenReturn(List.of(global, endpoint));
+        RedisTokenBucketLimiter redis = mock(RedisTokenBucketLimiter.class);
+        when(redis.consume(global, ctx())).thenReturn(new RuleDecision("global", true, 10, 9, 0, "redis", "OK"));
+        when(redis.consume(endpoint, ctx())).thenReturn(new RuleDecision("endpoint", false, 1, 0, 1, "redis", "LIMIT"));
+        RateLimiterEngine engine = new RateLimiterEngine(matcher, redis, new LocalFallbackLimiter(properties),
+                properties, mock(UsageEventPublisher.class), mock(QuotaService.class), new SimpleMeterRegistry(),
+                ObservationRegistry.NOOP);
+
+        assertThat(engine.check(ctx()).allowed()).isFalse();
+        verify(redis).consume(global, ctx());
+        verify(redis).consume(endpoint, ctx());
+    }
+
+    @Test
+    void onlineQuotaFailureMustNotTurnAnAllowedRequestIntoAnError() {
+        RateLimiterProperties properties = baseProperties(RateLimiterProperties.FailureStrategy.FAIL_CLOSED);
+        RateLimiterProperties.Rule rule = rule("global", RateLimiterProperties.FailureStrategy.FAIL_CLOSED);
+        RuleMatcher matcher = mock(RuleMatcher.class);
+        when(matcher.match(any())).thenReturn(List.of(rule));
+        RedisTokenBucketLimiter redis = mock(RedisTokenBucketLimiter.class);
+        when(redis.consume(any(), any())).thenReturn(new RuleDecision("global", true, 10, 9, 0, "redis", "OK"));
+        QuotaService quota = mock(QuotaService.class);
+        doThrow(new RuntimeException("quota Redis unavailable")).when(quota).recordAcceptedUsage(any(), anyLong());
+        RateLimiterEngine engine = new RateLimiterEngine(matcher, redis, new LocalFallbackLimiter(properties),
+                properties, mock(UsageEventPublisher.class), quota, new SimpleMeterRegistry(), ObservationRegistry.NOOP);
+
+        assertThat(engine.check(ctx()).allowed()).isTrue();
+    }
+
+    @Test
+    void shadowRuleReportsWouldDenyWithoutBlockingTraffic() {
+        RateLimiterProperties properties = baseProperties(RateLimiterProperties.FailureStrategy.FAIL_CLOSED);
+        RateLimiterProperties.Rule rule = rule("candidate", RateLimiterProperties.FailureStrategy.FAIL_CLOSED);
+        rule.setEnforcementMode(RateLimiterProperties.EnforcementMode.MONITOR);
+        RuleMatcher matcher = mock(RuleMatcher.class);
+        when(matcher.match(any())).thenReturn(List.of(rule));
+        RedisTokenBucketLimiter redis = mock(RedisTokenBucketLimiter.class);
+        when(redis.consume(any(), any())).thenReturn(
+                new RuleDecision("candidate", false, 10, 0, 5, "redis", "LIMIT"));
+        RateLimiterEngine engine = new RateLimiterEngine(matcher, redis, new LocalFallbackLimiter(properties),
+                properties, mock(UsageEventPublisher.class), mock(QuotaService.class),
+                new SimpleMeterRegistry(), ObservationRegistry.NOOP);
+
+        RateLimitDecision result = engine.check(ctx());
+
+        assertThat(result.allowed()).isTrue();
+        assertThat(result.ruleDecisions()).singleElement()
+                .extracting(RuleDecision::reason).isEqualTo("SHADOW_WOULD_DENY");
+    }
+
     private RateLimiterEngine engineWithFailingRedis(RateLimiterProperties properties, RateLimiterProperties.Rule rule) {
         RuleMatcher matcher = mock(RuleMatcher.class);
         when(matcher.match(any())).thenReturn(List.of(rule));
@@ -72,7 +129,8 @@ class RateLimiterEngineFallbackTest {
                 properties,
                 usage,
                 quota,
-                new SimpleMeterRegistry()
+                new SimpleMeterRegistry(),
+                ObservationRegistry.NOOP
         );
     }
 

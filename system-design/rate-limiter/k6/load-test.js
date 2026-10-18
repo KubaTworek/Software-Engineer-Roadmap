@@ -1,12 +1,22 @@
 import http from 'k6/http';
-import { check, sleep } from 'k6';
+import { check } from 'k6';
 
 export const options = {
   scenarios: {
-    users_read: { executor: 'constant-vus', vus: 20, duration: '60s' },
+    // Otwarty model utrzymuje zadany napływ niezależnie od opóźnienia serwera,
+    // więc przeciążenie nie ukrywa popytu przez coordinated omission.
+    users_read: {
+      executor: 'constant-arrival-rate',
+      rate: Number(__ENV.RATE || 200),
+      timeUnit: '1s',
+      duration: __ENV.DURATION || '60s',
+      preAllocatedVUs: 50,
+      maxVUs: 500,
+    },
   },
   thresholds: {
     http_req_duration: ['p(95)<250'],
+    dropped_iterations: ['count==0'],
   },
 };
 
@@ -22,5 +32,4 @@ export default function () {
     'status is 200 or 429': r => r.status === 200 || r.status === 429,
     'has limit header': r => r.headers['X-Ratelimit-Limit'] !== undefined,
   });
-  sleep(0.1);
 }

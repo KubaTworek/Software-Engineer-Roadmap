@@ -27,3 +27,56 @@ groups:
         annotations:
           summary: "High Redis p99 latency"
           description: "Redis p99 latency is above 50 ms."
+
+      - alert: RateLimiterRedisCircuitOpen
+        expr: max(rate_limiter_redis_circuit_open) == 1
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Rate limiter Redis circuit is open"
+          description: "Requests use degraded mode; inspect fallback rate and downstream saturation."
+
+      - alert: RateLimiterFallbackActive
+        expr: sum(rate(rate_limiter_fallback_total[2m])) > 1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Rate limiter fallback is active"
+          description: "The normal Redis path is bypassed; effective limits may differ by instance."
+
+      - alert: RateLimiterQuotaRecordingErrors
+        expr: sum(rate(rate_limiter_quota_errors_total[5m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Online quota estimate is incomplete"
+          description: "Accepted traffic is served, but quota counters require reconciliation."
+
+      - alert: RateLimiterConfigurationLag
+        expr: max(rate_limiter_config_lag) > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Data-plane policy snapshot is stale"
+          description: "At least one instance has not applied the PostgreSQL control-plane head for two minutes."
+
+      - alert: RateLimiterUsageOutboxDeadLetter
+        expr: sum(increase(rate_limiter_usage_outbox_total{result="dead"}[10m])) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "Usage event moved to the outbox DLQ"
+          description: "A poison usage event exhausted bounded retries and requires an operator decision."
+
+      - alert: RateLimiterUsageReceiptFailure
+        expr: sum(rate(rate_limiter_usage_receipt_total{result="failure"}[5m])) > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Durable usage receipt is incomplete"
+          description: "Admission decisions continue, but reconciliation has detected a source-side accounting gap."

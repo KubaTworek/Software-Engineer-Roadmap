@@ -1,6 +1,6 @@
 spring:
   application:
-    name: rate-limiter-platform-stage6
+    name: distributed-rate-limiter
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -11,11 +11,19 @@ spring:
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
+    template:
+      observation-enabled: true
 
 server:
   port: 8080
 
 management:
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
   endpoints:
     web:
       exposure:
@@ -26,7 +34,7 @@ management:
         enabled: true
   metrics:
     tags:
-      app: rate-limiter-platform-stage6
+      app: distributed-rate-limiter
       region: ${REGION:eu-central-1}
 
 rate-limiter:
@@ -36,7 +44,17 @@ rate-limiter:
     enabled: true
     default-limit: 50
     default-window-seconds: 60
+    max-buckets: 100000
   security:
+    admin-token: ${RATE_LIMITER_ADMIN_TOKEN:local-admin-token}
+    previous-admin-tokens: []
+    identity-hmac-secret: ${RATE_LIMITER_IDENTITY_HMAC_SECRET:local-identity-hmac-secret}
+    gateway-assertion-hmac-secret: ${RATE_LIMITER_GATEWAY_ASSERTION_HMAC_SECRET:local-gateway-assertion-secret}
+    require-signed-identity-headers: ${RATE_LIMITER_REQUIRE_SIGNED_IDENTITY_HEADERS:false}
+    identity-signature-header: X-Identity-Signature
+    identity-timestamp-header: X-Identity-Timestamp
+    identity-signature-max-age-seconds: 30
+    identity-headers-from-trusted-proxies-only: true
     trusted-proxies:
       - "127.0.0.1"
       - "::1"
@@ -53,9 +71,6 @@ rate-limiter:
   quotas:
     enabled: true
     monthly-default-limit: 1000000
-  config-cache:
-    maximum-size: 10000
-    expire-after-write-seconds: 30
   rules:
     - id: global-api-limit
       enabled: true
@@ -104,7 +119,7 @@ rate-limiter:
       failureStrategy: FAIL_OPEN
       regionMode: REGIONAL
 
-    - id: tenant-acme-override
+    - id: tenant-acme-budget
       enabled: true
       type: TENANT
       tenantId: acme
@@ -116,7 +131,7 @@ rate-limiter:
       failureStrategy: LOCAL_FALLBACK
       regionMode: REGIONAL
 
-    - id: user-vip-override
+    - id: user-vip-budget
       enabled: true
       type: USER
       userId: vip-user
@@ -161,7 +176,7 @@ rate-limiter:
       pathPattern: /api/exports
       priority: 250
       algorithm: TOKEN_BUCKET
-      capacity: 20
+      capacity: 100
       refillTokensPerSecond: 0.5
       cost: 50
       failureStrategy: FAIL_CLOSED

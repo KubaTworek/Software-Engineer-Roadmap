@@ -1,0 +1,7 @@
+rate-limiter:
+  durable:
+    jdbc-url: ${RATE_LIMITER_JDBC_URL:jdbc:postgresql://localhost:5432/rate_limiter}
+    username: ${RATE_LIMITER_DB_USER:rate_limiter}
+    password: ${RATE_LIMITER_DB_PASSWORD:local-only}
+    config-poll-ms: 1000
+    outbox-poll-ms: 500

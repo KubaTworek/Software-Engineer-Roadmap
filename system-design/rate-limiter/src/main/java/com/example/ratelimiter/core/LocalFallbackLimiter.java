@@ -64,6 +64,7 @@ public class LocalFallbackLimiter {
      * obsługiwanych równolegle przez różne wątki aplikacji.
      */
     private final Map<String, WindowCounter> counters = new ConcurrentHashMap<>();
+    private final AtomicLong operations = new AtomicLong();
 
     public LocalFallbackLimiter(RateLimiterProperties properties) {
         this.properties = properties;
@@ -130,6 +131,19 @@ public class LocalFallbackLimiter {
          */
         String key = rule.getId() + ":" + ctx.principalKey() + ":" + window;
 
+        // Sprzątanie wykonujemy przed przyjęciem nowego klucza, aby zakończone
+        // okna nie powodowały fałszywego odrzucenia przez limit cardinality.
+        if ((operations.incrementAndGet() & 1023) == 0) {
+            counters.entrySet().removeIf(entry -> entry.getValue().window() < window - 1);
+        }
+
+        if (!counters.containsKey(key)
+                && counters.size() >= properties.getLocalFallback().getMaxBuckets()) {
+            return new RuleDecision(rule.getId(), false, limit, 0,
+                    Math.max(1, ((window + 1) * windowSeconds) - nowSec),
+                    "local-fallback", "FALLBACK_CARDINALITY_LIMIT");
+        }
+
         /*
          * Atomowo tworzymy licznik, jeśli go jeszcze nie ma,
          * a potem zwiększamy go o 1.
@@ -137,15 +151,16 @@ public class LocalFallbackLimiter {
          * AtomicLong zapewnia bezpieczne zwiększanie licznika
          * przy równoległych requestach.
          *
-         * Uwaga:
-         * ta implementacja zlicza requesty jako koszt 1.
-         * Nie uwzględnia rule.getCost().
+         * Atomowo dodajemy koszt reguły. Fallback nie może dawać drogim
+         * operacjom tańszego limitu tylko dlatego, że Redis jest niedostępny.
          */
         long value = counters
                 .computeIfAbsent(key, k -> new WindowCounter(window))
                 .counter
-                .incrementAndGet();
+                .addAndGet(rule.getCost());
 
+        // Klucz zawiera numer okna, więc bez sprzątania mapa rosłaby przez całe
+        // życie procesu. Próbkowane sprzątanie ogranicza koszt hot path.
         /*
          * Request jest dozwolony, jeśli licznik w aktualnym oknie
          * nie przekroczył limitu.

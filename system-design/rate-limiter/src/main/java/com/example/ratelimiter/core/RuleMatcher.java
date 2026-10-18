@@ -71,10 +71,8 @@ public class RuleMatcher {
      *
      * Ważne:
      * ta metoda tylko wybiera reguły. Nie sortuje ich po priority
-     * i nie rozwiązuje konfliktów override'ów, jeśli DynamicConfigService
-     * nie robi tego wcześniej.
-     *
-     * Jeżeli kolejność reguł ma znaczenie, warto tu dodać sortowanie po priority.
+     * Snapshot jest już posortowany po priority. Priorytet nie wyłącza innych
+     * reguł: wszystkie dopasowane polityki są kumulatywne.
      */
     public List<RateLimiterProperties.Rule> match(RequestContext ctx) {
         return configService.allRules().stream()
@@ -125,7 +123,7 @@ public class RuleMatcher {
             /*
              * Reguła userowa obowiązuje tylko konkretnego użytkownika.
              *
-             * Dobra dla wyjątków/override'ów per user.
+             * Dobra dla dodatkowego budżetu chroniącego konkretnego usera.
              */
             case USER -> equalsNullable(rule.getUserId(), ctx.userId());
 
@@ -189,7 +187,7 @@ public class RuleMatcher {
      *    - /api/admin/reports
      *
      * 3. Pattern zakończony "/*":
-     *    - w tej implementacji działa jako startsWith dla prefiksu.
+     *    - pasuje dokładnie do jednego segmentu ścieżki.
      *
      *    Przykład:
      *    /api/*
@@ -200,9 +198,8 @@ public class RuleMatcher {
      * 4. Dokładne dopasowanie:
      *    - pattern musi być identyczny jak ctx.path().
      *
-     * Uwaga:
-     * obecne "/*" nie ogranicza dopasowania tylko do jednego segmentu.
-     * Technicznie działa podobnie do prefix match.
+     * Granica segmentu jest sprawdzana jawnie. Dzięki temu /api/** nie
+     * pasuje przypadkowo do /apix, a /api/* nie obejmuje /api/a/b.
      */
     private boolean pathMatches(RateLimiterProperties.Rule rule, RequestContext ctx) {
         String pattern = rule.getPathPattern();
@@ -220,19 +217,20 @@ public class RuleMatcher {
          * /api/** -> prefix /api
          */
         if (pattern.endsWith("/**")) {
-            return ctx.path().startsWith(pattern.substring(0, pattern.length() - 3));
+            String prefix = pattern.substring(0, pattern.length() - 3);
+            return ctx.path().equals(prefix) || ctx.path().startsWith(prefix + "/");
         }
 
         /*
-         * Uproszczone wildcard dopasowanie.
-         *
-         * /api/* -> prefix /api
-         *
-         * W tej wersji jest to proste startsWith,
-         * a nie pełna semantyka "jeden segment".
+         * /api/* obejmuje /api/users, ale nie /api/users/123.
          */
         if (pattern.endsWith("/*")) {
-            return ctx.path().startsWith(pattern.substring(0, pattern.length() - 2));
+            String prefix = pattern.substring(0, pattern.length() - 2);
+            if (!ctx.path().startsWith(prefix + "/")) {
+                return false;
+            }
+            String remainder = ctx.path().substring(prefix.length() + 1);
+            return !remainder.isBlank() && !remainder.contains("/");
         }
 
         /*

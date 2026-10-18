@@ -1,0 +1,14 @@
+spring:
+  data:
+    redis:
+      cluster:
+        nodes: ${REDIS_CLUSTER_NODES:redis-node-1:6379,redis-node-2:6379,redis-node-3:6379,redis-node-4:6379,redis-node-5:6379,redis-node-6:6379}
+        max-redirects: 5
+      lettuce:
+        cluster:
+          refresh:
+            adaptive: true
+            period: 5s
+
+# This profile is intentionally separate from the standalone default. Lettuce
+# must learn MOVED/ASK redirects and refresh topology after reshard/failover.

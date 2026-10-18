@@ -55,6 +55,33 @@ class RuleMatcherTest {
         assertThat(matcher.match(ctx)).extracting(RateLimiterProperties.Rule::getId).containsExactly("api-wildcard");
     }
 
+    @Test
+    void singleSegmentWildcardMustNotMatchNestedPath() {
+        RateLimiterProperties properties = new RateLimiterProperties();
+        properties.setRules(List.of(rule("single", RateLimiterProperties.RuleType.ENDPOINT, 10,
+                r -> r.setPathPattern("/api/*"))));
+        RuleMatcher matcher = new RuleMatcher(new DynamicConfigService(properties));
+
+        assertThat(matcher.match(context("/api/users"))).hasSize(1);
+        assertThat(matcher.match(context("/api/users/123"))).isEmpty();
+    }
+
+    @Test
+    void subtreeWildcardMustRespectPathBoundary() {
+        RateLimiterProperties properties = new RateLimiterProperties();
+        properties.setRules(List.of(rule("tree", RateLimiterProperties.RuleType.ENDPOINT, 10,
+                r -> r.setPathPattern("/api/**"))));
+        RuleMatcher matcher = new RuleMatcher(new DynamicConfigService(properties));
+
+        assertThat(matcher.match(context("/api/users"))).hasSize(1);
+        assertThat(matcher.match(context("/apix/users"))).isEmpty();
+    }
+
+    private RequestContext context(String path) {
+        return new RequestContext("GET", path, "203.0.113.10", null,
+                null, null, "FREE", 1_700_000_000_000L);
+    }
+
     private RateLimiterProperties.Rule rule(
             String id,
             RateLimiterProperties.RuleType type,
