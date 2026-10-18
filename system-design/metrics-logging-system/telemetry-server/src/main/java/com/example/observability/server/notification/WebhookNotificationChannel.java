@@ -42,6 +42,7 @@ public class WebhookNotificationChannel implements NotificationChannel {
      * a nie cały obiekt AlertRule i AlertEvent.
      */
     private final ObjectMapper objectMapper;
+    private final WebhookTargetPolicy targetPolicy;
 
     /**
      * Klient HTTP używany do wysyłania webhooków.
@@ -51,8 +52,9 @@ public class WebhookNotificationChannel implements NotificationChannel {
      */
     private final HttpClient client = HttpClient.newHttpClient();
 
-    public WebhookNotificationChannel(ObjectMapper objectMapper) {
+    public WebhookNotificationChannel(ObjectMapper objectMapper, WebhookTargetPolicy targetPolicy) {
         this.objectMapper = objectMapper;
+        this.targetPolicy = targetPolicy;
     }
 
     /**
@@ -110,7 +112,7 @@ public class WebhookNotificationChannel implements NotificationChannel {
              * Produkcyjnie trzeba go walidować przy tworzeniu reguły,
              * bo niekontrolowany webhook URL może prowadzić do SSRF.
              */
-            HttpRequest req = HttpRequest.newBuilder(URI.create(target))
+            HttpRequest req = HttpRequest.newBuilder(targetPolicy.validate(target))
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(body))
                     .timeout(java.time.Duration.ofSeconds(5))
@@ -122,12 +124,11 @@ public class WebhookNotificationChannel implements NotificationChannel {
              * thenAccept loguje sam status HTTP, ale nie traktuje np. 500
              * jako wyjątku. Produkcyjnie warto uznać 4xx/5xx za failure.
              */
-            client.sendAsync(req, HttpResponse.BodyHandlers.discarding())
-                    .thenAccept(resp -> log.info(
-                            "Alert webhook {} -> {}",
-                            target,
-                            resp.statusCode()
-                    ));
+            var response = client.send(req, HttpResponse.BodyHandlers.discarding());
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                throw new IllegalStateException("webhook returned " + response.statusCode());
+            }
+            log.info("Alert webhook {} -> {}", target, response.statusCode());
 
         } catch (Exception e) {
             /*
@@ -138,6 +139,7 @@ public class WebhookNotificationChannel implements NotificationChannel {
              * może nie zostać dostarczone.
              */
             log.warn("Webhook notification failed for {}", target, e);
+            throw new IllegalStateException("webhook delivery failed", e);
         }
     }
 }

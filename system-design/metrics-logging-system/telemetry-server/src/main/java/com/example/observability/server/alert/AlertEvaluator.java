@@ -2,12 +2,14 @@ package com.example.observability.server.alert;
 
 import com.example.observability.server.repository.TelemetryRepository;
 import com.example.observability.server.notification.AlertRouter;
+import com.example.observability.server.metadata.MetadataStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
+import java.time.Duration;
 
 /**
  * Cykliczny evaluator reguł alertowych.
@@ -63,15 +65,19 @@ public class AlertEvaluator {
      * On tylko mówi: "ta reguła fire'uje, obsłuż routing".
      */
     private final AlertRouter alertRouter;
+    private final MetadataStore metadata;
+    private final AlertStateMachine stateMachine = new AlertStateMachine();
 
     public AlertEvaluator(
             AlertRuleStore ruleStore,
             TelemetryRepository repository,
-            AlertRouter alertRouter
+            AlertRouter alertRouter,
+            MetadataStore metadata
     ) {
         this.ruleStore = ruleStore;
         this.repository = repository;
         this.alertRouter = alertRouter;
+        this.metadata = metadata;
     }
 
     /**
@@ -124,7 +130,8 @@ public class AlertEvaluator {
                  * AlertEvaluator nie zna szczegółów query language ani storage'u.
                  * Dostaje jedną wartość liczbową, którą porówna z progiem.
                  */
-                double value = repository.evaluateMetric(rule, start, end);
+                var evaluation = repository.evaluateMetricResult(rule, start, end);
+                double value = evaluation.value();
 
                 /*
                  * Sprawdzenie warunku alertowego.
@@ -140,7 +147,20 @@ public class AlertEvaluator {
                         rule.getThreshold()
                 );
 
-                if (firing) {
+                var previous = metadata.alertState(rule.getId())
+                        .map(row -> new AlertStateMachine.State(row.state(), row.conditionSince(), false))
+                        .orElse(null);
+                if (!evaluation.hasData()) {
+                    String policy = rule.getNoDataPolicy() == null ? "keep_last_state" : rule.getNoDataPolicy();
+                    if ("keep_last_state".equals(policy)) continue;
+                    firing = "alert".equals(policy);
+                }
+
+                var next = stateMachine.next(previous, firing, end,
+                        Duration.ofSeconds(rule.getForSeconds()));
+                metadata.saveAlertState(rule, next.name(), next.conditionSince(), end, value);
+
+                if (next.notificationRequired()) {
                     /*
                      * AlertEvent to materializacja faktu, że reguła weszła
                      * w stan FIRING w konkretnym czasie.
@@ -154,12 +174,12 @@ public class AlertEvaluator {
                             rule.getTenantId(),
                             rule.getId(),
                             rule.getName(),
-                            "FIRING",
+                            next.name(),
                             end,
                             value,
                             rule.getThreshold(),
                             "Rule " + rule.getName()
-                                    + " is firing: observed=" + value
+                                    + " changed state to " + next.name() + ": observed=" + value
                     );
 
                     repository.insertAlertEvent(event);
@@ -171,7 +191,9 @@ public class AlertEvaluator {
                      * czy alert ma trafić do webhooka, Slacka, e-maila
                      * czy tylko do logów.
                      */
-                    alertRouter.route(rule, event);
+                    boolean inhibited = metadata.anyRuleFiring(rule.getInhibitedByRuleIds());
+                    boolean silenced = metadata.isSilenced(rule.getTenantId(), rule.getId(), end);
+                    if (!inhibited && !silenced) alertRouter.route(rule, event);
 
                     log.warn(
                             "ALERT FIRING: {} observed={} threshold={}",

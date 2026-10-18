@@ -5,10 +5,12 @@ import com.example.observability.server.fulltext.FullTextIndexService;
 import com.example.observability.server.model.LogIngestRequest;
 import com.example.observability.server.model.MetricIngestRequest;
 import com.example.observability.server.repository.TelemetryRepository;
+import com.example.observability.server.metrics.TelemetryPlatformMetrics;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Component;
 
 /**
@@ -65,17 +67,20 @@ public class TelemetryConsumers {
      * które później mogą pomóc w planowaniu/ograniczaniu wyszukiwania.
      */
     private final FullTextIndexService fullTextIndexService;
+    private final TelemetryPlatformMetrics platformMetrics;
 
     public TelemetryConsumers(
             ObjectMapper objectMapper,
             TelemetryRepository repository,
             LogBloomFilterService bloomFilterService,
-            FullTextIndexService fullTextIndexService
+            FullTextIndexService fullTextIndexService,
+            TelemetryPlatformMetrics platformMetrics
     ) {
         this.objectMapper = objectMapper;
         this.repository = repository;
         this.bloomFilterService = bloomFilterService;
         this.fullTextIndexService = fullTextIndexService;
+        this.platformMetrics = platformMetrics;
     }
 
     /**
@@ -105,7 +110,7 @@ public class TelemetryConsumers {
             topics = "${telemetry.kafka.logs-topic}",
             groupId = "telemetry-log-writer"
     )
-    public void consumeLogs(String payload) throws Exception {
+    public void consumeLogs(String payload, Acknowledgment acknowledgment) throws Exception {
         LogIngestRequest request = objectMapper.readValue(
                 payload,
                 LogIngestRequest.class
@@ -115,6 +120,7 @@ public class TelemetryConsumers {
          * Pusty batch nie powinien generować zapisu do bazy ani indeksów.
          */
         if (request.getLogs() == null || request.getLogs().isEmpty()) {
+            acknowledgment.acknowledge();
             return;
         }
 
@@ -145,6 +151,9 @@ public class TelemetryConsumers {
                 request.getTenantId(),
                 request.getLogs()
         );
+        acknowledgment.acknowledge();
+        platformMetrics.consumed("logs", request.getLogs().size());
+        platformMetrics.checkpointSaved();
 
         log.debug(
                 "Inserted {} logs, bloom filters and full-text terms for tenant {}",
@@ -176,13 +185,14 @@ public class TelemetryConsumers {
             topics = "${telemetry.kafka.metrics-topic}",
             groupId = "telemetry-metric-writer"
     )
-    public void consumeMetrics(String payload) throws Exception {
+    public void consumeMetrics(String payload, Acknowledgment acknowledgment) throws Exception {
         MetricIngestRequest request = objectMapper.readValue(
                 payload,
                 MetricIngestRequest.class
         );
 
         if (request.getSeries() == null || request.getSeries().isEmpty()) {
+            acknowledgment.acknowledge();
             return;
         }
 
@@ -193,6 +203,11 @@ public class TelemetryConsumers {
          * nie bezpośrednio w consumerze.
          */
         repository.insertMetrics(request);
+        acknowledgment.acknowledge();
+        platformMetrics.consumed("metrics", request.getSeries().stream()
+                .mapToInt(series -> (series.getSamples() == null ? 0 : series.getSamples().size())
+                        + (series.getHistograms() == null ? 0 : series.getHistograms().size())).sum());
+        platformMetrics.checkpointSaved();
 
         log.debug("Inserted metrics for tenant {}", request.getTenantId());
     }

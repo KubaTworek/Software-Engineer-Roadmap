@@ -58,9 +58,11 @@ public class TelemetryAgent {
      * plik logów, batch size, heartbeat interval, API key.
      */
     private final Config config;
+    private final FileCheckpointStore checkpoints;
 
     public TelemetryAgent(Config config) {
         this.config = config;
+        this.checkpoints = new FileCheckpointStore(config.checkpointFile);
     }
 
     /**
@@ -139,7 +141,7 @@ public class TelemetryAgent {
      * - to prosta implementacja; produkcyjnie potrzebny byłby trwały offset.
      */
     private void tailLoop() {
-        long pointer = 0;
+        long pointer = checkpoints.load();
 
         while (true) {
             try (RandomAccessFile file = new RandomAccessFile(config.logFile.toFile(), "r")) {
@@ -166,18 +168,23 @@ public class TelemetryAgent {
                             StandardCharsets.UTF_8
                     );
 
-                    batch.add(parseLogLine(decoded));
+                    long sourceOffset = file.getFilePointer() - line.getBytes(StandardCharsets.ISO_8859_1).length - 1L;
+                    batch.add(parseLogLine(decoded, Math.max(0, sourceOffset)));
 
                     // Po osiągnięciu batchSize wysyłamy paczkę logów do backendu.
                     if (batch.size() >= config.batchSize) {
                         sendLogs(batch);
                         batch.clear();
+                        pointer = file.getFilePointer();
+                        checkpoints.save(pointer);
                     }
                 }
 
                 // Wysyłamy końcówkę batcha, nawet jeśli nie osiągnęła batchSize.
                 if (!batch.isEmpty()) {
                     sendLogs(batch);
+                    pointer = file.getFilePointer();
+                    checkpoints.save(pointer);
                 }
 
                 // Zapamiętujemy offset, od którego zaczniemy kolejną iterację.
@@ -218,11 +225,14 @@ public class TelemetryAgent {
      * Dzięki temu agent obsługuje zarówno proste logi tekstowe,
      * jak i bardziej strukturalne logi aplikacyjne.
      */
-    private Map<String, Object> parseLogLine(String line) {
+    Map<String, Object> parseLogLine(String line, long sourceOffset) {
         Map<String, Object> event = new LinkedHashMap<>();
 
         // Domyślne pola wymagane przez backend logów.
         event.put("timestamp", Instant.now().toString());
+        event.put("eventId", UUID.nameUUIDFromBytes((config.hostName + "|" +
+                config.logFile.toAbsolutePath() + "|" + sourceOffset + "|" + line)
+                .getBytes(StandardCharsets.UTF_8)).toString());
         event.put("level", "INFO");
         event.put("service", config.serviceName);
         event.put("host", config.hostName);
@@ -365,19 +375,18 @@ public class TelemetryAgent {
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
 
-        HttpResponse<String> response = client.send(
-                request,
-                HttpResponse.BodyHandlers.ofString()
-        );
-
-        if (response.statusCode() >= 300) {
-            throw new IOException(
-                    "POST " + url + " failed: "
-                            + response.statusCode()
-                            + " "
-                            + response.body()
-            );
+        for (int attempt = 0; attempt < 5; attempt++) {
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() < 300) return;
+            if (response.statusCode() != 429 && response.statusCode() < 500) {
+                throw new IOException("POST " + url + " failed permanently: " + response.statusCode());
+            }
+            long retryAfter = response.headers().firstValue("Retry-After")
+                    .map(value -> Long.parseLong(value) * 1_000L)
+                    .orElse((long) Math.min(10_000, 250 * (1 << attempt)));
+            sleep(retryAfter + java.util.concurrent.ThreadLocalRandom.current().nextLong(100));
         }
+        throw new IOException("POST " + url + " exhausted retry budget");
     }
 
     /**
@@ -433,6 +442,7 @@ public class TelemetryAgent {
         long pollMillis;
         long heartbeatSeconds;
         String apiKey;
+        Path checkpointFile;
 
         /**
          * Buduje konfigurację z CLI/env/defaultów.
@@ -518,6 +528,14 @@ public class TelemetryAgent {
                     "AGENT_API_KEY",
                     "demo-writer-key"
             );
+
+            c.checkpointFile = Path.of(value(cli, env, "checkpoint-file",
+                    "AGENT_CHECKPOINT_FILE", c.logFile + ".offset"));
+
+            if (c.batchSize <= 0 || c.batchSize > 10_000 || c.pollMillis <= 0
+                    || c.heartbeatSeconds <= 0 || c.apiKey.isBlank()) {
+                throw new IllegalArgumentException("invalid agent configuration");
+            }
 
             return c;
         }

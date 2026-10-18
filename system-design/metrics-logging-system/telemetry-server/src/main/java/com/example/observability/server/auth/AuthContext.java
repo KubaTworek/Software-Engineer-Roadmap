@@ -16,6 +16,10 @@ public record AuthContext(String tenantId, String apiKeyName, Set<String> roles)
     }
 
     public boolean canAdmin() {
-        return hasRole("admin");
+        return hasRole("admin") || canPlatformAdmin();
+    }
+
+    public boolean canPlatformAdmin() {
+        return hasRole("platform_admin");
     }
 }

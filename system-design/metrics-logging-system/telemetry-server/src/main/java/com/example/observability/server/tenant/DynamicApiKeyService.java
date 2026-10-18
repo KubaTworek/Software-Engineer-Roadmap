@@ -1,7 +1,7 @@
 package com.example.observability.server.tenant;
 
 import com.example.observability.server.auth.AuthContext;
-import org.springframework.jdbc.core.JdbcTemplate;
+import com.example.observability.server.metadata.MetadataStore;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -34,10 +34,10 @@ public class DynamicApiKeyService {
      *
      * Używany do lookupu aktywnego API key po token_hash.
      */
-    private final JdbcTemplate jdbc;
+    private final MetadataStore metadata;
 
-    public DynamicApiKeyService(JdbcTemplate jdbc) {
-        this.jdbc = jdbc;
+    public DynamicApiKeyService(MetadataStore metadata) {
+        this.metadata = metadata;
     }
 
     /**
@@ -66,29 +66,7 @@ public class DynamicApiKeyService {
              * Do bazy trafia tylko hash, więc tutaj liczymy hash z tokena
              * otrzymanego z nagłówka requestu.
              */
-            String hash = sha256(token);
-
-            /*
-             * Szukamy tylko aktywnych kluczy.
-             *
-             * LIMIT 1 wystarcza, bo token_hash powinien być unikalny.
-             * Jeśli nie jest unikalny, to jest problem modelu danych.
-             */
-            List<AuthContext> contexts = jdbc.query("""
-                    SELECT tenant_id, name, roles
-                    FROM tenant_api_keys
-                    WHERE token_hash=? AND status='active'
-                    LIMIT 1
-                    """,
-                    (rs, rowNum) -> new AuthContext(
-                            rs.getString("tenant_id"),
-                            rs.getString("name"),
-                            parseRoles(rs.getObject("roles"))
-                    ),
-                    hash
-            );
-
-            return contexts.stream().findFirst();
+            return metadata.authenticate(token);
 
         } catch (Exception ignored) {
             /*

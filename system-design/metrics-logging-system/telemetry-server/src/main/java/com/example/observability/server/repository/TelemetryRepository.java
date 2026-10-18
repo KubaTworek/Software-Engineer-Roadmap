@@ -7,7 +7,6 @@ import com.example.observability.server.cardinality.CardinalityGuard;
 import com.example.observability.server.fulltext.FullTextIndexService;
 import com.example.observability.server.phase3.AnomalyDetector;
 import com.example.observability.server.region.MultiRegionService;
-import com.example.observability.server.tenant.TenantModels;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
@@ -101,9 +100,9 @@ public class TelemetryRepository {
      */
     public void insertLogs(LogIngestRequest request) {
         String sql = """
-                INSERT INTO logs
-                (tenant_id, timestamp, level, service, host, trace_id, message, attributes_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO observability.`logs`
+                (event_id, tenant_id, `timestamp`, level, service, host, trace_id, message, attributes_json)
+                VALUES (?, ?, parseDateTime64BestEffort(?), ?, ?, ?, ?, ?, ?)
                 """;
 
         /*
@@ -113,16 +112,19 @@ public class TelemetryRepository {
          * dla każdej linii loga.
          */
         jdbc.batchUpdate(sql, request.getLogs(), Math.max(1, request.getLogs().size()), (ps, log) -> {
-            ps.setString(1, request.getTenantId());
-            ps.setTimestamp(2, Timestamp.from(log.getTimestamp()));
-            ps.setString(3, safe(log.getLevel()).toUpperCase());
-            ps.setString(4, safe(log.getService()));
-            ps.setString(5, safe(log.getHost()));
-            ps.setString(6, safe(log.getTraceId()));
-            ps.setString(7, safe(log.getMessage()));
+            ps.setString(1, log.getEventId());
+            ps.setString(2, request.getTenantId());
+            // java.sql.Timestamp jest interpretowany w strefie JVM przez część
+            // sterowników ClickHouse. ISO-8601 z offsetem zachowuje event time UTC.
+            ps.setString(3, log.getTimestamp().toString());
+            ps.setString(4, safe(log.getLevel()).toUpperCase());
+            ps.setString(5, safe(log.getService()));
+            ps.setString(6, safe(log.getHost()));
+            ps.setString(7, safe(log.getTraceId()));
+            ps.setString(8, safe(log.getMessage()));
 
             // Atrybuty loga są zapisywane jako JSON string.
-            ps.setString(8, toJson(log.getAttributes()));
+            ps.setString(9, toJson(log.getAttributes()));
         });
     }
 
@@ -140,11 +142,13 @@ public class TelemetryRepository {
         for (MetricSeriesDto series : request.getSeries()) {
             String labelsJson = toJson(series.getLabels());
 
-            for (MetricSampleDto sample : series.getSamples()) {
+            for (MetricSampleDto sample : series.getSamples() == null
+                    ? List.<MetricSampleDto>of() : series.getSamples()) {
                 rows.add(new Object[]{
+                        sample.getEventId(),
                         request.getTenantId(),
                         series.getName(),
-                        Timestamp.from(sample.getTimestamp()),
+                        sample.getTimestamp().toString(),
                         sample.getValue(),
                         labelsJson
                 });
@@ -154,10 +158,28 @@ public class TelemetryRepository {
         if (!rows.isEmpty()) {
             jdbc.batchUpdate("""
                     INSERT INTO metrics_samples
-                    (tenant_id, metric_name, timestamp, value, labels_json)
-                    VALUES (?, ?, ?, ?, ?)
+                    (event_id, tenant_id, metric_name, `timestamp`, value, labels_json)
+                    VALUES (?, ?, ?, parseDateTime64BestEffort(?), ?, ?)
                     """, rows);
         }
+
+        List<Object[]> histograms = new ArrayList<>();
+        for (MetricSeriesDto series : request.getSeries()) {
+            String labelsJson = toJson(series.getLabels());
+            for (HistogramPointDto point : series.getHistograms() == null
+                    ? List.<HistogramPointDto>of() : series.getHistograms()) {
+                histograms.add(new Object[]{point.getEventId(), request.getTenantId(), series.getName(),
+                        point.getTimestamp().toString(), point.getCount(), point.getSum(),
+                        point.getExplicitBounds().toArray(Double[]::new),
+                        point.getBucketCounts().toArray(Long[]::new), labelsJson,
+                        safe(point.getExemplarTraceId())});
+            }
+        }
+        if (!histograms.isEmpty()) jdbc.batchUpdate("""
+                INSERT INTO metric_histograms(event_id, tenant_id, metric_name, `timestamp`,
+                  `count`, `sum`, explicit_bounds, bucket_counts, labels_json, exemplar_trace_id)
+                VALUES (?,?,?,parseDateTime64BestEffort(?),?,?,?,?,?,?)
+                """, histograms);
     }
 
     /**
@@ -188,7 +210,7 @@ public class TelemetryRepository {
 
         StringBuilder sql = new StringBuilder("""
                 SELECT tenant_id, timestamp, level, service, host, trace_id, message, attributes_json
-                FROM logs
+                FROM observability.logs FINAL
                 WHERE tenant_id = ?
                 """);
 
@@ -211,13 +233,13 @@ public class TelemetryRepository {
         }
 
         if (start != null) {
-            sql.append(" AND timestamp >= ?");
-            args.add(Timestamp.from(start));
+            sql.append(" AND timestamp >= parseDateTime64BestEffort(?)");
+            args.add(start.toString());
         }
 
         if (end != null) {
-            sql.append(" AND timestamp <= ?");
-            args.add(Timestamp.from(end));
+            sql.append(" AND timestamp <= parseDateTime64BestEffort(?)");
+            args.add(end.toString());
         }
 
         /*
@@ -300,16 +322,18 @@ public class TelemetryRepository {
 
         StringBuilder sql = new StringBuilder("""
                 SELECT toStartOfInterval(%s, INTERVAL ? SECOND) AS bucket, avg(%s) AS value
-                FROM %s
-                WHERE tenant_id = ? AND metric_name = ? AND %s >= ? AND %s <= ?
-                """.formatted(timeColumn, valueExpr, safeTable, timeColumn, timeColumn));
+                FROM %s%s
+                WHERE tenant_id = ? AND metric_name = ?
+                  AND %s >= parseDateTime64BestEffort(?)
+                  AND %s <= parseDateTime64BestEffort(?)
+                """.formatted(timeColumn, valueExpr, safeTable, rollup ? " FINAL" : "", timeColumn, timeColumn));
 
         List<Object> args = new ArrayList<>();
         args.add(stepSeconds);
         args.add(tenantId);
         args.add(metricName);
-        args.add(Timestamp.from(start));
-        args.add(Timestamp.from(end));
+        args.add(start.toString());
+        args.add(end.toString());
 
         /*
          * service jest filtrowany z labels_json.
@@ -343,6 +367,10 @@ public class TelemetryRepository {
      * - label filters.
      */
     public double evaluateMetric(AlertRule rule, Instant start, Instant end) {
+        return evaluateMetricResult(rule, start, end).value();
+    }
+
+    public MetricEvaluation evaluateMetricResult(AlertRule rule, Instant start, Instant end) {
         String aggregation = switch (rule.getAggregation().toLowerCase()) {
             case "avg" -> "avg";
             case "max" -> "max";
@@ -352,16 +380,18 @@ public class TelemetryRepository {
         };
 
         StringBuilder sql = new StringBuilder("""
-                SELECT %s(value) AS observed
-                FROM metrics_samples
-                WHERE tenant_id=? AND metric_name=? AND timestamp>=? AND timestamp<=?
+                SELECT %s(value) AS observed, count() AS samples
+                FROM metrics_samples FINAL
+                WHERE tenant_id=? AND metric_name=?
+                  AND timestamp>=parseDateTime64BestEffort(?)
+                  AND timestamp<=parseDateTime64BestEffort(?)
                 """.formatted(aggregation));
 
         List<Object> args = new ArrayList<>();
         args.add(rule.getTenantId());
         args.add(rule.getMetricName());
-        args.add(Timestamp.from(start));
-        args.add(Timestamp.from(end));
+        args.add(start.toString());
+        args.add(end.toString());
 
         /*
          * Filtry po labelach z reguły alertowej.
@@ -376,9 +406,11 @@ public class TelemetryRepository {
             args.add(entry.getValue());
         }
 
-        Double value = jdbc.queryForObject(sql.toString(), Double.class, args.toArray());
-        return value == null ? 0.0 : value;
+        return jdbc.queryForObject(sql.toString(), (rs, row) -> new MetricEvaluation(
+                rs.getDouble("observed"), rs.getLong("samples") > 0), args.toArray());
     }
+
+    public record MetricEvaluation(double value, boolean hasData) { }
 
     /**
      * Zapisuje event alertowy do historii alertów.
@@ -443,7 +475,8 @@ public class TelemetryRepository {
                 INSERT INTO trace_spans
                 (tenant_id, trace_id, span_id, parent_span_id, service, operation,
                  start_time, end_time, duration_ms, status, attributes_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, parseDateTime64BestEffort(?),
+                        parseDateTime64BestEffort(?), ?, ?, ?)
                 """;
 
         jdbc.batchUpdate(sql, request.getSpans(), Math.max(1, request.getSpans().size()), (ps, span) -> {
@@ -462,8 +495,13 @@ public class TelemetryRepository {
             ps.setString(4, safe(span.getParentSpanId()));
             ps.setString(5, safe(span.getService()));
             ps.setString(6, safe(span.getOperation()));
-            ps.setTimestamp(7, Timestamp.from(start));
-            ps.setTimestamp(8, Timestamp.from(end));
+            /*
+             * Jawny ISO-8601 zachowuje UTC niezależnie od strefy JVM. Użycie
+             * setTimestamp przesuwało okna, gdy klient i ClickHouse miały
+             * różne strefy domyślne.
+             */
+            ps.setString(7, start.toString());
+            ps.setString(8, end.toString());
             ps.setDouble(9, duration);
             ps.setString(10, safe(span.getStatus()).toUpperCase());
             ps.setString(11, toJson(span.getAttributes()));
@@ -510,13 +548,13 @@ public class TelemetryRepository {
         }
 
         if (start != null) {
-            sql.append(" AND start_time >= ?");
-            args.add(Timestamp.from(start));
+            sql.append(" AND start_time >= parseDateTime64BestEffort(?)");
+            args.add(start.toString());
         }
 
         if (end != null) {
-            sql.append(" AND start_time <= ?");
-            args.add(Timestamp.from(end));
+            sql.append(" AND start_time <= parseDateTime64BestEffort(?)");
+            args.add(end.toString());
         }
 
         sql.append(" ORDER BY start_time ASC LIMIT ").append(limit);
@@ -550,7 +588,7 @@ public class TelemetryRepository {
 
         return jdbc.query("""
                 SELECT tenant_id, timestamp, level, service, host, trace_id, message, attributes_json
-                FROM logs
+                FROM observability.logs FINAL
                 WHERE tenant_id = ? AND trace_id = ?
                 ORDER BY timestamp ASC
                 LIMIT """ + limit,
@@ -701,8 +739,8 @@ public class TelemetryRepository {
 
         String sql = """
                 INSERT INTO log_fulltext_terms
-                (tenant_id, service, level, bucket_start, term, doc_count, sample_trace_ids)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                (event_id, tenant_id, service, level, bucket_start, term, doc_count, sample_trace_ids)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """;
 
         List<Object[]> rows = new ArrayList<>();
@@ -711,6 +749,7 @@ public class TelemetryRepository {
             var key = e.getKey();
 
             rows.add(new Object[]{
+                    key.eventId(),
                     key.tenantId(),
                     key.service(),
                     key.level(),
@@ -744,7 +783,7 @@ public class TelemetryRepository {
         String placeholders = String.join(",", Collections.nCopies(terms.size(), "?"));
 
         StringBuilder sql = new StringBuilder(
-                "SELECT DISTINCT bucket_start FROM log_fulltext_terms WHERE tenant_id=? AND term IN (" + placeholders + ")"
+                "SELECT DISTINCT bucket_start FROM log_fulltext_terms FINAL WHERE tenant_id=? AND term IN (" + placeholders + ")"
         );
 
         List<Object> args = new ArrayList<>();
@@ -829,163 +868,6 @@ public class TelemetryRepository {
                         rs.getDouble("observed"),
                         rs.getString("method"),
                         rs.getString("severity")
-                ),
-                tenantId
-        );
-    }
-
-    /**
-     * Zapisuje konfigurację tenanta.
-     *
-     * Używane przez TenantService przy tworzeniu lub aktualizacji tenantów.
-     */
-    public void upsertTenant(TenantModels.Tenant tenant) {
-        jdbc.update("""
-                INSERT INTO tenants
-                (tenant_id, display_name, status, plan, primary_region, retention_days, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                tenant.tenantId(),
-                tenant.displayName(),
-                tenant.status(),
-                tenant.plan(),
-                tenant.primaryRegion(),
-                tenant.retentionDays(),
-                Timestamp.from(tenant.createdAt()),
-                Timestamp.from(tenant.updatedAt())
-        );
-    }
-
-    /**
-     * Pobiera konfigurację jednego tenanta.
-     *
-     * Jeśli tenant nie istnieje, zwraca tenant implicit.
-     * To jest wygodne w demo/MVP, ale produkcyjnie raczej powinien być 404.
-     */
-    public TenantModels.Tenant getTenant(String tenantId) {
-        List<TenantModels.Tenant> results = jdbc.query("""
-                SELECT tenant_id, display_name, status, plan, primary_region, retention_days, created_at, updated_at
-                FROM tenants
-                WHERE tenant_id=?
-                ORDER BY updated_at DESC
-                LIMIT 1
-                """,
-                (rs, rowNum) -> new TenantModels.Tenant(
-                        rs.getString("tenant_id"),
-                        rs.getString("display_name"),
-                        rs.getString("status"),
-                        rs.getString("plan"),
-                        rs.getString("primary_region"),
-                        rs.getInt("retention_days"),
-                        rs.getTimestamp("created_at").toInstant(),
-                        rs.getTimestamp("updated_at").toInstant()
-                ),
-                tenantId
-        );
-
-        if (results.isEmpty()) {
-            return new TenantModels.Tenant(
-                    tenantId,
-                    tenantId,
-                    "implicit",
-                    "dev",
-                    "local",
-                    30,
-                    Instant.EPOCH,
-                    Instant.EPOCH
-            );
-        }
-
-        return results.get(0);
-    }
-
-    /**
-     * Listuje tenantów platformy.
-     *
-     * Używane przez endpoint wymagający platform admina.
-     */
-    public List<TenantModels.Tenant> listTenants() {
-        return jdbc.query("""
-                SELECT tenant_id, display_name, status, plan, primary_region, retention_days, created_at, updated_at
-                FROM tenants
-                ORDER BY tenant_id
-                LIMIT 1000
-                """,
-                (rs, rowNum) -> new TenantModels.Tenant(
-                        rs.getString("tenant_id"),
-                        rs.getString("display_name"),
-                        rs.getString("status"),
-                        rs.getString("plan"),
-                        rs.getString("primary_region"),
-                        rs.getInt("retention_days"),
-                        rs.getTimestamp("created_at").toInstant(),
-                        rs.getTimestamp("updated_at").toInstant()
-                )
-        );
-    }
-
-    /**
-     * Zapisuje API key dla tenanta.
-     *
-     * Ważne bezpieczeństwo:
-     * do bazy trafia hash tokena, nie jawny token.
-     *
-     * Jawny token powinien być pokazany użytkownikowi tylko raz,
-     * przy tworzeniu klucza.
-     */
-    public void insertTenantApiKey(
-            String tenantId,
-            String keyId,
-            String token,
-            String name,
-            Set<String> roles,
-            Instant expiresAt
-    ) {
-        jdbc.update("""
-                INSERT INTO tenant_api_keys
-                (tenant_id, key_id, token_hash, name, roles, status, created_at, expires_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                tenantId,
-                keyId,
-                sha256(token),
-                name,
-                roles.toArray(new String[0]),
-                "active",
-                Timestamp.from(Instant.now()),
-                expiresAt == null ? null : Timestamp.from(expiresAt)
-        );
-    }
-
-    /**
-     * Listuje bezpieczny widok API keys.
-     *
-     * Nie zwraca sekretu tokena.
-     */
-    public List<TenantModels.ApiKeyView> listTenantApiKeys(String tenantId) {
-        return jdbc.query("""
-                SELECT tenant_id, key_id, name, roles, status, created_at, expires_at
-                FROM tenant_api_keys
-                WHERE tenant_id=?
-                ORDER BY created_at DESC
-                LIMIT 100
-                """,
-                (rs, rowNum) -> new TenantModels.ApiKeyView(
-                        rs.getString("tenant_id"),
-                        rs.getString("key_id"),
-                        rs.getString("name"),
-
-                        /*
-                         * Uwaga produkcyjna:
-                         * Set.of(String.valueOf(rs.getObject("roles"))) może niepoprawnie mapować tablicę ról.
-                         * Lepiej jawnie obsłużyć SQL Array / ClickHouse Array(String).
-                         */
-                        Set.of(String.valueOf(rs.getObject("roles"))),
-                        rs.getString("status"),
-                        rs.getTimestamp("created_at").toInstant(),
-                        rs.getTimestamp("expires_at") == null
-                                ? null
-                                : rs.getTimestamp("expires_at").toInstant()
                 ),
                 tenantId
         );

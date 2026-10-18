@@ -7,6 +7,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class LogEventDto {
+    private String eventId;
     @JsonFormat(shape = JsonFormat.Shape.STRING)
     private Instant timestamp;
     private String level = "INFO";
@@ -15,6 +16,9 @@ public class LogEventDto {
     private String traceId = "";
     private String message = "";
     private Map<String, Object> attributes = new HashMap<>();
+
+    public String getEventId() { return eventId; }
+    public void setEventId(String eventId) { this.eventId = eventId; }
 
     public Instant getTimestamp() {
         return timestamp;

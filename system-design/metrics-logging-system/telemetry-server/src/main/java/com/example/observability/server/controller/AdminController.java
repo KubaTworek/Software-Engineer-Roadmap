@@ -3,6 +3,7 @@ package com.example.observability.server.controller;
 import com.example.observability.server.auth.Rbac;
 import com.example.observability.server.cold.ColdExportJob;
 import com.example.observability.server.cold.ObjectStorageService;
+import com.example.observability.server.cold.ColdRestoreService;
 import com.example.observability.server.quota.QuotaProperties;
 import com.example.observability.server.quota.QuotaService;
 import org.springframework.web.bind.annotation.*;
@@ -51,15 +52,18 @@ public class AdminController {
      * na S3, GCS, Azure Blob albo MinIO.
      */
     private final ObjectStorageService objectStorageService;
+    private final ColdRestoreService coldRestoreService;
 
     public AdminController(
             QuotaService quotaService,
             ColdExportJob coldExportJob,
-            ObjectStorageService objectStorageService
+            ObjectStorageService objectStorageService,
+            ColdRestoreService coldRestoreService
     ) {
         this.quotaService = quotaService;
         this.coldExportJob = coldExportJob;
         this.objectStorageService = objectStorageService;
+        this.coldRestoreService = coldRestoreService;
     }
 
     /**
@@ -115,8 +119,8 @@ public class AdminController {
         Rbac.requireAdmin(tenantId);
 
         return Map.of(
-                "logsUri", coldExportJob.exportLogs(start, end),
-                "metricsUri", coldExportJob.exportMetrics(start, end)
+                "logsUri", coldExportJob.exportLogs(tenantId, start, end),
+                "metricsUri", coldExportJob.exportMetrics(tenantId, start, end)
         );
     }
 
@@ -146,6 +150,26 @@ public class AdminController {
             @RequestParam(defaultValue = "") String prefix
     ) {
         Rbac.requireAdmin(tenantId);
-        return objectStorageService.list(prefix);
+        String safeSuffix = prefix == null ? "" : prefix.replace('\\', '/');
+        if (safeSuffix.contains("..")) throw new IllegalArgumentException("invalid object prefix");
+        var objects = new java.util.ArrayList<ObjectStorageService.ObjectInfo>();
+        objects.addAll(objectStorageService.list("logs/" + tenantId + "/" + safeSuffix));
+        objects.addAll(objectStorageService.list("metrics/" + tenantId + "/" + safeSuffix));
+        return objects;
+    }
+
+    /**
+     * Wykonuje kontrolowane odtworzenie obiektu cold storage do izolowanej
+     * tabeli drill. Operacja weryfikuje tenant, sumę SHA-256, poprawność JSONL
+     * i liczbę rekordów z manifestu. Nie zapisuje danych do tabel produkcyjnych,
+     * dzięki czemu test odtwarzania nie może nadpisać bieżącej telemetrii.
+     */
+    @PostMapping("/cold-restore-drill")
+    public ColdRestoreService.RestoreResult restoreDrill(
+            @RequestParam String tenantId,
+            @RequestParam String objectKey
+    ) {
+        Rbac.requireAdmin(tenantId);
+        return coldRestoreService.drill(tenantId, objectKey);
     }
 }

@@ -29,7 +29,10 @@ public class ApiKeyProperties {
 
     public Optional<ApiKeyDefinition> findByToken(String token) {
         if (token == null || token.isBlank()) return Optional.empty();
-        return apiKeys.stream().filter(k -> token.equals(k.getToken())).findFirst();
+        byte[] candidate = token.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        return apiKeys.stream().filter(k -> k.getToken() != null
+                && java.security.MessageDigest.isEqual(candidate,
+                k.getToken().getBytes(java.nio.charset.StandardCharsets.UTF_8))).findFirst();
     }
 
     public static class ApiKeyDefinition {

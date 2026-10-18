@@ -13,6 +13,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import com.example.observability.server.metadata.MetadataStore;
 
 /**
  * Job eksportujący stare dane telemetryczne z hot storage do cold storage.
@@ -82,17 +83,20 @@ public class ColdExportJob {
      * telemetry.object-storage.export.after-days
      */
     private final int exportAfterDays;
+    private final MetadataStore metadata;
 
     public ColdExportJob(
             JdbcTemplate jdbc,
             ObjectMapper objectMapper,
             ObjectStorageService objectStorage,
+            MetadataStore metadata,
             @Value("${telemetry.object-storage.export.enabled:true}") boolean enabled,
             @Value("${telemetry.object-storage.export.after-days:7}") int exportAfterDays
     ) {
         this.jdbc = jdbc;
         this.objectMapper = objectMapper;
         this.objectStorage = objectStorage;
+        this.metadata = metadata;
         this.enabled = enabled;
         this.exportAfterDays = exportAfterDays;
     }
@@ -142,8 +146,12 @@ public class ColdExportJob {
 
         Instant hourStart = hourEnd.minusSeconds(3600);
 
-        exportLogs(hourStart, hourEnd);
-        exportMetrics(hourStart, hourEnd);
+        // Każdy obiekt jest tenant-scoped. Wspólny eksport wielu tenantów
+        // utrudniałby autoryzację, retencję i bezpieczne usunięcie danych.
+        for (var tenant : metadata.tenants()) {
+            exportLogs(tenant.tenantId(), hourStart, hourEnd);
+            exportMetrics(tenant.tenantId(), hourStart, hourEnd);
+        }
     }
 
     /**
@@ -158,12 +166,12 @@ public class ColdExportJob {
      *
      * Każdy rekord jest serializowany do jednej linii JSON.
      */
-    public String exportLogs(Instant start, Instant end) {
+    public String exportLogs(String tenantId, Instant start, Instant end) {
         List<String> lines = jdbc.query("""
                 SELECT tenant_id, timestamp, level, service, host, trace_id, message, attributes_json
-                FROM logs
-                WHERE timestamp >= ? AND timestamp < ?
-                LIMIT 100000
+                FROM observability.logs FINAL
+                WHERE tenant_id = ? AND timestamp >= ? AND timestamp < ?
+                ORDER BY timestamp, service, host
                 """,
                 (rs, i) -> toJson(Map.of(
                         "tenant_id", rs.getString("tenant_id"),
@@ -175,6 +183,7 @@ public class ColdExportJob {
                         "message", rs.getString("message"),
                         "attributes_json", rs.getString("attributes_json")
                 )),
+                tenantId,
                 Timestamp.from(start),
                 Timestamp.from(end)
         );
@@ -188,7 +197,7 @@ public class ColdExportJob {
          * - ręczne wyszukiwanie danych,
          * - kompatybilność z narzędziami batchowymi.
          */
-        String key = "logs/"
+        String key = "logs/" + tenantId + "/"
                 + DateTimeFormatter.ofPattern("yyyy/MM/dd/HH")
                 .withZone(ZoneOffset.UTC)
                 .format(start)
@@ -213,12 +222,12 @@ public class ColdExportJob {
      *
      * Eksportowane są raw samples, nie rollupy.
      */
-    public String exportMetrics(Instant start, Instant end) {
+    public String exportMetrics(String tenantId, Instant start, Instant end) {
         List<String> lines = jdbc.query("""
                 SELECT tenant_id, metric_name, timestamp, value, labels_json
-                FROM metrics_samples
-                WHERE timestamp >= ? AND timestamp < ?
-                LIMIT 200000
+                FROM metrics_samples FINAL
+                WHERE tenant_id = ? AND timestamp >= ? AND timestamp < ?
+                ORDER BY timestamp, metric_name, labels_json
                 """,
                 (rs, i) -> toJson(Map.of(
                         "tenant_id", rs.getString("tenant_id"),
@@ -227,11 +236,12 @@ public class ColdExportJob {
                         "value", rs.getDouble("value"),
                         "labels_json", rs.getString("labels_json")
                 )),
+                tenantId,
                 Timestamp.from(start),
                 Timestamp.from(end)
         );
 
-        String key = "metrics/"
+        String key = "metrics/" + tenantId + "/"
                 + DateTimeFormatter.ofPattern("yyyy/MM/dd/HH")
                 .withZone(ZoneOffset.UTC)
                 .format(start)
@@ -260,7 +270,9 @@ public class ColdExportJob {
         try {
             return objectMapper.writeValueAsString(value);
         } catch (Exception e) {
-            return "{}";
+            // Fail closed: zastąpienie rekordu przez {} byłoby cichą utratą
+            // danych, której operator nie potrafi odróżnić od poprawnego eksportu.
+            throw new IllegalStateException("cold-export row serialization failed", e);
         }
     }
 }

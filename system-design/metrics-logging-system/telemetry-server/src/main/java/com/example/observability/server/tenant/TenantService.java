@@ -1,6 +1,7 @@
 package com.example.observability.server.tenant;
 
 import com.example.observability.server.repository.TelemetryRepository;
+import com.example.observability.server.metadata.MetadataStore;
 import org.springframework.stereotype.Service;
 
 import java.security.SecureRandom;
@@ -35,7 +36,7 @@ public class TenantService {
      * TenantService nie zna szczegółów SQL-a ani tabel.
      * Zleca zapis/odczyt do TelemetryRepository.
      */
-    private final TelemetryRepository repository;
+    private final MetadataStore repository;
 
     /**
      * Generator losowości do tworzenia API key.
@@ -45,7 +46,7 @@ public class TenantService {
      */
     private final SecureRandom random = new SecureRandom();
 
-    public TenantService(TelemetryRepository repository) {
+    public TenantService(MetadataStore repository) {
         this.repository = repository;
     }
 
@@ -90,7 +91,7 @@ public class TenantService {
          * Jeśli tenantId już istnieje, zachowanie zależy od implementacji repository:
          * może zaktualizować rekord albo zrobić insert, który się wywali.
          */
-        repository.upsertTenant(tenant);
+        repository.saveTenant(tenant);
 
         return tenant;
     }
@@ -108,7 +109,7 @@ public class TenantService {
             String tenantId,
             TenantModels.UpdateTenantRequest request
     ) {
-        TenantModels.Tenant existing = repository.getTenant(tenantId);
+        TenantModels.Tenant existing = repository.tenant(tenantId);
 
         TenantModels.Tenant updated = new TenantModels.Tenant(
                 tenantId,
@@ -131,7 +132,7 @@ public class TenantService {
                 Instant.now()
         );
 
-        repository.upsertTenant(updated);
+        repository.saveTenant(updated);
 
         return updated;
     }
@@ -143,7 +144,7 @@ public class TenantService {
      * bo pokazuje globalną listę tenantów systemu.
      */
     public List<TenantModels.Tenant> list() {
-        return repository.listTenants();
+        return repository.tenants();
     }
 
     /**
@@ -153,7 +154,7 @@ public class TenantService {
      * a platform admin mógł pobierać dowolny tenant.
      */
     public TenantModels.Tenant get(String tenantId) {
-        return repository.getTenant(tenantId);
+        return repository.tenant(tenantId);
     }
 
     /**
@@ -212,7 +213,7 @@ public class TenantService {
          * Jeśli insertTenantApiKey zapisuje token bez hashowania,
          * to jest krytyczny problem bezpieczeństwa.
          */
-        repository.insertTenantApiKey(
+        repository.saveApiKey(
                 tenantId,
                 keyId,
                 token,
@@ -250,7 +251,7 @@ public class TenantService {
      * Nie powinien zawierać jawnego tokena ani token_hash.
      */
     public List<TenantModels.ApiKeyView> listApiKeys(String tenantId) {
-        return repository.listTenantApiKeys(tenantId);
+        return repository.apiKeys(tenantId);
     }
 
     /**
