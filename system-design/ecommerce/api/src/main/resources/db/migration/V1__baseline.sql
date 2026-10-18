@@ -338,136 +338,136 @@ create table admin_audit_logs (
         primary key (id)
     );
 
-    create index idx_admin_audit_created 
+    create index idx_admin_audit_created
        on admin_audit_logs (created_at);
 
-    create index idx_admin_audit_entity 
+    create index idx_admin_audit_entity
        on admin_audit_logs (entity_type, entity_id);
 
-    create index idx_inventory_reservation_order 
+    create index idx_inventory_reservation_order
        on inventory_reservations (order_id);
 
-    create index idx_outbox_status_created 
+    create index idx_outbox_status_created
        on outbox_events (status, created_at);
 
-    create index idx_recommendations_product 
+    create index idx_recommendations_product
        on product_recommendations (product_id);
 
-    create index idx_products_status 
+    create index idx_products_status
        on products (status);
 
-    create index idx_promotions_status_dates 
+    create index idx_promotions_status_dates
        on promotions (status, starts_at, ends_at);
 
-    create index idx_warehouse_stock_variant 
+    create index idx_warehouse_stock_variant
        on warehouse_stock (variant_id);
 
-    alter table if exists app_user_roles 
-       add constraint FKjhld72ac4tj54kp371ixd1klk 
-       foreign key (user_id) 
+    alter table if exists app_user_roles
+       add constraint FKjhld72ac4tj54kp371ixd1klk
+       foreign key (user_id)
        references app_users;
 
-    alter table if exists auth_tokens 
-       add constraint FKnrsj4bkjx1hc58vcx4gikdiqk 
-       foreign key (user_id) 
+    alter table if exists auth_tokens
+       add constraint FKnrsj4bkjx1hc58vcx4gikdiqk
+       foreign key (user_id)
        references app_users;
 
-    alter table if exists cart_items 
-       add constraint FKpcttvuq4mxppo8sxggjtn5i2c 
-       foreign key (cart_id) 
+    alter table if exists cart_items
+       add constraint FKpcttvuq4mxppo8sxggjtn5i2c
+       foreign key (cart_id)
        references carts;
 
-    alter table if exists cart_items 
-       add constraint FK5yyw1o0dor9gmxfra1dqvn4qa 
-       foreign key (variant_id) 
+    alter table if exists cart_items
+       add constraint FK5yyw1o0dor9gmxfra1dqvn4qa
+       foreign key (variant_id)
        references product_variants;
 
-    alter table if exists carts 
-       add constraint FK98l14q9u9ji7alu1mlbylmvm8 
-       foreign key (user_id) 
+    alter table if exists carts
+       add constraint FK98l14q9u9ji7alu1mlbylmvm8
+       foreign key (user_id)
        references app_users;
 
-    alter table if exists coupons 
-       add constraint FKof48ev4n1l7iu0e61kehdhsic 
-       foreign key (promotion_id) 
+    alter table if exists coupons
+       add constraint FKof48ev4n1l7iu0e61kehdhsic
+       foreign key (promotion_id)
        references promotions;
 
-    alter table if exists customer_order_items 
-       add constraint FKb8kd4gu1fg8jg69ks4osgyxdv 
-       foreign key (order_id) 
+    alter table if exists customer_order_items
+       add constraint FKb8kd4gu1fg8jg69ks4osgyxdv
+       foreign key (order_id)
        references customer_orders;
 
-    alter table if exists customer_orders 
-       add constraint FKp2o28jwueov38fqvtd0gs8f4u 
-       foreign key (user_id) 
+    alter table if exists customer_orders
+       add constraint FKp2o28jwueov38fqvtd0gs8f4u
+       foreign key (user_id)
        references app_users;
 
-    alter table if exists inventory_items 
-       add constraint FKstr2snltnt3xisnwvjspfpnjy 
-       foreign key (variant_id) 
+    alter table if exists inventory_items
+       add constraint FKstr2snltnt3xisnwvjspfpnjy
+       foreign key (variant_id)
        references product_variants;
 
-    alter table if exists inventory_reservations 
-       add constraint FKftb1ljbd85sfh1xonl0grsj6g 
-       foreign key (variant_id) 
+    alter table if exists inventory_reservations
+       add constraint FKftb1ljbd85sfh1xonl0grsj6g
+       foreign key (variant_id)
        references product_variants;
 
-    alter table if exists invoices 
-       add constraint FKikmjf7v4ev27fg39yqxmaosyc 
-       foreign key (order_id) 
+    alter table if exists invoices
+       add constraint FKikmjf7v4ev27fg39yqxmaosyc
+       foreign key (order_id)
        references customer_orders;
 
-    alter table if exists loyalty_accounts 
-       add constraint FK3fhudthmt0cwgli36uoiae8wh 
-       foreign key (user_id) 
+    alter table if exists loyalty_accounts
+       add constraint FK3fhudthmt0cwgli36uoiae8wh
+       foreign key (user_id)
        references app_users;
 
-    alter table if exists loyalty_ledger 
-       add constraint FK1dipg114mes4u9lq7g3iirtrp 
-       foreign key (account_id) 
+    alter table if exists loyalty_ledger
+       add constraint FK1dipg114mes4u9lq7g3iirtrp
+       foreign key (account_id)
        references loyalty_accounts;
 
-    alter table if exists marketplace_sellers 
-       add constraint FK9lq81ij3bm0s4ci1xmcafydcg 
-       foreign key (owner_id) 
+    alter table if exists marketplace_sellers
+       add constraint FK9lq81ij3bm0s4ci1xmcafydcg
+       foreign key (owner_id)
        references app_users;
 
-    alter table if exists payments 
-       add constraint FKh33jeqg4nknm3uly6fernd3jy 
-       foreign key (order_id) 
+    alter table if exists payments
+       add constraint FKh33jeqg4nknm3uly6fernd3jy
+       foreign key (order_id)
        references customer_orders;
 
-    alter table if exists product_variants 
-       add constraint FKosqitn4s405cynmhb87lkvuau 
-       foreign key (product_id) 
+    alter table if exists product_variants
+       add constraint FKosqitn4s405cynmhb87lkvuau
+       foreign key (product_id)
        references products;
 
-    alter table if exists products 
-       add constraint FKog2rp4qthbtt2lfyhfo32lsw9 
-       foreign key (category_id) 
+    alter table if exists products
+       add constraint FKog2rp4qthbtt2lfyhfo32lsw9
+       foreign key (category_id)
        references categories;
 
-    alter table if exists return_request_items 
-       add constraint FKkghh7hxr9q8ku69j45rqwgh8r 
-       foreign key (return_request_id) 
+    alter table if exists return_request_items
+       add constraint FKkghh7hxr9q8ku69j45rqwgh8r
+       foreign key (return_request_id)
        references return_requests;
 
-    alter table if exists return_requests 
-       add constraint FKb52ak2a5aeq285jkyhn98xocs 
-       foreign key (order_id) 
+    alter table if exists return_requests
+       add constraint FKb52ak2a5aeq285jkyhn98xocs
+       foreign key (order_id)
        references customer_orders;
 
-    alter table if exists return_requests 
-       add constraint FKi5dwhw97qpr1b6an080e8kphj 
-       foreign key (user_id) 
+    alter table if exists return_requests
+       add constraint FKi5dwhw97qpr1b6an080e8kphj
+       foreign key (user_id)
        references app_users;
 
-    alter table if exists warehouse_stock 
-       add constraint FKo28lut3ejoo0ucfq3p4n60osa 
-       foreign key (variant_id) 
+    alter table if exists warehouse_stock
+       add constraint FKo28lut3ejoo0ucfq3p4n60osa
+       foreign key (variant_id)
        references product_variants;
 
-    alter table if exists warehouse_stock 
-       add constraint FK4vu7c7du9op0n5bxn6kqubb02 
-       foreign key (warehouse_id) 
+    alter table if exists warehouse_stock
+       add constraint FK4vu7c7du9op0n5bxn6kqubb02
+       foreign key (warehouse_id)
        references warehouses;

@@ -37,4 +37,3 @@ jaką gwarancję chroni kod, przed jakim kontrprzykładem i czego nadal nie gwar
 
 Laboratorium opisuj jako: problem → niezmiennik → naiwny wariant → rozwiązanie → test awarii
 → sygnał produkcyjny → ograniczenie. Nie przedstawiaj planowanej funkcji jako zaimplementowanej.
-

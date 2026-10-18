@@ -39,6 +39,17 @@ import static pl.jakubtworek.booking.support.SecurityTestActors.eventManager;
         "DELETE FROM organizations"
 }, executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
 class EventsIntegrationTest {
+    @Test
+    void ciReadinessQueryIsValidWithoutSeededEvents() throws Exception {
+        // CI sprawdza dostępność HTTP i bazy, nie obecność danych testowych.
+        mockMvc.perform(get("/api/events")
+                        .param("city", "Warsaw")
+                        .param("from", "2026-01-01T00:00:00Z")
+                        .param("category", "education"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray());
+    }
+
     @Autowired
     MockMvc mockMvc;
 

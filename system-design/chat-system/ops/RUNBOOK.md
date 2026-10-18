@@ -81,4 +81,3 @@ Skrypty znajdują się w `ops/backup`. Restore uważa się za sprawdzony dopiero
 gdy można zalogować się, odczytać historię po sekwencji, potwierdzić membership,
 odnaleźć rekordy outboxa i zweryfikować referencje attachmentów. Sam poprawny
 exit code `pg_restore` nie dowodzi spełnienia RPO/RTO.
-

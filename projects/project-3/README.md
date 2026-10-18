@@ -84,6 +84,12 @@ docker compose --profile apps up --detach --build --wait
 
 Na Linux/macOS odpowiednikami są skrypty `.sh` w katalogu `scripts`.
 
+Usługi bazodanowe korzystają ze `spring-boot-starter-flyway`: w Spring Boot 4
+sam `flyway-core` nie zapewnia automatycznego uruchomienia migracji przed
+walidacją schematu JPA. Start na pustym PostgreSQL sprawdza pełny workflow Compose.
+Smoke test oczekuje odpowiedzi readiness ze statusem `UP`; przy niepowodzeniu
+wersja Bash wypisuje odpowiedź HTTP, stan kontenerów oraz ostatnie logi usług.
+
 ## Warstwy weryfikacji
 
 | Warstwa | Co udowadnia | Komenda |

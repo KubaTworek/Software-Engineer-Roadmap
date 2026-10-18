@@ -16,6 +16,17 @@ Diagramy docelowe i warianty rozwoju czytaj razem z mapą implementacji; sam opi
 
 ## Zacznij tutaj
 
+MinIO w laboratorium jest budowany z [oficjalnego commitu 0d7408fc9969](https://github.com/minio/minio/tree/0d7408fc9969caf07de6a8c3a84f9fbb10a6739e)
+przez [docker/minio.Dockerfile](docker/minio.Dockerfile), ponieważ poprzedni obraz
+rejestru stał się niedostępny. Testcontainers (jeśli dany test używa MinIO) i Compose
+korzystają z lokalnego przepisu budowania; nie jest potrzebne logowanie do Quay.
+Pierwszy build wymaga dostępu do GitHub, rejestru obrazów bazowych i modułów Go,
+trwa dłużej oraz potrzebuje więcej pamięci niż samo pobranie obrazu. Warstwy
+kompilacji są cache'owane przez Docker. Dla Compose użyj `docker compose build minio`
+przed uruchomieniem usługi.
+To przypięta wersja edukacyjna, nie rekomendacja bezpieczeństwa dla produkcji;
+licencja AGPL jest dołączana do obrazu w `/licenses/minio/LICENSE`.
+
 | Pytanie | Odpowiedź |
 | --- | --- |
 | Najważniejszy niezmiennik | Materiał może być publikowany dopiero, gdy manifest wskazuje kompletne i dostępne warianty, do których widz ma uprawnienia. |

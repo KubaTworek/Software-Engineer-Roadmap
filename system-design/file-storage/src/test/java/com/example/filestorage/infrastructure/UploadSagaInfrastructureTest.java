@@ -33,7 +33,8 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
+import org.testcontainers.images.builder.ImageFromDockerfile;
+import java.nio.file.Path;
 import org.testcontainers.containers.wait.strategy.Wait;
 
 import java.io.ByteArrayInputStream;
@@ -69,7 +70,7 @@ class UploadSagaInfrastructureTest {
 
     @Container
     static final GenericContainer<?> MINIO = new GenericContainer<>(
-            DockerImageName.parse("quay.io/minio/minio:RELEASE.2024-10-13T13-34-11Z"))
+            new ImageFromDockerfile().withFileFromPath("Dockerfile", Path.of("docker/minio.Dockerfile")))
             .withEnv("MINIO_ROOT_USER", ACCESS)
             .withEnv("MINIO_ROOT_PASSWORD", SECRET)
             .withCommand("server", "/data")

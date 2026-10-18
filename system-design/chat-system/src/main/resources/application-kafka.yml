@@ -7,4 +7,3 @@ spring:
       acks: all
       properties:
         enable.idempotence: true
-

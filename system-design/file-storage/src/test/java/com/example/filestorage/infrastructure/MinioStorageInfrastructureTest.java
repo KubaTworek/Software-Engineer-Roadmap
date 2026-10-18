@@ -8,7 +8,8 @@ import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
+import org.testcontainers.images.builder.ImageFromDockerfile;
+import java.nio.file.Path;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
@@ -24,7 +25,8 @@ class MinioStorageInfrastructureTest {
     private static final String BUCKET = "file-storage-test";
 
     @Container
-    static final GenericContainer<?> MINIO = new GenericContainer<>(DockerImageName.parse("quay.io/minio/minio:RELEASE.2024-10-13T13-34-11Z"))
+    static final GenericContainer<?> MINIO = new GenericContainer<>(
+            new ImageFromDockerfile().withFileFromPath("Dockerfile", Path.of("docker/minio.Dockerfile")))
             .withEnv("MINIO_ROOT_USER", ACCESS_KEY)
             .withEnv("MINIO_ROOT_PASSWORD", SECRET_KEY)
             .withCommand("server", "/data")

@@ -16,11 +16,20 @@ for readiness_url in \
   echo "Waiting for $readiness_url"
   health=""
   for _ in $(seq 1 120); do
-    health=$(curl -fsS "$readiness_url" 2>/dev/null || true)
-    test -n "$health" && break
+    health=$(curl -fsS --connect-timeout 2 --max-time 3 "$readiness_url" 2>/dev/null || true)
+    if python -c 'import json,sys; sys.exit(0 if json.load(sys.stdin).get("status") == "UP" else 1)' <<< "$health" 2>/dev/null; then
+      break
+    fi
+    health=""
     sleep 0.5
   done
-  test -n "$health"
+  if [[ -z "$health" ]]; then
+    echo "Readiness failed: $readiness_url" >&2
+    curl -sS --connect-timeout 2 --max-time 3 -i "$readiness_url" >&2 || true
+    docker compose --profile apps ps --all >&2 || true
+    docker compose --profile apps logs --no-color --tail=100 >&2 || true
+    exit 1
+  fi
 done
 
 echo "1/8 GET /events"

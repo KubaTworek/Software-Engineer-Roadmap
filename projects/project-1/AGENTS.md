@@ -65,7 +65,7 @@ stabilne DTO API.
 mvnw.cmd --batch-mode --no-transfer-progress clean verify
 mvnw.cmd --batch-mode --no-transfer-progress -Pjmh-smoke -Dtest=JmhSmokeTest test
 mvnw.cmd --batch-mode --no-transfer-progress -Pinfrastructure-tests verify
-mvnw.cmd --batch-mode --no-transfer-progress -Pmutation-testing org.pitest:pitest-maven:mutationCoverage
+mvnw.cmd --batch-mode --no-transfer-progress -Pmutation-testing clean test-compile org.pitest:pitest-maven:mutationCoverage
 k6 run -e TEST_TYPE=smoke performance/k6/reservation-load.js
 ```
 

@@ -12,6 +12,7 @@ import com.example.observability.server.repository.TelemetryRepository;
 import com.example.observability.server.model.LogIngestRequest;
 import com.example.observability.server.model.LogEventDto;
 import com.example.observability.server.model.MetricIngestRequest;
+import com.example.observability.server.model.MetricPoint;
 import com.example.observability.server.model.MetricSampleDto;
 import com.example.observability.server.model.MetricSeriesDto;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -238,7 +239,7 @@ class ClickHouseTenantIsolationInfrastructureTest {
         assertThat(repository.queryMetricSeries("metrics_samples", "tenant-metric-jdbc",
                 "request_count", null, observedAt.minusSeconds(1), observedAt.plusSeconds(1), 60))
                 .singleElement()
-                .extracting(TelemetryRepository.MetricPoint::value)
+                .extracting(MetricPoint::value)
                 .isEqualTo(42.0);
     }
 }

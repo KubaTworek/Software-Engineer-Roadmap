@@ -278,11 +278,16 @@ mvnw.cmd --batch-mode --no-transfer-progress -Pjmh-smoke -Dtest=JmhSmokeTest tes
 mvnw.cmd --batch-mode --no-transfer-progress -Pinfrastructure-tests verify
 
 # jakość asercji dla rdzenia domeny; raport: target/pit-reports
-mvnw.cmd --batch-mode --no-transfer-progress -Pmutation-testing org.pitest:pitest-maven:mutationCoverage
+mvnw.cmd --batch-mode --no-transfer-progress -Pmutation-testing clean test-compile org.pitest:pitest-maven:mutationCoverage
 
 # test całej usługi; profil load-test tworzy lokalnego managera, a setup k6 event
 k6 run -e TEST_TYPE=load performance/k6/reservation-load.js
 ```
+
+Cel PIT nie uruchamia sam faz kompilacji. Dlatego komenda mutacyjna zawiera
+`clean test-compile`: działa także na świeżym checkoutcie, bez `target/`
+pozostawionego przez wcześniejsze testy. Osobne joby CI współdzielą cache
+zależności Maven, ale nie skompilowane klasy aplikacji i testów.
 
 ## Uruchomienie lokalne
 

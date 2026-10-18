@@ -23,4 +23,3 @@ Multi-AZ bez testu restore nie spełnia wymagań DR.
 
 Rollback migracji preferuje forward-fix oraz expand/contract. Destrukcyjna migracja nie może
 wejść, dopóki poprzednia wersja aplikacji może zostać przywrócona podczas rollout.
-
