@@ -4,6 +4,7 @@ import com.example.filestorage.config.CurrentUser;
 import jakarta.validation.Valid;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpHeaders;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -110,8 +111,12 @@ public class FileController {
      * - zwrócić stream pliku.
      */
     @GetMapping("/{fileId}/download")
-    public ResponseEntity<InputStreamResource> download(CurrentUser currentUser, @PathVariable UUID fileId) {
-        return fileService.download(currentUser.id(), fileId);
+    public ResponseEntity<InputStreamResource> download(
+            CurrentUser currentUser,
+            @PathVariable UUID fileId,
+            @RequestHeader(value = HttpHeaders.RANGE, required = false) String range,
+            @RequestHeader(value = HttpHeaders.IF_NONE_MATCH, required = false) String ifNoneMatch) {
+        return fileService.download(currentUser.id(), fileId, range, ifNoneMatch);
     }
 
     /**

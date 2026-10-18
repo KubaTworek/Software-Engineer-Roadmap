@@ -78,7 +78,7 @@ public class SearchIndexService {
              * Jeśli plik jest w koszu albo został usunięty logicznie,
              * nie powinien pojawiać się w wynikach wyszukiwania.
              */
-            if (file.getDeletedAt() != null) {
+            if (!file.isDownloadable()) {
                 searchIndexRepository.deleteByResourceId(fileId);
                 return;
             }

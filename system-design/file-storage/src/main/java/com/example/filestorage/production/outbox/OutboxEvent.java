@@ -2,6 +2,7 @@ package com.example.filestorage.production.outbox;
 
 import jakarta.persistence.*;
 import java.time.Instant;
+import java.time.Duration;
 import java.util.UUID;
 
 @Entity
@@ -28,6 +29,10 @@ public class OutboxEvent {
     private Instant createdAt;
     @Column(name = "published_at")
     private Instant publishedAt;
+    @Column(name = "claimed_at")
+    private Instant claimedAt;
+    @Column(name = "next_attempt_at", nullable = false)
+    private Instant nextAttemptAt;
 
     protected OutboxEvent() {}
 
@@ -40,24 +45,33 @@ public class OutboxEvent {
         this.status = OutboxStatus.PENDING;
         this.attempts = 0;
         this.createdAt = Instant.now();
+        this.nextAttemptAt = this.createdAt;
+    }
+
+    public void claim(Instant now) {
+        status = OutboxStatus.PROCESSING;
+        attempts++;
+        claimedAt = now;
     }
 
     public void markPublished() {
         this.status = OutboxStatus.PUBLISHED;
         this.publishedAt = Instant.now();
         this.lastError = null;
+        this.claimedAt = null;
     }
 
     public void markFailed(String error) {
         this.status = OutboxStatus.FAILED;
-        this.attempts++;
         this.lastError = error;
+        this.claimedAt = null;
     }
 
     public void retryLater(String error) {
         this.status = OutboxStatus.PENDING;
-        this.attempts++;
         this.lastError = error;
+        this.claimedAt = null;
+        this.nextAttemptAt = Instant.now().plus(Duration.ofSeconds(Math.min(300, 1L << Math.min(attempts, 8))));
     }
 
     public UUID getId() { return id; }
@@ -70,4 +84,6 @@ public class OutboxEvent {
     public String getLastError() { return lastError; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getPublishedAt() { return publishedAt; }
+    public Instant getClaimedAt() { return claimedAt; }
+    public Instant getNextAttemptAt() { return nextAttemptAt; }
 }

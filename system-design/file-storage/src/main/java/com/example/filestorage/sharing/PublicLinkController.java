@@ -142,6 +142,7 @@ public class PublicLinkController {
         if (link.getResourceType() == ResourceType.FILE) {
             FileMetadata file = fileRepository.findByIdAndDeletedAtIsNull(link.getResourceId())
                     .orElseThrow(() -> new NoSuchElementException("File not found"));
+            requireDownloadable(file);
 
             return FileResponse.from(file);
         }
@@ -200,6 +201,7 @@ public class PublicLinkController {
          */
         FileMetadata file = fileRepository.findByIdAndDeletedAtIsNull(link.getResourceId())
                 .orElseThrow(() -> new NoSuchElementException("File not found"));
+        requireDownloadable(file);
 
         /*
          * Audit downloadu przez publiczny link.
@@ -240,5 +242,11 @@ public class PublicLinkController {
                                 .toString()
                 )
                 .body(new InputStreamResource(inputStream));
+    }
+
+    private void requireDownloadable(FileMetadata file) {
+        if (!file.isDownloadable()) {
+            throw new IllegalStateException("File content is not available for public access");
+        }
     }
 }

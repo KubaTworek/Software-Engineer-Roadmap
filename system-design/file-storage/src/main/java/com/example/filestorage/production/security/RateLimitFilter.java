@@ -9,17 +9,22 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.time.Instant;
+import java.time.Clock;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 @Component
 public class RateLimitFilter extends OncePerRequestFilter {
     private final RateLimitProperties properties;
     private final Map<String, Window> windows = new ConcurrentHashMap<>();
+    private final Clock clock;
+    private final AtomicLong lastCleanupMinute = new AtomicLong(-1);
 
-    public RateLimitFilter(RateLimitProperties properties) {
+    public RateLimitFilter(RateLimitProperties properties, Clock clock) {
         this.properties = properties;
+        this.clock = clock;
     }
 
     @Override
@@ -29,7 +34,8 @@ public class RateLimitFilter extends OncePerRequestFilter {
             return;
         }
         String actor = request.getRemoteAddr() + ":" + request.getRequestURI();
-        long currentMinute = Instant.now().getEpochSecond() / 60;
+        long currentMinute = clock.instant().getEpochSecond() / 60;
+        cleanupExpiredWindows(currentMinute);
         Window window = windows.compute(actor, (key, old) -> old == null || old.minute != currentMinute ? new Window(currentMinute) : old);
         int count = window.count.incrementAndGet();
         if (count > properties.requestsPerMinute()) {
@@ -41,6 +47,13 @@ public class RateLimitFilter extends OncePerRequestFilter {
         response.setHeader("X-RateLimit-Limit", String.valueOf(properties.requestsPerMinute()));
         response.setHeader("X-RateLimit-Remaining", String.valueOf(Math.max(0, properties.requestsPerMinute() - count)));
         filterChain.doFilter(request, response);
+    }
+
+    private void cleanupExpiredWindows(long currentMinute) {
+        long previous = lastCleanupMinute.get();
+        if (previous != currentMinute && lastCleanupMinute.compareAndSet(previous, currentMinute)) {
+            windows.entrySet().removeIf(entry -> entry.getValue().minute < currentMinute);
+        }
     }
 
     private static class Window {

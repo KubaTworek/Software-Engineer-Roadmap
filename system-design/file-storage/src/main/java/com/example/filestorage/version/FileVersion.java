@@ -16,7 +16,7 @@ public class FileVersion {
     @Column(name = "version_number", nullable = false)
     private int versionNumber;
 
-    @Column(name = "object_key", nullable = false, unique = true)
+    @Column(name = "object_key", nullable = false)
     private String objectKey;
 
     @Column(name = "content_type", nullable = false)
@@ -36,6 +36,9 @@ public class FileVersion {
 
     @Column(name = "conflict_version", nullable = false)
     private boolean conflictVersion;
+
+    @Column(name = "blob_id")
+    private UUID blobId;
 
     protected FileVersion() {}
 
@@ -62,4 +65,9 @@ public class FileVersion {
     public UUID getCreatedBy() { return createdBy; }
     public Instant getCreatedAt() { return createdAt; }
     public boolean isConflictVersion() { return conflictVersion; }
+    public UUID getBlobId() { return blobId; }
+    public void attachBlob(UUID blobId, String canonicalObjectKey) {
+        this.blobId = blobId;
+        this.objectKey = canonicalObjectKey;
+    }
 }

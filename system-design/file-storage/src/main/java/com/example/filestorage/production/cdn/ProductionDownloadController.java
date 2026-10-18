@@ -84,11 +84,7 @@ public class ProductionDownloadController {
          * Nie wolno generować signed URL przed sprawdzeniem ACL.
          * Signed URL omija później backend, więc dostęp musi być rozstrzygnięty tutaj.
          */
-        var file = accessControlService.requireFileRole(
-                currentUser.id(),
-                fileId,
-                PermissionRole.VIEWER
-        );
+        var file = accessControlService.requireDownloadableFile(currentUser.id(), fileId);
 
         /*
          * Zapis audytu: użytkownik dostał signed URL do pliku.

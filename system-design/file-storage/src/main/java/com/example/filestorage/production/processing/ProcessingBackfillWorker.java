@@ -3,6 +3,7 @@ package com.example.filestorage.production.processing;
 import com.example.filestorage.file.FileMetadataRepository;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 /**
  * Worker odpowiedzialny za backfill zadań przetwarzania plików.
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Component;
  * ale z jakiegoś powodu nie zostały utworzone joby background processingu.
  */
 @Component
+@ConditionalOnProperty(name = "app.production.workers.enabled", havingValue = "true", matchIfMissing = true)
 public class ProcessingBackfillWorker {
 
     /**
@@ -54,8 +56,8 @@ public class ProcessingBackfillWorker {
      * Metoda pobiera maksymalnie 100 najnowszych aktywnych plików.
      * Dla każdego z nich próbuje założyć domyślne joby processingu.
      *
-     * To jest bezpieczne, bo FileProcessingService.enqueueDefaultJobs()
-     * jest idempotentne — nie powinno tworzyć duplikatów jobów.
+     * Backfill respektuje bramke AV: plik w kwarantannie dostaje tylko skan,
+     * a aktywny plik moze dostac bezpieczne zadania post-processingu.
      */
     @Scheduled(
             fixedDelayString = "${app.production.workers.processing-fixed-delay-ms:10000}",
@@ -63,6 +65,15 @@ public class ProcessingBackfillWorker {
     )
     public void enqueueMissingJobsForRecentFiles() {
         fileRepository.findTop100ByDeletedAtIsNullOrderByCreatedAtDesc()
-                .forEach(file -> processingService.enqueueDefaultJobs(file.getId()));
+                .forEach(file -> {
+                    if (file.getCurrentVersionId() == null) {
+                        return;
+                    }
+                    if (file.isDownloadable()) {
+                        processingService.enqueuePostScanJobs(file.getId(), file.getCurrentVersionId());
+                    } else if (file.getStatus() == com.example.filestorage.file.FileStatus.QUARANTINED) {
+                        processingService.enqueueSecurityGate(file.getId(), file.getCurrentVersionId());
+                    }
+                });
     }
 }

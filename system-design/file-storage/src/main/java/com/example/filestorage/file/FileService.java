@@ -11,6 +11,9 @@ import com.example.filestorage.sharing.ResourceType;
 import com.example.filestorage.storage.StorageService;
 import com.example.filestorage.sync.ChangeLogService;
 import com.example.filestorage.search.SearchIndexService;
+import com.example.filestorage.production.dedupe.DeduplicationService;
+import com.example.filestorage.production.processing.FileProcessingService;
+import com.example.filestorage.production.outbox.OutboxService;
 import com.example.filestorage.version.FileVersion;
 import com.example.filestorage.version.FileVersionRepository;
 import org.springframework.core.io.InputStreamResource;
@@ -21,8 +24,11 @@ import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.InputStream;
@@ -108,6 +114,9 @@ public class FileService {
      * Po zmianach w pliku indeks jest aktualizowany asynchronicznie.
      */
     private final SearchIndexService searchIndexService;
+    private final DeduplicationService deduplicationService;
+    private final FileProcessingService processingService;
+    private final OutboxService outboxService;
 
     public FileService(FileMetadataRepository fileMetadataRepository,
                        StorageService storageService,
@@ -117,7 +126,10 @@ public class FileService {
                        AuditService auditService,
                        FileVersionRepository fileVersionRepository,
                        ChangeLogService changeLogService,
-                       SearchIndexService searchIndexService) {
+                       SearchIndexService searchIndexService,
+                       DeduplicationService deduplicationService,
+                       FileProcessingService processingService,
+                       OutboxService outboxService) {
         this.fileMetadataRepository = fileMetadataRepository;
         this.storageService = storageService;
         this.folderService = folderService;
@@ -127,6 +139,9 @@ public class FileService {
         this.fileVersionRepository = fileVersionRepository;
         this.changeLogService = changeLogService;
         this.searchIndexService = searchIndexService;
+        this.deduplicationService = deduplicationService;
+        this.processingService = processingService;
+        this.outboxService = outboxService;
     }
 
     /**
@@ -218,6 +233,20 @@ public class FileService {
         storageService.upload(objectKey, multipartFile);
 
         /*
+         * Object storage nie uczestniczy w transakcji PostgreSQL. Jesli zapis
+         * metadanych zostanie wycofany, usuwamy osierocony obiekt po rollbacku.
+         * Awaria procesu przed callbackiem nadal wymaga okresowej rekoncyliacji.
+         */
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (status != STATUS_COMMITTED) {
+                    storageService.delete(objectKey);
+                }
+            }
+        });
+
+        /*
          * Metadane pliku trafiają do bazy.
          * Sama zawartość pliku nie jest przechowywana w PostgreSQL.
          */
@@ -231,6 +260,7 @@ public class FileService {
                 objectKey,
                 sha256
         );
+        metadata.quarantine();
 
         /*
          * Zapisujemy użytkownika z nowym storageUsedBytes.
@@ -287,7 +317,9 @@ public class FileService {
          * Indeks wyszukiwania aktualizujemy asynchronicznie,
          * żeby upload nie czekał na indexing.
          */
-        searchIndexService.reindexFileAsync(saved.getId());
+        processingService.enqueueSecurityGate(saved.getId(), version.getId());
+        outboxService.enqueue("FILE_UPLOADED", "FILE", saved.getId(),
+                "{\"fileId\":\"" + saved.getId() + "\"}");
 
         return FileResponse.from(saved);
     }
@@ -373,7 +405,20 @@ public class FileService {
      */
     @Transactional(readOnly = true)
     public ResponseEntity<InputStreamResource> download(UUID actorUserId, UUID fileId) {
-        FileMetadata file = accessControlService.requireFileRole(actorUserId, fileId, PermissionRole.VIEWER);
+        return download(actorUserId, fileId, null, null);
+    }
+
+    @Transactional(readOnly = true)
+    public ResponseEntity<InputStreamResource> download(UUID actorUserId, UUID fileId,
+                                                        String rangeHeader, String ifNoneMatch) {
+        FileMetadata file = accessControlService.requireDownloadableFile(actorUserId, fileId);
+
+        String etag = "\"" + file.getSha256() + "\"";
+        if (etag.equals(ifNoneMatch)) {
+            return ResponseEntity.status(HttpStatus.NOT_MODIFIED)
+                    .eTag(file.getSha256())
+                    .build();
+        }
 
         /*
          * Download to istotna operacja bezpieczeństwa,
@@ -384,7 +429,10 @@ public class FileService {
         /*
          * Plik jest pobierany ze storage po technicznym objectKey.
          */
-        InputStream inputStream = storageService.download(file.getObjectKey());
+        ByteRange range = parseRange(rangeHeader, file.getSizeBytes());
+        InputStream inputStream = range == null
+                ? storageService.download(file.getObjectKey())
+                : storageService.downloadRange(file.getObjectKey(), range.start(), range.length());
 
         /*
          * Kodowanie nazwy pliku zabezpiecza nagłówek Content-Disposition
@@ -392,9 +440,17 @@ public class FileService {
          */
         String encodedFilename = URLEncoder.encode(file.getName(), StandardCharsets.UTF_8).replace("+", "%20");
 
-        return ResponseEntity.ok()
+        ResponseEntity.BodyBuilder response = range == null
+                ? ResponseEntity.ok()
+                : ResponseEntity.status(HttpStatus.PARTIAL_CONTENT)
+                    .header(HttpHeaders.CONTENT_RANGE,
+                            "bytes %d-%d/%d".formatted(range.start(), range.end(), file.getSizeBytes()));
+
+        return response
                 .contentType(MediaType.parseMediaType(file.getContentType()))
-                .contentLength(file.getSizeBytes())
+                .contentLength(range == null ? file.getSizeBytes() : range.length())
+                .eTag(file.getSha256())
+                .header(HttpHeaders.ACCEPT_RANGES, "bytes")
                 .header(
                         HttpHeaders.CONTENT_DISPOSITION,
                         ContentDisposition.attachment()
@@ -403,6 +459,40 @@ public class FileService {
                                 .toString()
                 )
                 .body(new InputStreamResource(inputStream));
+    }
+
+    /** Obsluguje jeden zakres RFC 9110, wlacznie z forma suffix `bytes=-500`. */
+    private ByteRange parseRange(String header, long size) {
+        if (header == null || header.isBlank()) return null;
+        if (!header.startsWith("bytes=") || header.contains(",") || size <= 0) {
+            throw new RangeNotSatisfiableException(size, "Only one valid byte range is supported");
+        }
+        String value = header.substring("bytes=".length()).trim();
+        int separator = value.indexOf('-');
+        if (separator < 0) throw new RangeNotSatisfiableException(size, "Invalid Range header");
+        try {
+            String startText = value.substring(0, separator).trim();
+            String endText = value.substring(separator + 1).trim();
+            long start;
+            long end;
+            if (startText.isEmpty()) {
+                long suffixLength = Long.parseLong(endText);
+                if (suffixLength <= 0) throw new NumberFormatException();
+                start = Math.max(0, size - suffixLength);
+                end = size - 1;
+            } else {
+                start = Long.parseLong(startText);
+                end = endText.isEmpty() ? size - 1 : Long.parseLong(endText);
+            }
+            if (start < 0 || start >= size || end < start) throw new NumberFormatException();
+            return new ByteRange(start, Math.min(end, size - 1));
+        } catch (NumberFormatException exception) {
+            throw new RangeNotSatisfiableException(size, "Range is outside file boundaries");
+        }
+    }
+
+    private record ByteRange(long start, long end) {
+        long length() { return end - start + 1; }
     }
 
     /**
@@ -582,7 +672,7 @@ public class FileService {
      * Najważniejsze kroki:
      * 1. Znajduje usunięty logicznie plik właściciela.
      * 2. Pobiera wszystkie wersje pliku.
-     * 3. Usuwa każdy obiekt wersji ze storage.
+     * 3. Zmniejsza refcount bloba i usuwa obiekt dopiero dla ostatniej referencji.
      * 4. Usuwa wersje i metadane z bazy.
      * 5. Zwalnia quota użytkownika.
      * 6. Zapisuje audit, changelog i usuwa rekord z indeksu.
@@ -612,7 +702,7 @@ public class FileService {
          * Fizyczne usunięcie obiektów ze storage.
          */
         for (FileVersion version : versions) {
-            storageService.delete(version.getObjectKey());
+            deduplicationService.releaseVersion(version);
         }
 
         /*

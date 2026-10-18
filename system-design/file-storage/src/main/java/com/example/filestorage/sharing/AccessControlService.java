@@ -116,6 +116,23 @@ public class AccessControlService {
     }
 
     /**
+     * Sprawdza jednoczesnie ACL i stan publikacji zawartosci.
+     *
+     * <p>Samo VIEWER nie wystarcza: plik w kwarantannie nie przeszedl jeszcze
+     * skanowania antywirusowego, a plik odrzucony nigdy nie powinien otrzymac
+     * presigned URL. Centralizacja tej reguly zapobiega sytuacji, w ktorej jeden
+     * z kilku endpointow pobierania zapomni o sprawdzeniu stanu.</p>
+     */
+    @Transactional(readOnly = true)
+    public FileMetadata requireDownloadableFile(UUID actorUserId, UUID fileId) {
+        FileMetadata file = requireFileRole(actorUserId, fileId, PermissionRole.VIEWER);
+        if (!file.isDownloadable()) {
+            throw new IllegalStateException("File content is not available for download");
+        }
+        return file;
+    }
+
+    /**
      * Skrót dla operacji wymagających właściciela folderu.
      *
      * Używane np. przy zarządzaniu sharingiem folderu.
