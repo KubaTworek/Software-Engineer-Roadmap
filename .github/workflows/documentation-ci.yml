@@ -1,0 +1,24 @@
+name: Documentation CI
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ['**/*.md', '**/pom.xml', '**/*.java', 'scripts/**', 'backend-engineering/scripts/**', '.github/workflows/**']
+  push:
+    paths: ['**/*.md', '**/pom.xml', '**/*.java', 'scripts/**', 'backend-engineering/scripts/**', '.github/workflows/**']
+permissions:
+  contents: read
+jobs:
+  documentation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check local links, teaching cards, test references and CI coverage
+        shell: pwsh
+        run: ./scripts/check-documentation.ps1
+      - name: Check material cards
+        shell: pwsh
+        run: ./backend-engineering/scripts/update-material-cards.ps1 -Check
+      - name: Verify infrastructure report gate
+        shell: pwsh
+        run: ./scripts/check-infrastructure-reports.ps1 -SelfTest
