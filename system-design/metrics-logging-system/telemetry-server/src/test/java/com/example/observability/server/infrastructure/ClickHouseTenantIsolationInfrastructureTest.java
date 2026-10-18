@@ -133,13 +133,19 @@ class ClickHouseTenantIsolationInfrastructureTest {
         String eventId = "00000000-0000-0000-0000-000000000042";
         try (var connection = CLICKHOUSE.createConnection("");
              var statement = connection.createStatement()) {
+            // now64() is constant within this INSERT: both deliveries retain the
+            // same sorting key, but stay inside the real 30-day retention window.
+            // A historical fixture races ClickHouse's asynchronous TTL cleanup.
             statement.execute("""
                     INSERT INTO observability.log_fulltext_terms
                     (event_id, tenant_id, service, level, bucket_start, term, doc_count, sample_trace_ids)
                     VALUES
-                    ('%s','tenant-replay','api','ERROR',toDateTime('2026-01-01 00:00:00'),'timeout',1,[]),
-                    ('%s','tenant-replay','api','ERROR',toDateTime('2026-01-01 00:00:00'),'timeout',1,[])
+                    ('%s','tenant-replay','api','ERROR',now64(3),'timeout',1,[]),
+                    ('%s','tenant-replay','api','ERROR',now64(3),'timeout',1,[])
                     """.formatted(eventId, eventId));
+            // Check retention during a forced merge too, rather than depending on
+            // whether the background merge happens before or after the assertion.
+            statement.execute("OPTIMIZE TABLE observability.log_fulltext_terms FINAL");
             try (var result = statement.executeQuery("""
                     SELECT count(), sum(doc_count) FROM observability.log_fulltext_terms FINAL
                     WHERE tenant_id='tenant-replay' AND term='timeout'
