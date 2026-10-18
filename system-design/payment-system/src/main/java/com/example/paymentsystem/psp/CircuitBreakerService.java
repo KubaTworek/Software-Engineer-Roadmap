@@ -4,6 +4,8 @@ import com.example.paymentsystem.payment.PaymentProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.time.Duration;
+import java.time.Instant;
 
 /**
  * Serwis zarządzający stanem circuit breakera dla providerów płatności.
@@ -43,13 +45,16 @@ public class CircuitBreakerService {
      * Domyślna wartość to 3.
      */
     private final int threshold;
+    private final Duration openDuration;
 
     public CircuitBreakerService(
             ProviderHealthRepository repository,
-            @Value("${payment-system.circuit-breaker.failure-threshold:3}") int threshold
+            @Value("${payment-system.circuit-breaker.failure-threshold:3}") int threshold,
+            @Value("${payment-system.circuit-breaker.open-duration:PT30S}") Duration openDuration
     ) {
         this.repository = repository;
         this.threshold = threshold;
+        this.openDuration = openDuration;
     }
 
     /**
@@ -68,11 +73,10 @@ public class CircuitBreakerService {
      * @param provider PSP, którego stan sprawdzamy
      * @return true, jeżeli provider może być użyty
      */
-    @Transactional(readOnly = true)
+    @Transactional
     public boolean isAvailable(PaymentProvider provider) {
-        return repository.findById(provider)
-                .map(health -> health.getStatus() == ProviderHealthStatus.CLOSED)
-                .orElse(true);
+        ProviderHealth health = repository.findLockedByProvider(provider).orElse(null);
+        return health == null || health.acquirePermission(Instant.now(), openDuration);
     }
 
     /**

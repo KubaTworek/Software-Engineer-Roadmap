@@ -1,6 +1,8 @@
 package com.example.paymentsystem.marketplace;
 
 import org.springframework.stereotype.Service;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 
 /**
  * Serwis odpowiedzialny za podział kwoty płatności w modelu marketplace.
@@ -43,7 +45,11 @@ public class MarketplaceSplitService {
      * @return wynik splitu: prowizja platformy oraz kwota merchanta
      */
     public SplitResult split(long amount) {
-        long platformFee = Math.max(1, Math.round(amount * 0.10));
+        if (amount <= 0) throw new IllegalArgumentException("Amount must be positive");
+        long platformFee = Math.max(1, BigDecimal.valueOf(amount)
+                .multiply(new BigDecimal("0.10"))
+                .setScale(0, RoundingMode.HALF_UP)
+                .longValueExact());
 
         return new SplitResult(
                 platformFee,

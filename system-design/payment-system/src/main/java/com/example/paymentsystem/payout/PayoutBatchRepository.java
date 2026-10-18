@@ -7,4 +7,5 @@ import java.util.UUID;
 
 public interface PayoutBatchRepository extends JpaRepository<PayoutBatch, UUID> {
     List<PayoutBatch> findByMerchantId(UUID merchantId);
+    long countByStatus(PayoutStatus status);
 }

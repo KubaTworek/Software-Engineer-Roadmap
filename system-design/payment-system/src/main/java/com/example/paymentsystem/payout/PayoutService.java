@@ -3,6 +3,9 @@ package com.example.paymentsystem.payout;
 import com.example.paymentsystem.ledger.LedgerService;
 import com.example.paymentsystem.merchant.Merchant;
 import com.example.paymentsystem.merchant.MerchantRepository;
+import com.example.paymentsystem.audit.AuditService;
+import com.example.paymentsystem.approval.ApprovalOperation;
+import com.example.paymentsystem.approval.ApprovalService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -51,15 +54,21 @@ public class PayoutService {
      * z konta pending na konto bankowe merchanta.
      */
     private final LedgerService ledgerService;
+    private final AuditService audit;
+    private final ApprovalService approvals;
 
     public PayoutService(
             PayoutBatchRepository repository,
             MerchantRepository merchantRepository,
-            LedgerService ledgerService
+            LedgerService ledgerService,
+            AuditService audit,
+            ApprovalService approvals
     ) {
         this.repository = repository;
         this.merchantRepository = merchantRepository;
         this.ledgerService = ledgerService;
+        this.audit = audit;
+        this.approvals = approvals;
     }
 
     /**
@@ -79,7 +88,16 @@ public class PayoutService {
      * @return utworzony i opłacony payout batch
      */
     @Transactional
-    public PayoutBatch create(UUID merchantId, String currency) {
+    public PayoutBatch create(UUID merchantId, String currency, String idempotencyKey) {
+        return create(merchantId, currency, idempotencyKey, "system", null);
+    }
+
+    @Transactional
+    public PayoutBatch create(UUID merchantId, String currency, String idempotencyKey,
+                              String actor, UUID approvalId) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new IllegalArgumentException("Idempotency-Key is required for payout");
+        }
 
         /**
          * Pobieramy merchanta, żeby upewnić się, że istnieje
@@ -88,7 +106,7 @@ public class PayoutService {
          * W produkcji warto rzucić własny wyjątek domenowy,
          * np. MerchantNotFoundException, zamiast surowego NoSuchElementException.
          */
-        Merchant merchant = merchantRepository.findById(merchantId)
+        Merchant merchant = merchantRepository.findByIdForUpdate(merchantId)
                 .orElseThrow();
 
         /**
@@ -137,6 +155,10 @@ public class PayoutService {
         if (balance <= 0) {
             throw new IllegalStateException("No available balance for payout");
         }
+        if (approvals.payoutNeedsApproval(balance)) {
+            approvals.requireAndConsume(ApprovalOperation.HIGH_VALUE_PAYOUT, merchantId.toString(),
+                    balance, payoutCurrency, approvalId);
+        }
 
         /**
          * Tworzymy batch payoutu.
@@ -147,8 +169,10 @@ public class PayoutService {
         PayoutBatch payout = repository.save(new PayoutBatch(
                 merchantId,
                 balance,
-                payoutCurrency
+                payoutCurrency,
+                idempotencyKey
         ));
+        payout.start();
 
         /**
          * Księgujemy payout w ledgerze.
@@ -181,6 +205,8 @@ public class PayoutService {
          * Tutaj upraszczamy flow i zakładamy natychmiastową wypłatę.
          */
         payout.markPaid();
+        audit.record(actor, "PAYOUT_PAID", "PAYOUT", payout.getPayoutBatchId().toString(),
+                "merchant=" + merchantId + ",amount=" + balance + ",currency=" + payoutCurrency);
 
         return payout;
     }

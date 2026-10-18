@@ -4,7 +4,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Serwis odpowiedzialny za księgowanie operacji finansowych w ledgerze.
@@ -126,13 +128,21 @@ public class LedgerService {
             UUID refundId,
             UUID merchantId,
             long amount,
+            long platformFeeAmount,
+            long merchantAmount,
             String currency
     ) {
         record("REFUND", refundId, "REFUND", List.of(
                 new Line(
                         "merchant:" + merchantId + ":pending",
                         LedgerDirection.DEBIT,
-                        amount,
+                        merchantAmount,
+                        currency
+                ),
+                new Line(
+                        "platform:fee_revenue",
+                        LedgerDirection.DEBIT,
+                        platformFeeAmount,
                         currency
                 ),
                 new Line(
@@ -218,7 +228,7 @@ public class LedgerService {
                         currency
                 ),
                 new Line(
-                        "merchant:" + merchantId + ":bank_account",
+                        "external_bank_clearing",
                         LedgerDirection.CREDIT,
                         amount,
                         currency
@@ -244,6 +254,23 @@ public class LedgerService {
      */
     public long balance(String accountId, String currency) {
         return entryRepository.balance(accountId, currency);
+    }
+
+    /**
+     * Posts an explicit, balanced correction. It never edits historical rows;
+     * the correction ID makes replay idempotent and the approval layer records
+     * why a human was allowed to create it.
+     */
+    public void recordManualCorrection(UUID correctionId, String debitAccount, String creditAccount,
+                                       long amount, String currency) {
+        if (amount <= 0) throw new IllegalArgumentException("Correction amount must be positive");
+        if (debitAccount.equals(creditAccount)) {
+            throw new IllegalArgumentException("Correction must affect two different accounts");
+        }
+        record("MANUAL_CORRECTION", correctionId, "MANUAL_CORRECTION", List.of(
+                new Line(debitAccount, LedgerDirection.DEBIT, amount, currency),
+                new Line(creditAccount, LedgerDirection.CREDIT, amount, currency)
+        ));
     }
 
     /**
@@ -301,29 +328,16 @@ public class LedgerService {
         /**
          * Liczymy sumę wszystkich wpisów DEBIT.
          */
-        long debit = lines.stream()
-                .filter(l -> l.direction() == LedgerDirection.DEBIT)
-                .mapToLong(Line::amount)
-                .sum();
-
-        /**
-         * Liczymy sumę wszystkich wpisów CREDIT.
+        /*
+         * Waluty nie są wymienne bez jawnego księgowania FX. Globalna suma
+         * mogłaby zaakceptować 100 PLN DEBIT i 100 EUR CREDIT, dlatego
+         * najważniejszy niezmiennik sprawdzamy niezależnie dla każdej waluty.
          */
-        long credit = lines.stream()
-                .filter(l -> l.direction() == LedgerDirection.CREDIT)
-                .mapToLong(Line::amount)
-                .sum();
-
-        /**
-         * Najważniejsza walidacja w ledgerze:
-         *
-         * suma DEBIT == suma CREDIT
-         *
-         * Jeżeli ta reguła nie jest spełniona, transakcja jest błędna
-         * i nie może zostać zapisana.
-         */
-        if (debit != credit) {
-            throw new IllegalStateException("Unbalanced ledger transaction");
+        Map<String, Long> debitByCurrency = totalsByCurrency(lines, LedgerDirection.DEBIT);
+        Map<String, Long> creditByCurrency = totalsByCurrency(lines, LedgerDirection.CREDIT);
+        if (!debitByCurrency.equals(creditByCurrency)) {
+            throw new IllegalStateException("Unbalanced ledger transaction per currency: debit="
+                    + debitByCurrency + ", credit=" + creditByCurrency);
         }
 
         /**
@@ -371,5 +385,22 @@ public class LedgerService {
             long amount,
             String currency
     ) {
+    }
+
+    private Map<String, Long> totalsByCurrency(List<Line> lines, LedgerDirection direction) {
+        return lines.stream()
+                .filter(line -> line.direction() == direction)
+                .collect(Collectors.groupingBy(Line::currency, Collectors.summingLong(Line::amount)));
+    }
+
+    /** Executable form of the journal invariant, exposed for focused educational tests. */
+    static void requireBalancedPerCurrency(List<LedgerLine> lines) {
+        Map<String, Long> debits = lines.stream()
+                .filter(line -> line.direction() == LedgerDirection.DEBIT)
+                .collect(Collectors.groupingBy(LedgerLine::currency, Collectors.summingLong(LedgerLine::amount)));
+        Map<String, Long> credits = lines.stream()
+                .filter(line -> line.direction() == LedgerDirection.CREDIT)
+                .collect(Collectors.groupingBy(LedgerLine::currency, Collectors.summingLong(LedgerLine::amount)));
+        if (!debits.equals(credits)) throw new IllegalStateException("Unbalanced ledger transaction per currency");
     }
 }

@@ -4,6 +4,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.UUID;
+import java.security.Principal;
 
 /**
  * REST controller odpowiedzialny za payouty merchantów.
@@ -80,11 +81,17 @@ public class PayoutController {
     @PostMapping
     public PayoutBatch create(
             @PathVariable UUID merchantId,
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @RequestHeader(value = "X-Approval-Id", required = false) UUID approvalId,
+            Principal principal,
             @RequestBody(required = false) CreatePayoutRequest request
     ) {
         return service.create(
                 merchantId,
-                request == null ? null : request.currency()
+                request == null ? null : request.currency(),
+                idempotencyKey,
+                principal.getName(),
+                approvalId
         );
     }
 

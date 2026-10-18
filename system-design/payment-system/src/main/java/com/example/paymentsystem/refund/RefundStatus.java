@@ -1,3 +1,3 @@
 package com.example.paymentsystem.refund;
 
-public enum RefundStatus {SUCCEEDED}
+public enum RefundStatus {PROCESSING, SUCCEEDED, FAILED, UNKNOWN}

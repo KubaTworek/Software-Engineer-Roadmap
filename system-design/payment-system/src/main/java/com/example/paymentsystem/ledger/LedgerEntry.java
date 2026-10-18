@@ -1,11 +1,13 @@
 package com.example.paymentsystem.ledger;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.Immutable;
 
 import java.time.Instant;
 import java.util.UUID;
 
 @Entity
+@Immutable
 @Table(name = "ledger_entries")
 public class LedgerEntry {
     @Id

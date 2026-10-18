@@ -1,0 +1,54 @@
+groups:
+  - name: payment-system
+    rules:
+      - alert: PaymentProviderUnknownOutcomeSpike
+        expr: sum(rate(payment_provider_calls_total{outcome="unknown"}[5m])) > 0.1
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PSP outcomes are becoming ambiguous"
+          runbook: "README.md#minimalny-runbook-operacyjny"
+
+      - alert: PaymentOutboxDeadLettered
+        expr: increase(payment_outbox_dead_lettered_total[10m]) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "An outbox event requires manual review"
+          runbook: "README.md#minimalny-runbook-operacyjny"
+
+      - alert: PaymentWebhookFailureRatioHigh
+        expr: sum(rate(payment_webhook_failures_total[10m])) / clamp_min(sum(rate(payment_webhook_received_total[10m])), 0.001) > 0.02
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "More than 2% of received webhooks fail processing"
+          runbook: "README.md#minimalny-runbook-operacyjny"
+
+      - alert: PaymentReconciliationBreaksDetected
+        expr: increase(payment_reconciliation_breaks_total[30m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "Provider report differs from local payment state"
+          runbook: "README.md#minimalny-runbook-operacyjny"
+
+      - alert: PaymentOutboxBacklogStuck
+        expr: payment_outbox_oldest_age_seconds > 300
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "The oldest unpublished financial event is older than five minutes"
+          runbook: "README.md#minimalny-runbook-operacyjny"
+
+      - alert: PaymentUnknownBacklog
+        expr: payment_unknown > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Ambiguous PSP operations require reconciliation"
+          runbook: "README.md#minimalny-runbook-operacyjny"

@@ -1,0 +1,56 @@
+{
+  "title": "Payment System - correctness and dependency health",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": {"from": "now-6h", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "PSP calls by outcome",
+      "targets": [{"expr": "sum by (provider, outcome) (rate(payment_provider_calls_total[5m]))"}]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Outbox dead-letter events (24h)",
+      "targets": [{"expr": "sum(increase(payment_outbox_dead_lettered_total[24h]))"}]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Webhook processing and duplicates",
+      "targets": [
+        {"expr": "sum(rate(payment_webhook_processed_total[5m]))"},
+        {"expr": "sum(rate(payment_webhook_duplicate_total[5m]))"},
+        {"expr": "sum(rate(payment_webhook_failures_total[5m]))"}
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Reconciliation decisions",
+      "targets": [
+        {"expr": "sum(rate(payment_reconciliation_repaired_total[15m]))"},
+        {"expr": "sum by (type) (rate(payment_reconciliation_breaks_total[15m]))"}
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Ambiguous payments requiring reconciliation",
+      "targets": [{"expr": "payment_unknown"}]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Durable backlog age and size",
+      "targets": [
+        {"expr": "payment_outbox_backlog"},
+        {"expr": "payment_outbox_oldest_age_seconds"},
+        {"expr": "payment_webhook_pending"},
+        {"expr": "payment_payout_processing"}
+      ]
+    }
+  ]
+}

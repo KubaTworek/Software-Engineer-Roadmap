@@ -1,6 +1,8 @@
 package com.example.paymentsystem.payment;
 
 import com.example.paymentsystem.audit.AuditService;
+import com.example.paymentsystem.approval.ApprovalOperation;
+import com.example.paymentsystem.approval.ApprovalService;
 import com.example.paymentsystem.fx.FxService;
 import com.example.paymentsystem.ledger.LedgerService;
 import com.example.paymentsystem.marketplace.MarketplaceSplitService;
@@ -10,8 +12,11 @@ import com.example.paymentsystem.outbox.OutboxService;
 import com.example.paymentsystem.psp.*;
 import com.example.paymentsystem.refund.*;
 import com.example.paymentsystem.risk.RiskService;
+import com.example.paymentsystem.operation.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
+import io.micrometer.core.instrument.MeterRegistry;
 
 import java.util.UUID;
 
@@ -161,6 +166,12 @@ public class PaymentService {
      * W tej klasie używamy go przy ręcznym zarejestrowaniu awarii providera.
      */
     private final AuditService auditService;
+    private final PaymentAttemptRepository attemptRepository;
+    private final TransactionTemplate transactions;
+    private final MeterRegistry metrics;
+    private final ApprovalService approvals;
+    private final CaptureRepository captureRepository;
+    private final ProviderOperationRepository providerOperations;
 
     public PaymentService(
             PaymentRepository paymentRepository,
@@ -174,7 +185,13 @@ public class PaymentService {
             LedgerService ledgerService,
             RefundRepository refundRepository,
             OutboxService outboxService,
-            AuditService auditService
+            AuditService auditService,
+            PaymentAttemptRepository attemptRepository,
+            TransactionTemplate transactions,
+            MeterRegistry metrics,
+            ApprovalService approvals,
+            CaptureRepository captureRepository,
+            ProviderOperationRepository providerOperations
     ) {
         this.paymentRepository = paymentRepository;
         this.merchantRepository = merchantRepository;
@@ -188,6 +205,12 @@ public class PaymentService {
         this.refundRepository = refundRepository;
         this.outboxService = outboxService;
         this.auditService = auditService;
+        this.attemptRepository = attemptRepository;
+        this.transactions = transactions;
+        this.metrics = metrics;
+        this.approvals = approvals;
+        this.captureRepository = captureRepository;
+        this.providerOperations = providerOperations;
     }
 
     /**
@@ -213,222 +236,100 @@ public class PaymentService {
      * @param idempotencyKey idempotency key przekazany do PSP
      * @return odpowiedź z aktualnym stanem płatności
      */
-    @Transactional
     public PaymentResponse create(CreatePaymentRequest request, String idempotencyKey) {
-
-        /**
-         * Pobieramy merchanta, dla którego tworzona jest płatność.
-         *
-         * Merchant jest potrzebny nie tylko do walidacji,
-         * ale też do ustalenia waluty settlementu.
-         *
-         * Bez istniejącego merchanta nie możemy poprawnie rozliczyć płatności.
+        /*
+         * Transakcja lokalna kończy się PRZED requestem HTTP. Dzięki temu nie
+         * trzymamy połączenia i blokad DB podczas nieprzewidywalnego I/O, a po
+         * timeoutcie pozostaje trwały PaymentAttempt do reconciliation.
          */
+        PreparedPayment prepared = transactions.execute(status -> preparePayment(request, idempotencyKey));
+        if (prepared == null) throw new IllegalStateException("Could not prepare payment");
+
+        try {
+            var psp = providerClientRegistry.get(prepared.provider()).createPayment(new PspPaymentRequest(
+                    prepared.paymentId(), request.orderId(), request.amount(), request.currency(), idempotencyKey));
+            circuitBreakerService.success(prepared.provider());
+
+            PaymentResponse response = transactions.execute(status -> {
+                Payment payment = paymentRepository.findByIdForUpdate(prepared.paymentId())
+                        .orElseThrow(() -> new PaymentException("Prepared payment not found"));
+                PaymentAttempt attempt = attemptRepository.findById(prepared.attemptId())
+                        .orElseThrow(() -> new PaymentException("Payment attempt not found"));
+                payment.attachProviderPayment(psp.providerPaymentId(), psp.checkoutUrl());
+                attempt.succeed(psp.providerPaymentId());
+                outboxService.save("Payment", payment.getPaymentId(), "PaymentCreated", PaymentResponse.from(payment));
+                return PaymentResponse.from(payment);
+            });
+            metrics.counter("payment.provider.calls", "provider", prepared.provider().name(), "outcome", "success")
+                    .increment();
+            return response;
+        } catch (ProviderCallException error) {
+            if (error.safeToRetry()) {
+                circuitBreakerService.failure(prepared.provider());
+                transactions.executeWithoutResult(status -> {
+                    Payment payment = paymentRepository.findByIdForUpdate(prepared.paymentId())
+                            .orElseThrow(() -> new PaymentException("Prepared payment not found"));
+                    PaymentAttempt attempt = attemptRepository.findById(prepared.attemptId())
+                            .orElseThrow(() -> new PaymentException("Payment attempt not found"));
+                    payment.markProviderAttemptNotSent();
+                    attempt.failedBeforeDispatch(error);
+                });
+                metrics.counter("payment.provider.calls", "provider", prepared.provider().name(),
+                        "outcome", "not_sent").increment();
+                throw error;
+            }
+            markProviderOutcomeUnknown(prepared, error);
+            throw new ProviderOutcomeUnknownException(prepared.paymentId());
+        } catch (RuntimeException error) {
+            markProviderOutcomeUnknown(prepared, error);
+            throw new ProviderOutcomeUnknownException(prepared.paymentId());
+        }
+    }
+
+    private void markProviderOutcomeUnknown(PreparedPayment prepared, RuntimeException error) {
+            circuitBreakerService.failure(prepared.provider());
+            transactions.executeWithoutResult(status -> {
+                Payment payment = paymentRepository.findByIdForUpdate(prepared.paymentId())
+                        .orElseThrow(() -> new PaymentException("Prepared payment not found"));
+                PaymentAttempt attempt = attemptRepository.findById(prepared.attemptId())
+                        .orElseThrow(() -> new PaymentException("Payment attempt not found"));
+                payment.markProviderOutcomeUnknown();
+                attempt.unknown(error);
+                outboxService.save("Payment", payment.getPaymentId(), "PaymentProviderOutcomeUnknown",
+                        PaymentResponse.from(payment));
+            });
+            metrics.counter("payment.provider.calls", "provider", prepared.provider().name(), "outcome", "unknown")
+                    .increment();
+    }
+
+    private PreparedPayment preparePayment(CreatePaymentRequest request, String idempotencyKey) {
         Merchant merchant = merchantRepository.findById(request.merchantId())
                 .orElseThrow(() -> new PaymentException("Merchant not found"));
-
-        /**
-         * Uruchamiamy risk assessment przed wysłaniem czegokolwiek do PSP.
-         *
-         * Dzięki temu podejrzane płatności można zatrzymać wcześnie,
-         * bez tworzenia transakcji u zewnętrznego providera.
-         */
         var risk = riskService.assess(request);
-
-        /**
-         * Jeżeli risk engine zwróci BLOCK, przerywamy flow.
-         *
-         * Taka płatność nie trafia do routingu PSP i nie tworzy checkoutu.
-         * Chroni to system przed transakcjami, które według reguł są
-         * zbyt ryzykowne.
-         */
         if (risk.decision() == RiskDecision.BLOCK) {
             throw new PaymentException("Payment blocked by risk engine. score=" + risk.score());
         }
-
-        /**
-         * Wybieramy providera dla tej płatności.
-         *
-         * ProviderRoutingService może uwzględniać:
-         * - walutę,
-         * - kwotę,
-         * - dostępność PSP przez circuit breaker.
-         *
-         * Wynikiem jest konkretny PaymentProvider, np. PAYU_MOCK.
-         */
-        PaymentProvider provider = routingService.route(
-                request.currency(),
-                request.amount()
-        );
-
-        /**
-         * Tworzymy encję Payment w naszym systemie.
-         *
-         * Na tym etapie zapisujemy:
-         * - merchanta,
-         * - orderId,
-         * - customerId,
-         * - kwotę,
-         * - walutę,
-         * - capture mode,
-         * - wybranego providera,
-         * - risk score,
-         * - risk decision.
-         *
-         * Payment jeszcze nie ma providerPaymentId, bo to ID dostaniemy
-         * dopiero po wywołaniu PSP.
-         */
-        Payment payment = new Payment(
-                request.merchantId(),
-                request.orderId(),
-                request.customerId(),
-                request.amount(),
-                request.currency(),
-                request.normalizedCaptureMode(),
-                provider,
-                risk.score(),
-                risk.decision()
-        );
-
-        /**
-         * Przeliczamy kwotę płatności na walutę settlementu merchanta.
-         *
-         * Przykład:
-         * request amount = 10000 EUR
-         * merchant settlementCurrency = PLN
-         *
-         * FX zapisuje:
-         * - settlementAmount,
-         * - settlementCurrency,
-         * - fxRate.
-         *
-         * Dzięki temu później wiadomo, jaka kwota ma zostać rozliczona
-         * wobec merchanta w jego walucie.
-         */
-        var fx = fxService.convert(
-                request.amount(),
-                request.currency(),
-                merchant.getSettlementCurrency()
-        );
-
-        payment.applyFx(
-                fx.targetAmount(),
-                fx.targetCurrency(),
-                fx.rate()
-        );
-
-        /**
-         * Liczymy split marketplace.
-         *
-         * Split dzieli kwotę płatności na:
-         * - platformFeeAmount, czyli przychód platformy,
-         * - merchantAmount, czyli kwotę netto dla merchanta.
-         *
-         * W tej wersji split liczony jest od request.amount().
-         * W systemie wielowalutowym warto świadomie zdecydować,
-         * czy prowizja powinna być liczona od waluty płatności,
-         * czy od waluty settlementu.
-         */
-        var split = splitService.split(request.amount());
-
-        payment.applySplit(
-                split.platformFeeAmount(),
-                split.merchantAmount()
-        );
-
-        /**
-         * Zapisujemy Payment przed wywołaniem PSP.
-         *
-         * Dzięki temu mamy własne paymentId, które możemy przekazać
-         * do providera i powiązać z jego providerPaymentId.
-         *
-         * W realnym systemie trzeba bardzo ostrożnie projektować granice
-         * transakcji przy wywołaniach zewnętrznych, bo request HTTP do PSP
-         * nie jest częścią transakcji bazodanowej.
-         */
-        paymentRepository.save(payment);
-
-        try {
-            /**
-             * Pobieramy klienta dla providera wybranego przez routing
-             * i tworzymy płatność po stronie PSP.
-             *
-             * Do PSP przekazujemy:
-             * - nasze paymentId,
-             * - orderId,
-             * - amount,
-             * - currency,
-             * - idempotencyKey.
-             *
-             * Idempotency key jest ważny także po stronie providera,
-             * bo chroni przed utworzeniem kilku płatności PSP
-             * przy ponowieniu requestu.
-             */
-            var psp = providerClientRegistry.get(provider).createPayment(new PspPaymentRequest(
-                    payment.getPaymentId(),
-                    payment.getOrderId(),
-                    payment.getAmount(),
-                    payment.getCurrency(),
-                    idempotencyKey
-            ));
-
-            /**
-             * Podpinamy dane zwrócone przez PSP do naszej płatności.
-             *
-             * providerPaymentId:
-             * - identyfikator płatności po stronie PSP.
-             *
-             * checkoutUrl:
-             * - adres, na który klient może zostać przekierowany,
-             *   żeby dokończyć płatność.
-             */
-            payment.attachProviderPayment(
-                    psp.providerPaymentId(),
-                    psp.checkoutUrl()
-            );
-
-            /**
-             * Informujemy circuit breaker, że wywołanie providera się udało.
-             *
-             * To może wyzerować licznik błędów i zostawić albo przywrócić
-             * providera do stanu CLOSED.
-             */
-            circuitBreakerService.success(provider);
-        } catch (Exception e) {
-
-            /**
-             * Jeżeli komunikacja z PSP zakończy się błędem,
-             * raportujemy porażkę do circuit breakera.
-             *
-             * Po przekroczeniu progu błędów provider zostanie oznaczony
-             * jako OPEN i routing zacznie go omijać.
-             */
-            circuitBreakerService.failure(provider);
-
-            /**
-             * Rzucamy wyjątek dalej, żeby transakcja została wycofana
-             * i klient dostał informację, że utworzenie płatności się nie udało.
-             */
-            throw e;
+        PaymentProvider provider = routingService.route(request.currency(), request.amount());
+        if (request.normalizedCaptureMode() == CaptureMode.MANUAL
+                && !request.normalizedPaymentMethod().supportsManualCapture()) {
+            throw new PaymentException("Manual capture is not supported by " + request.normalizedPaymentMethod());
         }
+        Payment payment = new Payment(request.merchantId(), request.orderId(), request.customerId(), request.amount(),
+                request.currency(), request.normalizedCaptureMode(), request.normalizedPaymentMethod(), provider,
+                risk.score(), risk.decision());
+        var fx = fxService.convert(request.amount(), request.currency(), merchant.getSettlementCurrency());
+        payment.applyFx(fx.targetAmount(), fx.targetCurrency(), fx.rate());
+        var split = splitService.split(request.amount());
+        payment.applySplit(split.platformFeeAmount(), split.merchantAmount());
+        payment.startProviderAttempt();
+        payment = paymentRepository.save(payment);
+        PaymentAttempt attempt = new PaymentAttempt(payment.getPaymentId(), provider, idempotencyKey);
+        attempt.start();
+        attempt = attemptRepository.save(attempt);
+        return new PreparedPayment(payment.getPaymentId(), attempt.getAttemptId(), provider);
+    }
 
-        /**
-         * Zapisujemy zdarzenie PaymentCreated do outboxa.
-         *
-         * Outbox pozwala później asynchronicznie opublikować event,
-         * np. do kolejki, webhook dispatcher albo systemu raportowego.
-         *
-         * Event jest zapisany w tej samej transakcji co Payment,
-         * więc nie zgubimy informacji o utworzonej płatności.
-         */
-        outboxService.save(
-                "Payment",
-                payment.getPaymentId(),
-                "PaymentCreated",
-                PaymentResponse.from(payment)
-        );
-
-        return PaymentResponse.from(payment);
+    private record PreparedPayment(UUID paymentId, UUID attemptId, PaymentProvider provider) {
     }
 
     /**
@@ -514,6 +415,8 @@ public class PaymentService {
                 "PaymentSucceeded",
                 PaymentResponse.from(payment)
         );
+        auditService.record("system", "PAYMENT_SUCCEEDED", "PAYMENT", payment.getPaymentId().toString(),
+                "captured=" + captured + ",currency=" + payment.getCurrency());
 
         return PaymentResponse.from(payment);
     }
@@ -568,6 +471,7 @@ public class PaymentService {
                 "PaymentAuthorized",
                 PaymentResponse.from(payment)
         );
+        auditService.record("operator", "PAYMENT_AUTHORIZED", "PAYMENT", payment.getPaymentId().toString(), null);
 
         return PaymentResponse.from(payment);
     }
@@ -589,6 +493,22 @@ public class PaymentService {
      */
     @Transactional
     public PaymentResponse capture(UUID paymentId, long amount) {
+        return capture(paymentId, amount, "capture-" + UUID.randomUUID());
+    }
+
+    /**
+     * Wariant idempotentny wymagany przez publiczne API. Każdy partial capture
+     * ma własną tożsamość i własny journal ledgerowy, dlatego kolejne pobranie
+     * nie nadpisuje ani nie deduplikuje poprzedniego.
+     */
+    @Transactional
+    public PaymentResponse capture(UUID paymentId, long amount, String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new IllegalArgumentException("Idempotency-Key is required for capture");
+        }
+        if (captureRepository.findByPaymentIdAndIdempotencyKey(paymentId, idempotencyKey).isPresent()) {
+            return get(paymentId);
+        }
 
         /**
          * Pobieramy płatność z blokadą.
@@ -605,6 +525,12 @@ public class PaymentService {
          * Zwraca faktycznie pobraną kwotę, którą trzeba zaksięgować.
          */
         long captured = payment.capture(amount);
+        Capture capture = captureRepository.save(new Capture(paymentId, captured, payment.getCurrency(), idempotencyKey));
+
+        /* Partial capture earns only the proportional fee. Reusing the split
+         * calculated for the full authorization would make the journal
+         * unbalanced and overstate both revenue and merchant liability. */
+        var capturedSplit = splitService.split(captured);
 
         /**
          * Księgujemy capture w ledgerze.
@@ -614,11 +540,11 @@ public class PaymentService {
          * - merchanta z tytułu środków należnych do payoutu.
          */
         ledgerService.recordMarketplaceCapture(
-                payment.getPaymentId(),
+                capture.getCaptureId(),
                 payment.getMerchantId(),
                 captured,
-                payment.getPlatformFeeAmount(),
-                payment.getMerchantAmount(),
+                capturedSplit.platformFeeAmount(),
+                capturedSplit.merchantAmount(),
                 payment.getCurrency()
         );
 
@@ -631,6 +557,9 @@ public class PaymentService {
                 "PaymentCaptured",
                 PaymentResponse.from(payment)
         );
+        auditService.record("operator", "PAYMENT_CAPTURED", "PAYMENT", payment.getPaymentId().toString(),
+                "captureId=" + capture.getCaptureId() + ",captured=" + captured
+                        + ",currency=" + payment.getCurrency());
 
         return PaymentResponse.from(payment);
     }
@@ -642,23 +571,29 @@ public class PaymentService {
      *
      * Flow:
      * 1. Jeżeli podano idempotencyKey, sprawdzamy replay refundu.
-     * 2. Pobieramy Payment z blokadą FOR UPDATE.
-     * 3. Aktualizujemy stan refundu w encji Payment.
-     * 4. Zapisujemy encję Refund.
-     * 5. Księgujemy refund w ledgerze.
-     * 6. Zapisujemy event PaymentRefunded do outboxa.
+     * 2. W krótkiej transakcji zapisujemy Refund PROCESSING i ProviderOperation.
+     * 3. Poza transakcją wywołujemy PSP z tym samym idempotency key.
+     * 4. Dopiero potwierdzony sukces zmienia Payment i księguje ledger.
+     * 5. Timeout po wysłaniu pozostawia Refund UNKNOWN bez lokalnego ruchu pieniędzy.
      *
      * @param paymentId ID płatności, którą refundujemy
      * @param request dane refundu
-     * @param idempotencyKey opcjonalny klucz idempotencji refundu
+     * @param idempotencyKey wymagany klucz idempotencji refundu
      * @return utworzony albo odtworzony refund
      */
-    @Transactional
     public Refund refund(
             UUID paymentId,
             RefundPaymentRequest request,
             String idempotencyKey
     ) {
+        return refund(paymentId, request, idempotencyKey, "system", null);
+    }
+
+    public Refund refund(UUID paymentId, RefundPaymentRequest request, String idempotencyKey,
+                         String actor, UUID approvalId) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new IllegalArgumentException("Idempotency-Key is required for refund");
+        }
 
         /**
          * Refund również powinien być idempotentny.
@@ -668,16 +603,37 @@ public class PaymentService {
          *
          * To zabezpiecza przed podwójnym oddaniem pieniędzy klientowi.
          */
-        if (idempotencyKey != null) {
-            var replay = refundRepository.findByPaymentIdAndIdempotencyKey(
-                    paymentId,
-                    idempotencyKey
-            );
+        var replay = refundRepository.findByPaymentIdAndIdempotencyKey(paymentId, idempotencyKey);
+        if (replay.isPresent()) return replay.get();
 
-            if (replay.isPresent()) {
-                return replay.get();
-            }
+        PreparedRefund prepared = transactions.execute(status -> prepareRefund(
+                paymentId, request, idempotencyKey, actor, approvalId));
+        if (prepared == null) throw new IllegalStateException("Could not prepare refund");
+
+        try {
+            PspOperationResponse response = providerClientRegistry.get(prepared.provider()).execute(
+                    new PspOperationRequest(prepared.operationId(), paymentId, prepared.providerPaymentId(),
+                            ProviderOperationType.REFUND, prepared.amount(), prepared.currency(), idempotencyKey));
+            return transactions.execute(status -> finalizeRefund(prepared, response.providerReference(), actor));
+        } catch (ProviderCallException error) {
+            transactions.executeWithoutResult(status -> {
+                Refund refund = refundRepository.findById(prepared.refundId()).orElseThrow();
+                ProviderOperation operation = providerOperations.findById(prepared.operationId()).orElseThrow();
+                if (error.safeToRetry()) {
+                    refund.failed();
+                    operation.failBeforeDispatch(error);
+                } else {
+                    refund.unknown();
+                    operation.markUnknown(error);
+                }
+            });
+            if (error.safeToRetry()) throw error;
+            throw new ProviderOutcomeUnknownException(paymentId);
         }
+    }
+
+    private PreparedRefund prepareRefund(UUID paymentId, RefundPaymentRequest request, String idempotencyKey,
+                                         String actor, UUID approvalId) {
 
         /**
          * Pobieramy płatność z blokadą.
@@ -689,6 +645,14 @@ public class PaymentService {
         Payment payment = paymentRepository.findByIdForUpdate(paymentId)
                 .orElseThrow(() -> new PaymentException("Payment not found"));
 
+        if (!payment.getPaymentMethod().supportsRefunds()) {
+            throw new PaymentException("Payment method does not support refunds: " + payment.getPaymentMethod());
+        }
+        if (approvals.refundNeedsApproval(request.amount())) {
+            approvals.requireAndConsume(ApprovalOperation.HIGH_VALUE_REFUND, paymentId.toString(),
+                    request.amount(), payment.getCurrency(), approvalId);
+        }
+
         /**
          * Metoda domenowa sprawdza, czy refund jest dozwolony
          * i ile realnie można zwrócić.
@@ -697,7 +661,10 @@ public class PaymentService {
          * - full refund,
          * - partial refund.
          */
-        long amount = payment.refund(request.amount());
+        long refundable = payment.getCapturedAmount() - payment.getRefundedAmount();
+        if (request.amount() <= 0 || request.amount() > refundable) {
+            throw new PaymentException("Invalid refund amount");
+        }
 
         /**
          * Zapisujemy encję Refund.
@@ -710,11 +677,29 @@ public class PaymentService {
          */
         Refund refund = refundRepository.save(new Refund(
                 paymentId,
-                amount,
+                request.amount(),
                 payment.getCurrency(),
                 request.reason(),
                 idempotencyKey
         ));
+        ProviderOperation operation = new ProviderOperation(refund.getRefundId(), ProviderOperationType.REFUND,
+                payment.getProvider(), idempotencyKey);
+        operation.start();
+        operation = providerOperations.save(operation);
+        auditService.record(actor, "PAYMENT_REFUND_REQUESTED", "PAYMENT", paymentId.toString(),
+                "refundId=" + refund.getRefundId() + ",amount=" + request.amount());
+        return new PreparedRefund(refund.getRefundId(), operation.getOperationId(), paymentId,
+                payment.getProvider(), payment.getProviderPaymentId(), request.amount(), payment.getCurrency());
+    }
+
+    private Refund finalizeRefund(PreparedRefund prepared, String providerReference, String actor) {
+        Payment payment = paymentRepository.findByIdForUpdate(prepared.paymentId()).orElseThrow();
+        Refund refund = refundRepository.findById(prepared.refundId()).orElseThrow();
+        ProviderOperation operation = providerOperations.findById(prepared.operationId()).orElseThrow();
+        long amount = payment.refund(prepared.amount());
+        var refundSplit = splitService.split(amount);
+        refund.succeed(providerReference);
+        operation.succeed(providerReference);
 
         /**
          * Księgujemy refund w ledgerze.
@@ -728,6 +713,8 @@ public class PaymentService {
                 refund.getRefundId(),
                 payment.getMerchantId(),
                 amount,
+                refundSplit.platformFeeAmount(),
+                refundSplit.merchantAmount(),
                 payment.getCurrency()
         );
 
@@ -743,9 +730,14 @@ public class PaymentService {
                 "PaymentRefunded",
                 PaymentResponse.from(payment)
         );
+        auditService.record(actor, "PAYMENT_REFUNDED", "PAYMENT", payment.getPaymentId().toString(),
+                "refundId=" + refund.getRefundId() + ",amount=" + amount);
 
         return refund;
     }
+
+    private record PreparedRefund(UUID refundId, UUID operationId, UUID paymentId, PaymentProvider provider,
+                                  String providerPaymentId, long amount, String currency) { }
 
     /**
      * Anuluje płatność.
@@ -792,6 +784,7 @@ public class PaymentService {
                 "PaymentCanceled",
                 PaymentResponse.from(payment)
         );
+        auditService.record("operator", "PAYMENT_CANCELED", "PAYMENT", payment.getPaymentId().toString(), null);
 
         return PaymentResponse.from(payment);
     }

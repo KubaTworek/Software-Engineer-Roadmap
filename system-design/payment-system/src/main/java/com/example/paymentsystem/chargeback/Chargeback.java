@@ -6,7 +6,8 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "chargebacks")
+@Table(name = "chargebacks", uniqueConstraints =
+        @UniqueConstraint(name = "uk_chargeback_provider_dispute", columnNames = "provider_dispute_id"))
 public class Chargeback {
     @Id
     @Column(name = "chargeback_id")
@@ -26,11 +27,13 @@ public class Chargeback {
     private Instant createdAt;
     @Column(name = "updated_at")
     private Instant updatedAt;
+    @Column(name = "provider_dispute_id", nullable = false)
+    private String providerDisputeId;
 
     protected Chargeback() {
     }
 
-    public Chargeback(UUID paymentId, long amount, String currency, String reason) {
+    public Chargeback(UUID paymentId, String providerDisputeId, long amount, String currency, String reason) {
         Instant now = Instant.now();
         this.chargebackId = UUID.randomUUID();
         this.paymentId = paymentId;
@@ -40,6 +43,7 @@ public class Chargeback {
         this.status = ChargebackStatus.OPEN;
         this.createdAt = now;
         this.updatedAt = now;
+        this.providerDisputeId = providerDisputeId;
     }
 
     public void win() {

@@ -19,8 +19,7 @@ public class AuditLog {
     private String targetType;
     @Column(name = "target_id")
     private String targetId;
-    @Lob
-    @Column(name = "details")
+    @Column(name = "details", columnDefinition = "TEXT")
     private String details;
     @Column(name = "created_at")
     private Instant createdAt;

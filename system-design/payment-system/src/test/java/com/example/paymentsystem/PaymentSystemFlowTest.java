@@ -8,13 +8,19 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.security.test.context.support.WithMockUser;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@SpringBootTest
+@SpringBootTest(properties = {
+        "spring.jpa.hibernate.ddl-auto=create-drop",
+        "spring.sql.init.mode=never",
+        "spring.flyway.enabled=false"
+})
 @AutoConfigureMockMvc
-class PaymentSystemStage6Test {
+@WithMockUser(roles = {"ADMIN", "OPERATOR"})
+class PaymentSystemFlowTest {
     @Autowired MockMvc mockMvc;
     @Autowired ObjectMapper objectMapper;
 
@@ -23,7 +29,7 @@ class PaymentSystemStage6Test {
         String merchantId = createMerchant("Merchant PL", "PLN");
 
         String paymentJson = mockMvc.perform(post("/v1/payments")
-                        .header("Idempotency-Key", "stage6-payment-1")
+                        .header("Idempotency-Key", "flow-payment-1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -53,6 +59,7 @@ class PaymentSystemStage6Test {
                 .andExpect(jsonPath("$.merchantAmount").value(9000));
 
         mockMvc.perform(post("/v1/merchants/{merchantId}/payouts", merchantId)
+                        .header("Idempotency-Key", "payout-merchant-1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"currency\":\"PLN\"}"))
                 .andExpect(status().isOk())
@@ -70,7 +77,7 @@ class PaymentSystemStage6Test {
                 .andExpect(status().isOk());
 
         mockMvc.perform(post("/v1/payments")
-                        .header("Idempotency-Key", "stage6-payment-2")
+                        .header("Idempotency-Key", "flow-payment-2")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -90,7 +97,7 @@ class PaymentSystemStage6Test {
         String merchantId = createMerchant("High Risk Merchant", "PLN");
 
         mockMvc.perform(post("/v1/payments")
-                        .header("Idempotency-Key", "stage6-risk-block")
+                        .header("Idempotency-Key", "flow-risk-block")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -110,7 +117,7 @@ class PaymentSystemStage6Test {
         String merchantId = createMerchant("Chargeback Merchant", "PLN");
 
         String paymentJson = mockMvc.perform(post("/v1/payments")
-                        .header("Idempotency-Key", "stage6-payment-3")
+                        .header("Idempotency-Key", "flow-payment-3")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -132,7 +139,7 @@ class PaymentSystemStage6Test {
 
         String cbJson = mockMvc.perform(post("/v1/payments/{paymentId}/chargebacks", paymentId)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"amount\":10000,\"reason\":\"fraudulent\"}"))
+                        .content("{\"providerDisputeId\":\"dispute-1\",\"amount\":10000,\"reason\":\"fraudulent\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("OPEN"))
                 .andReturn()
