@@ -37,6 +37,9 @@ public class Video {
     private Instant updatedAt;
     @Column(name = "published_at")
     private Instant publishedAt;
+    @Version
+    @Column(name = "row_version", nullable = false)
+    private long rowVersion;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "minimum_plan_code", nullable = false)
@@ -90,9 +93,25 @@ public class Video {
     public void markUploading() { this.status = VideoStatus.UPLOADING; touch(); }
     public void markUploaded(String sourceObjectKey) { this.sourceObjectKey = sourceObjectKey; this.status = VideoStatus.UPLOADED; touch(); }
     public void markProcessing() { this.status = VideoStatus.PROCESSING; touch(); }
-    public void markReady(String hlsMasterObjectKey) { this.hlsMasterObjectKey = hlsMasterObjectKey; this.status = VideoStatus.READY; touch(); }
+    public void markReady(String hlsMasterObjectKey) {
+        if (hlsMasterObjectKey == null || hlsMasterObjectKey.isBlank()) {
+            throw new IllegalArgumentException("READY video requires a master manifest");
+        }
+        this.hlsMasterObjectKey = hlsMasterObjectKey;
+        this.status = VideoStatus.READY;
+        touch();
+    }
     public void markFailed() { this.status = VideoStatus.FAILED; touch(); }
-    public void publish() { this.status = VideoStatus.PUBLISHED; this.visibility = VideoVisibility.PUBLIC; this.publishedAt = Instant.now(); touch(); }
+    public void publish() {
+        if (status == VideoStatus.PUBLISHED) return;
+        if (status != VideoStatus.READY || hlsMasterObjectKey == null || hlsMasterObjectKey.isBlank()) {
+            throw new IllegalStateException("Only a READY video with a master manifest can be published");
+        }
+        this.status = VideoStatus.PUBLISHED;
+        this.visibility = VideoVisibility.PUBLIC;
+        this.publishedAt = Instant.now();
+        touch();
+    }
     public void archive() { this.status = VideoStatus.ARCHIVED; touch(); }
 
     public void updatePremiumPolicy(SubscriptionPlanCode minimumPlanCode, String allowedCountries, Boolean drmProtected, String licensePolicy) {

@@ -5,7 +5,7 @@ API=${API:-http://localhost:8080}
 USER_EMAIL=${USER_EMAIL:-user@example.com}
 USER_PASSWORD=${USER_PASSWORD:-user1234}
 ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
-ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin1234}
+ADMIN_PASSWORD=${ADMIN_PASSWORD:-change-this-demo-password}
 VIDEO_ID=${VIDEO_ID:-}
 
 login() {

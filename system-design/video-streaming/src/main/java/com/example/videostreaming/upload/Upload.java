@@ -45,6 +45,15 @@ public class Upload {
     public UUID getId() { return id; }
     public Video getVideo() { return video; }
     public String getObjectKey() { return objectKey; }
+    public long getSizeBytes() { return sizeBytes; }
+    public String getContentType() { return contentType; }
     public UploadStatus getStatus() { return status; }
-    public void complete() { this.status = UploadStatus.COMPLETED; this.completedAt = Instant.now(); }
+    public void complete() {
+        if (status == UploadStatus.COMPLETED) return;
+        if (status != UploadStatus.CREATED) {
+            throw new IllegalStateException("Upload can be completed only from CREATED state");
+        }
+        this.status = UploadStatus.COMPLETED;
+        this.completedAt = Instant.now();
+    }
 }

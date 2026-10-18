@@ -1,7 +1,5 @@
 package com.example.videostreaming.transcoding;
 
-import com.example.videostreaming.catalog.Video;
-import com.example.videostreaming.catalog.VideoRepository;
 import com.example.videostreaming.messaging.EventPublisher;
 import com.example.videostreaming.messaging.MessagingProperties;
 import com.example.videostreaming.messaging.VideoEvents;
@@ -14,11 +12,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
@@ -58,7 +56,7 @@ public class TranscodingWorker {
      * Job jest trwałym zapisem pracy do wykonania.
      * Dzięki temu można śledzić status, liczbę prób, błędy i DLQ.
      */
-    private final TranscodingJobRepository jobs;
+    private final TranscodingJobCoordinator coordinator;
 
     /**
      * Repozytorium filmów.
@@ -68,8 +66,6 @@ public class TranscodingWorker {
      * - READY po poprawnym wygenerowaniu HLS,
      * - FAILED po przekroczeniu liczby prób.
      */
-    private final VideoRepository videos;
-
     /**
      * Dostęp do object storage.
      *
@@ -79,6 +75,7 @@ public class TranscodingWorker {
      * - uploadu segmentów .ts.
      */
     private final ObjectStorageService storage;
+    private final HlsArtifactPublisher artifactPublisher;
 
     /**
      * Konfiguracja transkodowania.
@@ -139,16 +136,16 @@ public class TranscodingWorker {
      */
     private final Timer durationTimer;
 
-    public TranscodingWorker(TranscodingJobRepository jobs,
-                             VideoRepository videos,
+    public TranscodingWorker(TranscodingJobCoordinator coordinator,
                              ObjectStorageService storage,
+                             HlsArtifactPublisher artifactPublisher,
                              TranscodingProperties props,
                              MessagingProperties messaging,
                              EventPublisher publisher,
                              MeterRegistry meterRegistry) {
-        this.jobs = jobs;
-        this.videos = videos;
+        this.coordinator = coordinator;
         this.storage = storage;
+        this.artifactPublisher = artifactPublisher;
         this.props = props;
         this.messaging = messaging;
         this.publisher = publisher;
@@ -178,7 +175,6 @@ public class TranscodingWorker {
      * więc nie są realnie cofane przez rollback transakcji DB.
      */
     @RabbitListener(queues = "${app.messaging.transcoding-queue}")
-    @Transactional
     public void handle(VideoEvents.TranscodingRequested event) {
         if (!props.enabled()) {
             log.info("Transcoding worker disabled, ignoring job {}", event.jobId());
@@ -207,12 +203,13 @@ public class TranscodingWorker {
      * np. po duplikacie eventu z kolejki.
      */
     private void processWithRetry(VideoEvents.TranscodingRequested event) {
-        TranscodingJob job = jobs.findById(event.jobId()).orElseThrow();
-
-        if (job.getStatus() == TranscodingJobStatus.COMPLETED) {
-            log.info("Ignoring already completed transcoding job {}", job.getId());
+        var claim = coordinator.claim(event.jobId());
+        if (claim.isEmpty()) {
+            log.info("Ignoring terminal or currently leased transcoding job {}", event.jobId());
             return;
         }
+
+        TranscodingJobCoordinator.ClaimedJob job = claim.get();
 
         try {
             process(job);
@@ -223,8 +220,8 @@ public class TranscodingWorker {
 
             log.error(
                     "Transcoding failed for job {} attempt {}/{}",
-                    job.getId(),
-                    job.getAttempts(),
+                    job.jobId(),
+                    job.attempt(),
                     messaging.maxAttempts(),
                     ex
             );
@@ -233,26 +230,19 @@ public class TranscodingWorker {
              * Jeśli nie przekroczono limitu prób, zapisujemy status RETRYING
              * i publikujemy nowy event do kolejki.
              */
-            if (job.getAttempts() < messaging.maxAttempts()) {
-                job.retrying(message);
-                jobs.save(job);
+            if (job.attempt() < messaging.maxAttempts()) {
+                coordinator.retry(job, message);
 
                 retryCounter.increment();
 
-                /*
-                 * Prosty backoff.
-                 *
-                 * W produkcji lepsze byłoby opóźnienie po stronie brokera,
-                 * np. delayed exchange / TTL + DLX, zamiast blokować wątek workera.
-                 */
-                sleepBeforeRetry(job.getAttempts());
-
-                publisher.publishTranscodingRequested(
+                // Retry queue nie ma consumera: TTL odmierza opóźnienie, po czym
+                // DLX przekazuje komunikat z powrotem do kolejki głównej.
+                publisher.publishTranscodingRetry(
                         new VideoEvents.TranscodingRequested(
-                                job.getId(),
-                                job.getVideo().getId(),
-                                job.getSourceObjectKey(),
-                                job.getAttempts() + 1,
+                                job.jobId(),
+                                job.videoId(),
+                                job.sourceObjectKey(),
+                                job.attempt() + 1,
                                 Instant.now()
                         )
                 );
@@ -264,20 +254,14 @@ public class TranscodingWorker {
                  * Dzięki temu admin widzi, że materiał wymaga interwencji,
                  * a system nie próbuje transkodować go w nieskończoność.
                  */
-                job.deadLetter(message);
-                jobs.save(job);
-
-                videos.findById(job.getVideo().getId()).ifPresent(video -> {
-                    video.markFailed();
-                    videos.save(video);
-                });
+                coordinator.deadLetter(job, message);
 
                 publisher.publishTranscodingDlq(
                         new VideoEvents.TranscodingRequested(
-                                job.getId(),
-                                job.getVideo().getId(),
-                                job.getSourceObjectKey(),
-                                job.getAttempts(),
+                                job.jobId(),
+                                job.videoId(),
+                                job.sourceObjectKey(),
+                                job.attempt(),
                                 Instant.now()
                         )
                 );
@@ -286,27 +270,6 @@ public class TranscodingWorker {
             }
 
             failureCounter.increment();
-        }
-    }
-
-    /**
-     * Prosty liniowy backoff przed retry.
-     *
-     * Opóźnienie rośnie wraz z numerem próby,
-     * ale jest ograniczone do 30 sekund.
-     *
-     * Uwaga architektoniczna:
-     * Thread.sleep w workerze jest akceptowalny w prostym MVP,
-     * ale przy dużej skali lepiej nie blokować wątku.
-     * Opóźnienie powinno być realizowane przez broker albo scheduler.
-     */
-    private void sleepBeforeRetry(int attempt) {
-        long delay = messaging.initialRetryDelayMs() * Math.max(1, attempt);
-
-        try {
-            Thread.sleep(Math.min(delay, 30_000));
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
         }
     }
 
@@ -328,29 +291,22 @@ public class TranscodingWorker {
      * Po tej metodzie film ma gotowy manifest HLS,
      * który PlaybackService może później zwrócić klientowi.
      */
-    private void process(TranscodingJob job) throws Exception {
-        UUID videoId = job.getVideo().getId();
+    private void process(TranscodingJobCoordinator.ClaimedJob job) throws Exception {
+        UUID videoId = job.videoId();
 
         /*
          * Każdy job ma własny katalog roboczy.
          *
          * To zapobiega kolizjom plików, gdy działa kilka workerów równolegle.
          */
-        Path jobDir = Path.of(props.workDir(), job.getId().toString());
+        Path jobDir = Path.of(props.workDir(), job.jobId().toString());
         Path input = jobDir.resolve("source");
         Path outputDir = jobDir.resolve("hls");
 
         try {
-            job.running();
-            jobs.saveAndFlush(job);
-
-            Video video = videos.findById(videoId).orElseThrow();
-            video.markProcessing();
-            videos.saveAndFlush(video);
-
             Files.createDirectories(outputDir);
 
-            log.info("Downloading raw video {} for job {}", job.getSourceObjectKey(), job.getId());
+            log.info("Downloading raw video {} for job {}", job.sourceObjectKey(), job.jobId());
 
             /*
              * Pobieramy oryginalny plik wideo z object storage.
@@ -358,7 +314,7 @@ public class TranscodingWorker {
              * Od tego momentu transkodowanie dzieje się lokalnie
              * w katalogu roboczym workera.
              */
-            storage.download(job.getSourceObjectKey(), input);
+            storage.download(job.sourceObjectKey(), input);
 
             /*
              * FFmpeg tworzy lokalny manifest master.m3u8
@@ -373,22 +329,21 @@ public class TranscodingWorker {
              * PlaybackService będzie później używał master.m3u8
              * jako głównego wejścia do odtwarzania.
              */
-            String prefix = "videos/" + videoId + "/hls";
+            String prefix = "videos/" + videoId + "/hls/" + job.jobId();
 
-            uploadDirectory(outputDir, prefix);
-
-            String masterKey = prefix + "/master.m3u8";
+            /*
+             * Segmenty i playlisty wariantów są publikowane przed masterem.
+             * Master pełni rolę commit markera: jeśli jego upload się powiedzie,
+             * wszystkie odwołania zostały wcześniej zweryfikowane i wysłane.
+             */
+            String masterKey = artifactPublisher.publishCompletePackage(outputDir, prefix);
 
             /*
              * READY oznacza, że film jest technicznie gotowy do publikacji.
              * To nie znaczy jeszcze, że jest widoczny publicznie.
              * Publiczność kontroluje osobny krok publish w katalogu.
              */
-            video.markReady(masterKey);
-            videos.save(video);
-
-            job.completed();
-            jobs.save(job);
+            coordinator.complete(job, masterKey);
 
             successCounter.increment();
 
@@ -406,18 +361,32 @@ public class TranscodingWorker {
     /**
      * Uruchamia FFmpeg i generuje HLS VOD.
      *
-     * Wynik:
-     * - master.m3u8,
-     * - segment_00000.ts,
-     * - segment_00001.ts,
-     * - itd.
-     *
-     * Ten wariant MVP generuje jedną jakość HLS.
-     * Produkcyjnie zwykle generuje się kilka profili jakości,
-     * np. 360p, 720p, 1080p, oraz master playlistę z adaptive bitrate.
+     * Wynik zawiera trzy playlisty wariantów i prawdziwy master manifest ABR.
+     * Każda reprezentacja ma niezależne segmenty; player wybiera bitrate na
+     * podstawie przepustowości i rozmiaru bufora.
      */
     private void runFfmpeg(Path input, Path outputDir) throws IOException, InterruptedException {
-        Path master = outputDir.resolve("master.m3u8");
+        Files.createDirectories(outputDir);
+        for (HlsRenditionProfile profile : HlsRenditionProfile.educationalLadder()) {
+            runFfmpegRendition(input, outputDir, profile);
+        }
+
+        StringBuilder master = new StringBuilder("#EXTM3U\n#EXT-X-VERSION:3\n");
+        for (HlsRenditionProfile profile : HlsRenditionProfile.educationalLadder()) {
+            master.append("#EXT-X-STREAM-INF:BANDWIDTH=")
+                    .append(profile.videoBitrateKbps() * 1_000 + 128_000)
+                    .append(",RESOLUTION=")
+                    .append(profile.width()).append('x').append(profile.height())
+                    .append(",CODECS=\"avc1.4d401f,mp4a.40.2\"\n")
+                    .append(profile.name()).append("/index.m3u8\n");
+        }
+        Files.writeString(outputDir.resolve("master.m3u8"), master, StandardCharsets.UTF_8);
+    }
+
+    private void runFfmpegRendition(Path input, Path outputDir, HlsRenditionProfile profile)
+            throws IOException, InterruptedException {
+        Path renditionDirectory = outputDir.resolve(profile.name());
+        Files.createDirectories(renditionDirectory);
 
         List<String> command = List.of(
                 props.ffmpegPath(), "-y",
@@ -429,9 +398,14 @@ public class TranscodingWorker {
                  * h264 jest szeroko wspierany przez przeglądarki,
                  * mobile i smart TV.
                  */
-                "-c:v", "h264",
+                "-c:v", "libx264",
                 "-preset", "veryfast",
-                "-crf", "23",
+                "-b:v", profile.videoBitrateKbps() + "k",
+                "-maxrate", (int) (profile.videoBitrateKbps() * 1.07) + "k",
+                "-bufsize", (profile.videoBitrateKbps() * 2) + "k",
+                "-vf", "scale=w=" + profile.width() + ":h=" + profile.height()
+                        + ":force_original_aspect_ratio=decrease,"
+                        + "pad=" + profile.width() + ":" + profile.height() + ":(ow-iw)/2:(oh-ih)/2",
 
                 /*
                  * Kodowanie audio.
@@ -459,12 +433,12 @@ public class TranscodingWorker {
                  * Wzorzec nazw segmentów.
                  */
                 "-hls_segment_filename",
-                outputDir.resolve("segment_%05d.ts").toString(),
+                renditionDirectory.resolve("segment_%05d.ts").toString(),
 
                 /*
                  * Główny manifest HLS.
                  */
-                master.toString()
+                renditionDirectory.resolve("index.m3u8").toString()
         );
 
         Process process = new ProcessBuilder(command)
@@ -476,30 +450,6 @@ public class TranscodingWorker {
 
         if (exit != 0) {
             throw new IllegalStateException("ffmpeg exited with code " + exit);
-        }
-    }
-
-    /**
-     * Uploaduje wszystkie pliki wygenerowane przez FFmpeg do storage.
-     *
-     * Dla HLS typowo są to:
-     * - .m3u8 jako manifest,
-     * - .ts jako segmenty video.
-     *
-     * Ustawienie poprawnego content type jest istotne,
-     * bo CDN i player mogą inaczej obsługiwać manifesty i segmenty.
-     */
-    private void uploadDirectory(Path dir, String prefix) throws Exception {
-        try (var stream = Files.walk(dir)) {
-            for (Path file : stream.filter(Files::isRegularFile).toList()) {
-                String name = file.getFileName().toString();
-
-                String contentType = name.endsWith(".m3u8")
-                        ? "application/vnd.apple.mpegurl"
-                        : "video/mp2t";
-
-                storage.uploadFile(prefix + "/" + name, file, contentType);
-            }
         }
     }
 

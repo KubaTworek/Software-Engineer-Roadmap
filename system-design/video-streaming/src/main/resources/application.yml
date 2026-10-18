@@ -30,6 +30,9 @@ server:
   port: ${SERVER_PORT:8080}
 
 app:
+  demo-admin:
+    enabled: ${DEMO_ADMIN_ENABLED:false}
+    password: ${DEMO_ADMIN_PASSWORD:}
   jwt:
     issuer: video-streaming-platform
     secret: ${JWT_SECRET:dev-secret-dev-secret-dev-secret-dev-secret-dev-secret}

@@ -1,0 +1,42 @@
+groups:
+  - name: video-streaming
+    rules:
+      - alert: VideoTranscodingDeadLetters
+        expr: increase(video_transcoding_dlq_total[10m]) > 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "Transcoding jobs reached the dead-letter queue"
+          runbook: "ops/RUNBOOK.md#transcodingdeadletters"
+
+      - alert: VideoTranscodingFailureRatioHigh
+        expr: |
+          sum(rate(video_transcoding_failure_total[10m]))
+          /
+          clamp_min(sum(rate(video_transcoding_success_total[10m]) + rate(video_transcoding_failure_total[10m])), 0.001)
+          > 0.05
+        for: 10m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "More than 5% of transcoding attempts fail"
+          runbook: "ops/RUNBOOK.md#transcodingfailureratiohigh"
+
+      - alert: LivePipelineFailures
+        expr: increase(video_live_failure_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "A live FFmpeg pipeline failed"
+          runbook: "ops/RUNBOOK.md#livepipelinefailures"
+
+      - alert: QoeIngestionFailures
+        expr: increase(video_qoe_events_failed_total[10m]) > 5
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "QoE telemetry cannot be persisted"
+          runbook: "ops/RUNBOOK.md#qoeingestionfailures"

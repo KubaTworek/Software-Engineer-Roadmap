@@ -3,11 +3,13 @@ set -euo pipefail
 
 API=${API:-http://localhost:8080}
 SAMPLE=${SAMPLE:-./sample.mp4}
+ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
+ADMIN_PASSWORD=${ADMIN_PASSWORD:-change-this-demo-password}
 
 echo "Logging in as admin..."
 TOKEN=$(curl -s -X POST "$API/api/auth/login" \
   -H 'Content-Type: application/json' \
-  -d '{"email":"admin@example.com","password":"admin1234"}' | jq -r .accessToken)
+  -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}" | jq -r .accessToken)
 
 if [[ -z "$TOKEN" || "$TOKEN" == "null" ]]; then
   echo "Could not login. Is the stack running?"

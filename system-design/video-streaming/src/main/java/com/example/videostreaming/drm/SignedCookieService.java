@@ -11,6 +11,8 @@ import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.Clock;
+import java.security.MessageDigest;
 import java.util.Base64;
 import java.util.List;
 
@@ -59,14 +61,20 @@ public class SignedCookieService {
      * żeby cookie było wysyłane tylko po HTTPS.
      */
     private final boolean secure;
+    private final Clock clock;
 
     public SignedCookieService(
             @Value("${app.premium.signed-cookie-secret:${app.jwt.secret}}") String secret,
             @Value("${app.premium.cookie-domain:}") String cookieDomain,
-            @Value("${app.premium.cookie-secure:false}") boolean secure) {
+            @Value("${app.premium.cookie-secure:false}") boolean secure,
+            Clock clock) {
+        if (secret == null || secret.length() < 32) {
+            throw new IllegalArgumentException("Playback signing secret must contain at least 32 characters");
+        }
         this.secret = secret;
         this.cookieDomain = cookieDomain;
         this.secure = secure;
+        this.clock = clock;
     }
 
     /**
@@ -92,7 +100,7 @@ public class SignedCookieService {
      * @return lista cookies do ustawienia w odpowiedzi HTTP
      */
     public List<ResponseCookie> createPlaybackCookies(User user, Video video, Duration ttl) {
-        Instant expires = Instant.now().plus(ttl);
+        Instant expires = clock.instant().plus(ttl);
 
         /*
          * Prosta polityka dostępu.
@@ -128,7 +136,7 @@ public class SignedCookieService {
      * DrmLicenseController sprawdza go przed wydaniem licencji.
      */
     public String createPlaybackToken(User user, Video video, Duration ttl) {
-        Instant expires = Instant.now().plus(ttl);
+        Instant expires = clock.instant().plus(ttl);
 
         String claims = user.getId()
                 + ":"
@@ -158,30 +166,26 @@ public class SignedCookieService {
             return false;
         }
 
-        String[] parts = token.split("\\.", 2);
+        try {
+            String[] parts = token.split("\\.", 2);
+            String claims = new String(Base64.getUrlDecoder().decode(parts[0]), StandardCharsets.UTF_8);
+            String[] values = claims.split(":");
+            if (values.length != 3
+                    || !values[0].equals(expectedUserId)
+                    || !values[1].equals(expectedVideoId)) {
+                return false;
+            }
 
-        String claims = new String(
-                Base64.getUrlDecoder().decode(parts[0]),
-                StandardCharsets.UTF_8
-        );
+            long exp = Long.parseLong(values[2]);
+            if (clock.instant().getEpochSecond() > exp) return false;
 
-        String[] values = claims.split(":");
-
-        if (values.length != 3) {
+            byte[] expected = sign(claims).getBytes(StandardCharsets.US_ASCII);
+            byte[] received = parts[1].getBytes(StandardCharsets.US_ASCII);
+            return MessageDigest.isEqual(expected, received);
+        } catch (IllegalArgumentException malformedToken) {
+            // Dane pochodzą od klienta; zły Base64/liczba oznacza odmowę, nie błąd 500.
             return false;
         }
-
-        if (!values[0].equals(expectedUserId) || !values[1].equals(expectedVideoId)) {
-            return false;
-        }
-
-        long exp = Long.parseLong(values[2]);
-
-        if (Instant.now().getEpochSecond() > exp) {
-            return false;
-        }
-
-        return sign(claims).equals(parts[1]);
     }
 
     /**
