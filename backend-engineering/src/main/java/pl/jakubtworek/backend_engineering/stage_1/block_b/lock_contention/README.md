@@ -5,8 +5,9 @@
 > **Karta materiału**
 > - **Zakres:** `fundament`
 > - **Uczy:** lock contention.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „lock contention” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Dodawanie workerów do sekcji, którą i tak serializuje jeden lock.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `AtomicCounter` = `correct`.
 > - **Granica:** Wynik eksperymentu opisuje tę maszynę i workload; nie jest uniwersalną liczbą produkcyjną.
 <!-- material-card:end -->

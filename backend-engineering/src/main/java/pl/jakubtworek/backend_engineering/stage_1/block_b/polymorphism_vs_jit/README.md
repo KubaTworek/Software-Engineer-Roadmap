@@ -5,8 +5,9 @@
 > **Karta materiału**
 > - **Zakres:** `fundament`
 > - **Uczy:** polymorphism vs jit.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „polymorphism vs jit” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Uznanie kosztu wywołania wirtualnego za stały, niezależny od profilu typów.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `BimorphicCallSiteDemo` = `simulation`, `DirectCallDemo` = `simulation`, `MegamorphicCallSiteDemo` = `simulation` (+1).
 > - **Granica:** Wynik eksperymentu opisuje tę maszynę i workload; nie jest uniwersalną liczbą produkcyjną.
 <!-- material-card:end -->

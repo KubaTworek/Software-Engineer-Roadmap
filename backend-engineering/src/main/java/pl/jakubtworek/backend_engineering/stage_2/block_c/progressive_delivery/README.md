@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `praktyka-produkcyjna`
 > - **Uczy:** progressive delivery.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „progressive delivery” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Promocja canary na zbyt małej próbce lub rollback do niezgodnego schematu.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=CanaryAndRollbackTest,FeatureFlagTest,GameDayAndIncidentTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `ProgressiveDeliveryController` = `production-boundary`.
-> - **Granica:** Laboratorium pokazuje kontrakt i failure modes; nie zastępuje pełnego testu end-to-end ani operacyjnej konfiguracji środowiska.
+> - **Granica:** Test modelu i manifestu nie uruchamia klastra; routing, SIGTERM, PVC i rollout wymagają osobnego eksperymentu wdrożeniowego.
 <!-- material-card:end -->
 
 ## Progressive delivery i operacje podczas incydentu

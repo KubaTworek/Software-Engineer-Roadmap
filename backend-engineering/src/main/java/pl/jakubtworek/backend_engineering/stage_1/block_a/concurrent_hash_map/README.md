@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `fundament`
 > - **Uczy:** ConcurrentHashMap i atomowe ładowanie cache.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „ConcurrentHashMap i atomowe ładowanie cache” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Rozdzielenie containsKey i put zamiast atomowej operacji na kluczu.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=ConcurrentHashMapTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `BrokenCache` = `naive`; `AtomicCache` = `correct`.
-> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+> - **Granica:** Test kontroluje wybrany przeplot w JVM; pojedyncze uruchomienie nie dowodzi wszystkich zachowań dopuszczonych przez JMM ani wydajności pod obciążeniem.
 <!-- material-card:end -->
 
 Kolekcje współbieżne w Javie

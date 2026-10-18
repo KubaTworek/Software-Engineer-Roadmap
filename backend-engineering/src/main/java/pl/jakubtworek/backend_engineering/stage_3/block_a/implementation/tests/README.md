@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `temat-zaawansowany`
 > - **Uczy:** tests.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „tests” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Pomiar latency w modelu closed ukrywający coordinated omission.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
-> - **Role klas:** brak klasy-kontrprzykładu; pozostałe typy są minimalnymi modelami pojęć opisanych niżej.
-> - **Granica:** Model weryfikuje nazwany niezmiennik; nie implementuje produkcyjnego protokołu rozproszonego ani infrastruktury dostawcy.
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** brak jawnej roli w nazwach klas; intencję przykładu określają opis i test, nie sam brak prefiksu.
+> - **Granica:** Deterministyczny model obejmuje zdefiniowane awarie i przeploty; nie jest dowodem zachowania dowolnej sieci ani pomiarem capacity.
 <!-- material-card:end -->
 
 ## Wydajność całego systemu: od capacity do eksperymentu

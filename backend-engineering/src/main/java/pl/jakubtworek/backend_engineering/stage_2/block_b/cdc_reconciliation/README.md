@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `praktyka-produkcyjna`
 > - **Uczy:** cdc reconciliation.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „cdc reconciliation” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Backfill nadpisujący nowszy stan lub replay ponawiający efekty biznesowe.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=OnlineProjectionBackfillTest,PoisonRecordPartitionTest,ReconciliationAndRepairTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `InMemoryCdcSource` = `simulation`.
-> - **Granica:** Laboratorium pokazuje kontrakt i failure modes; nie zastępuje pełnego testu end-to-end ani operacyjnej konfiguracji środowiska.
+> - **Granica:** Fake broker sprawdza logikę obsługi; rebalance, offsety i trwałość wymagają brokera, a efekt zewnętrzny własnej idempotencji.
 <!-- material-card:end -->
 
 ## CDC, rekoncyliacja i naprawa danych

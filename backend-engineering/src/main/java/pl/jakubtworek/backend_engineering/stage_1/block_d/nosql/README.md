@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `fundament`
 > - **Uczy:** nosql.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „nosql” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Przeniesienie modelu relacyjnego do NoSQL bez projektu kluczy i access patterns.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=ConditionalDocumentStoreTest,QuorumConfigurationTest,ReplicatedValueStoreTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `AtomicFixedWindowRateLimiter` = `correct`; `QuorumConfiguration` = `production-boundary`.
-> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+> - **Granica:** Model i H2 sprawdzają logikę; blokady, plan zapytania i zachowanie silnika potwierdza dopiero odpowiedni profil infrastrukturalny.
 <!-- material-card:end -->
 
 ## NoSQL — model danych wynika z operacji

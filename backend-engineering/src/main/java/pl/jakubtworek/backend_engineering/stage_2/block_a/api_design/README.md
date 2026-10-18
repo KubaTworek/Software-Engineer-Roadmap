@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `praktyka-produkcyjna`
 > - **Uczy:** api design.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „api design” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Retry komendy bez idempotencji lub aktualizacja bez ochrony przed lost update.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=ApiContractCompatibilityTest,AsyncCancellationTest,OpenApiContractTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `OrderApiController` = `production-boundary`.
-> - **Granica:** Laboratorium pokazuje kontrakt i failure modes; nie zastępuje pełnego testu end-to-end ani operacyjnej konfiguracji środowiska.
+> - **Granica:** Test granicy modułu lub lokalnej transakcji nie gwarantuje atomowości między procesami ani zgodności niezależnie wdrażanych klientów.
 <!-- material-card:end -->
 
 ## Projektowanie i ewolucja API — wykonywalne laboratorium

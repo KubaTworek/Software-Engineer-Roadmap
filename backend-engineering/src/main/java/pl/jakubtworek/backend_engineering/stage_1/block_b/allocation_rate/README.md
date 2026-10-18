@@ -5,8 +5,9 @@
 > **Karta materiału**
 > - **Zakres:** `fundament`
 > - **Uczy:** allocation rate.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „allocation rate” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Ocenianie presji na GC wyłącznie po rozmiarze żywego heapu.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `StringAllocationChurnDemo` = `simulation`, `StringBuilderBetterDemo` = `simulation`, `StringBuilderPreSizedDemo` = `simulation`.
 > - **Granica:** Wynik eksperymentu opisuje tę maszynę i workload; nie jest uniwersalną liczbą produkcyjną.
 <!-- material-card:end -->

@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `fundament`
 > - **Uczy:** Silnik wyszukiwania jako odtwarzalny read model.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „Silnik wyszukiwania jako odtwarzalny read model” za gwarancję bez sprawdzenia niezmiennika i failure modes.
-> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=OpenSearchContainerTest,VersionedSearchIndexTest" test`
+> - **Typowy błąd:** Traktowanie indeksu jako źródła prawdy i replay starej wersji po usunięciu.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=VersionedSearchIndexTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `NaiveSearchProjection` = `naive`.
-> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+> - **Granica:** Model i H2 sprawdzają logikę; blokady, plan zapytania i zachowanie silnika potwierdza dopiero odpowiedni profil infrastrukturalny.
 <!-- material-card:end -->
 
 ## Problem

@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `praktyka-produkcyjna`
 > - **Uczy:** consumer.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „consumer” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Zapis markera deduplikacji poza transakcją efektu konsumenta.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=DefaultIdempotentEventProcessorTest,KafkaEventConsumerTest,RetryConfigurationTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `IdempotentEventProcessor` = `correct`; `DeadLetterPublisher` = `production-boundary`, `KafkaDeadLetterPublisher` = `production-boundary`, `KafkaEventConsumer` = `production-boundary`.
-> - **Granica:** Laboratorium pokazuje kontrakt i failure modes; nie zastępuje pełnego testu end-to-end ani operacyjnej konfiguracji środowiska.
+> - **Granica:** Fake broker sprawdza logikę obsługi; rebalance, offsety i trwałość wymagają brokera, a efekt zewnętrzny własnej idempotencji.
 <!-- material-card:end -->
 
 ## Konsument zdarzeń: idempotencja, deduplikacja, retry i odtwarzanie

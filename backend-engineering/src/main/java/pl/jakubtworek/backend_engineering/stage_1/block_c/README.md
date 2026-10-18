@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `fundament`
 > - **Uczy:** Stage 1C — Spring pod maską.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „Stage 1C — Spring pod maską” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Przypisanie adnotacji gwarancji bez sprawdzenia proxy i granicy transakcji.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=PaymentServiceAopTest,AuthApiContractTest,AuthServiceTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `CorrectSelfInvocationSolutionService` = `correct`, `ValidatedExternalApiProperties` = `correct`; `AuthController` = `production-boundary`, `OrderController` = `production-boundary`, `PageController` = `production-boundary` (+3).
-> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+> - **Granica:** Mock nie uruchamia proxy Springa ani transakcji bazy; sprawdź rodzaj kontekstu i storage użyte w konkretnym teście.
 <!-- material-card:end -->
 
 ## Spring pod maską — mechanizmy, granice i pułapki projektowe

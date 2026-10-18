@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `temat-zaawansowany`
 > - **Uczy:** metrics.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „metrics” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Ocena capacity na podstawie średniej latency bez percentyli i saturation.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=SystemDesignMetricsTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `SystemDesignMetricsDemo` = `simulation`.
-> - **Granica:** Model weryfikuje nazwany niezmiennik; nie implementuje produkcyjnego protokołu rozproszonego ani infrastruktury dostawcy.
+> - **Granica:** Deterministyczny model obejmuje zdefiniowane awarie i przeploty; nie jest dowodem zachowania dowolnej sieci ani pomiarem capacity.
 <!-- material-card:end -->
 
 ## Metryki skalowania i odporności

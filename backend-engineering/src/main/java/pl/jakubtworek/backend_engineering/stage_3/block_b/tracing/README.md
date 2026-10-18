@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `temat-zaawansowany`
 > - **Uczy:** tracing.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „tracing” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Nowy trace w każdej usłudze i utrata kontekstu po przejściu async.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `TracingConfiguration` = `production-boundary`.
-> - **Granica:** Model weryfikuje nazwany niezmiennik; nie implementuje produkcyjnego protokołu rozproszonego ani infrastruktury dostawcy.
+> - **Granica:** Test eksportera lub reguły nie dowodzi dostarczenia telemetrii do wdrożonego backendu ani skuteczności reakcji operatora.
 <!-- material-card:end -->
 
 ## Tracing z OpenTelemetry w aplikacji Java

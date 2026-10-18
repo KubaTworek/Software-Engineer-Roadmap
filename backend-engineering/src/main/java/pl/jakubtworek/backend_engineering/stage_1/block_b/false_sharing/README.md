@@ -5,9 +5,10 @@
 > **Karta materiału**
 > - **Zakres:** `fundament`
 > - **Uczy:** false sharing.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „false sharing” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Uznanie niezależnych pól za niezależne linie cache procesora.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=FalseSharingBenchmarkCorrectnessTest" test`
-> - **Role klas:** brak klasy-kontrprzykładu; pozostałe typy są minimalnymi modelami pojęć opisanych niżej.
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** brak jawnej roli w nazwach klas; intencję przykładu określają opis i test, nie sam brak prefiksu.
 > - **Granica:** Wynik eksperymentu opisuje tę maszynę i workload; nie jest uniwersalną liczbą produkcyjną.
 <!-- material-card:end -->
 

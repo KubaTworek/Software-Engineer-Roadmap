@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `praktyka-produkcyjna`
 > - **Uczy:** ddd strategy.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „ddd strategy” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Jeden wspólny model dla kontekstów, w których to samo słowo ma różne znaczenie.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `LegacyOrderAcl` = `naive`, `LegacyOrderDto` = `naive`, `LegacyOrderLineDto` = `naive`; `BoundedContext` = `correct`; `IntegrationEventPublisher` = `production-boundary`.
-> - **Granica:** Laboratorium pokazuje kontrakt i failure modes; nie zastępuje pełnego testu end-to-end ani operacyjnej konfiguracji środowiska.
+> - **Granica:** Test granicy modułu lub lokalnej transakcji nie gwarantuje atomowości między procesami ani zgodności niezależnie wdrażanych klientów.
 <!-- material-card:end -->
 
 ## DDD strategiczne – bounded contexts i mapa kontekstów w architekturze e-commerce

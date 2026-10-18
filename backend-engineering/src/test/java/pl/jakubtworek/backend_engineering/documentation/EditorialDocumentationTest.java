@@ -37,9 +37,11 @@ class EditorialDocumentationTest {
                     .contains("**Uczy:**")
                     .contains("**Typowy błąd:**")
                     .contains("**Najkrótsza weryfikacja:**")
+                    .contains("**Katalog uruchomienia:**")
                     .contains("**Role klas:**")
                     .contains("**Granica:**")
-                    .contains("<!-- material-card:end -->");
+                    .contains("<!-- material-card:end -->")
+                    .doesNotContain("Uznanie pojedynczego wyniku dotyczącego");
 
             long topLevelHeadings = content.lines()
                     .filter(line -> line.startsWith("# "))
@@ -56,5 +58,16 @@ class EditorialDocumentationTest {
                     .as("allowed scope in %s", readme)
                     .anyMatch(scopeLine::endsWith);
         }
+    }
+
+    @Test
+    void referenceWorkshopHasExecutableInstructionsBeyondItsCard() throws IOException {
+        Path workshop = Path.of("src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_c/workshop");
+        String readme = Files.readString(workshop.resolve("README.md"));
+        assertThat(readme).contains("## Problem i niezmiennik", "## Uruchomienie",
+                "## Przepływ i endpointy", "## Dowody i ograniczenia",
+                " -f src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_c/workshop/pom.xml",
+                "ApplicationHealthStateTest", "StorageServicesTest", "DeliveryArtifactsTest");
+        assertThat(workshop.resolve("pom.xml")).exists();
     }
 }

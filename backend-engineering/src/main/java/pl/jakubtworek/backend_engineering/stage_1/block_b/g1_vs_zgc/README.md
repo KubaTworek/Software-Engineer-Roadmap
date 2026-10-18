@@ -5,9 +5,10 @@
 > **Karta materiału**
 > - **Zakres:** `fundament`
 > - **Uczy:** g1 vs zgc.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „g1 vs zgc” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Porównanie wyłącznie pauz GC bez throughputu, CPU i zużycia pamięci.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
-> - **Role klas:** brak klasy-kontrprzykładu; pozostałe typy są minimalnymi modelami pojęć opisanych niżej.
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** brak jawnej roli w nazwach klas; intencję przykładu określają opis i test, nie sam brak prefiksu.
 > - **Granica:** Wynik eksperymentu opisuje tę maszynę i workload; nie jest uniwersalną liczbą produkcyjną.
 <!-- material-card:end -->
 

@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `temat-zaawansowany`
 > - **Uczy:** Stage 3B — observability.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „Stage 3B — observability” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Zbieranie telemetrii bez połączenia symptomu z diagnozą i reakcją operacyjną.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=AlertYamlRendererTest,CollectorConfigurationTest,IncidentTriageAndRunbookTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `TracingConfiguration` = `production-boundary`.
-> - **Granica:** Model weryfikuje nazwany niezmiennik; nie implementuje produkcyjnego protokołu rozproszonego ani infrastruktury dostawcy.
+> - **Granica:** Test eksportera lub reguły nie dowodzi dostarczenia telemetrii do wdrożonego backendu ani skuteczności reakcji operatora.
 <!-- material-card:end -->
 
 ## Observability dla inżynierów oprogramowania

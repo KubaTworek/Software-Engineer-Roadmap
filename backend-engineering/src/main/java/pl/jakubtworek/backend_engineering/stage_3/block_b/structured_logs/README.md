@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `temat-zaawansowany`
 > - **Uczy:** structured logs.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „structured logs” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Logowanie sekretów i PII zamiast bezpiecznego kontekstu diagnostycznego.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
-> - **Role klas:** brak klasy-kontrprzykładu; pozostałe typy są minimalnymi modelami pojęć opisanych niżej.
-> - **Granica:** Model weryfikuje nazwany niezmiennik; nie implementuje produkcyjnego protokołu rozproszonego ani infrastruktury dostawcy.
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** brak jawnej roli w nazwach klas; intencję przykładu określają opis i test, nie sam brak prefiksu.
+> - **Granica:** Test eksportera lub reguły nie dowodzi dostarczenia telemetrii do wdrożonego backendu ani skuteczności reakcji operatora.
 <!-- material-card:end -->
 
 ## Structured logging i observability w aplikacji Java

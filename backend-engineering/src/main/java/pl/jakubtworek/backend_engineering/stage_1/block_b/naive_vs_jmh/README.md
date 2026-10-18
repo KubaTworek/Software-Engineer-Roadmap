@@ -5,8 +5,9 @@
 > **Karta materiału**
 > - **Zakres:** `fundament`
 > - **Uczy:** naive vs jmh.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „naive vs jmh” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Pomiar bez warmup, forks i ochrony przed usunięciem martwego kodu.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=BenchmarkTargetCorrectnessTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `NaiveBenchmark` = `naive`.
 > - **Granica:** Wynik eksperymentu opisuje tę maszynę i workload; nie jest uniwersalną liczbą produkcyjną.
 <!-- material-card:end -->

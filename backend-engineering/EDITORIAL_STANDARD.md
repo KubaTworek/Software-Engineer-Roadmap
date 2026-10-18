@@ -5,7 +5,7 @@
 `backend-engineering` jest kompendium, a nie jedną aplikacją. Czytelnik powinien
 w ciągu kilkunastu sekund rozpoznać, czego uczy dany katalog, jaki błąd pokazuje,
 który test stanowi dowód oraz gdzie kończy się gwarancja przykładu. Dlatego każde
-README laboratorium zaczyna się od generowanej karty materiału, a szczegółowa teoria
+README laboratorium zaczyna się od redagowanej karty materiału, a szczegółowa teoria
 pozostaje poniżej.
 
 ## Docelowy porządek laboratorium
@@ -65,7 +65,16 @@ produkcyjnego. Nazwy `Broken`, `Naive` i `Unsafe` są dozwolone wyłącznie dla
 ## Utrzymanie kart
 
 Skrypt [`scripts/update-material-cards.ps1`](scripts/update-material-cards.ps1)
-aktualizuje karty na podstawie położenia README, tytułu, testów i jawnych konwencji
-nazw klas. Test `EditorialDocumentationTest` chroni obecność tytułu, karty i
-dozwolonego oznaczenia zakresu. Karta jest indeksem; treść merytoryczna nadal musi
-być redagowana przez człowieka.
+aktualizuje komendę i katalog uruchomienia oraz zachowuje ręcznie opracowane pola
+`Uczy`, `Typowy błąd`, `Role klas` i `Granica`. Nie przepisuje treści dokumentu.
+Katalog `material-topics.psd1` dostarcza konkretne punkty dydaktyczne przy tworzeniu
+nowej karty; nie zastępuje oceny kodu. Role sugerowane z nazwy klasy wymagają
+sprawdzenia: nazwa `Safe` sama nie stanowi dowodu poprawności.
+
+Komendy kart wykonuje się z `backend-engineering`. Samodzielne aplikacje Stage 2C
+i Stage 3C wskazują własny `pom.xml` przez `-f`. Test `EditorialDocumentationTest`
+chroni strukturę karty, a repozytoryjny
+[`check-documentation.ps1`](../scripts/check-documentation.ps1) sprawdza lokalne
+linki i nagłówki, istnienie wskazanych testów i modułów, mapę tematów oraz zgodność
+profili infrastrukturalnych z CI. Kontrola nie odpytuje zewnętrznych stron i nie
+ocenia automatycznie poprawności merytorycznej teorii.

@@ -5,8 +5,9 @@
 > **Karta materiału**
 > - **Zakres:** `fundament`
 > - **Uczy:** heap vs stack.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „heap vs stack” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Uznanie lokalnej referencji za dowód umieszczenia całego obiektu na stosie.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `HeapVsStackDemo` = `simulation`.
 > - **Granica:** Wynik eksperymentu opisuje tę maszynę i workload; nie jest uniwersalną liczbą produkcyjną.
 <!-- material-card:end -->

@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `fundament`
 > - **Uczy:** consistency.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „consistency” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Uznanie przecięcia quorum za bezwarunkową liniowalność przy równoległych zapisach.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=ConditionalDocumentStoreTest,QuorumConfigurationTest,ReplicatedValueStoreTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `QuorumConfiguration` = `production-boundary`.
-> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+> - **Granica:** Model i H2 sprawdzają logikę; blokady, plan zapytania i zachowanie silnika potwierdza dopiero odpowiedni profil infrastrukturalny.
 <!-- material-card:end -->
 
 ## Spójność w bazach NoSQL

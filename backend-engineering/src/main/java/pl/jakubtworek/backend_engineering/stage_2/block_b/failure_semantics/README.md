@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `praktyka-produkcyjna`
 > - **Uczy:** failure semantics.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „failure semantics” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Retry błędu trwałego albo uznanie timeoutu za pewny brak efektu.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=FencingTokenTest,IdempotentPaymentExecutorTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `FencedRegister` = `correct`, `IdempotentPaymentExecutor` = `correct`; `InMemoryLeaseCoordinator` = `simulation`.
-> - **Granica:** Laboratorium pokazuje kontrakt i failure modes; nie zastępuje pełnego testu end-to-end ani operacyjnej konfiguracji środowiska.
+> - **Granica:** Fake broker sprawdza logikę obsługi; rebalance, offsety i trwałość wymagają brokera, a efekt zewnętrzny własnej idempotencji.
 <!-- material-card:end -->
 
 ## Semantyka awarii w systemie rozproszonym

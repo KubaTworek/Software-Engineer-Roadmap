@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `praktyka-produkcyjna`
 > - **Uczy:** use case.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „use case” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Rozproszenie jednej lokalnej transakcji use case pomiędzy niezależne zapisy.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `DomainEventPublisher` = `production-boundary`, `JpaOrderRepositoryAdapter` = `production-boundary`, `OutboxEventPublisher` = `production-boundary` (+1).
-> - **Granica:** Laboratorium pokazuje kontrakt i failure modes; nie zastępuje pełnego testu end-to-end ani operacyjnej konfiguracji środowiska.
+> - **Granica:** Test granicy modułu lub lokalnej transakcji nie gwarantuje atomowości między procesami ani zgodności niezależnie wdrażanych klientów.
 <!-- material-card:end -->
 
 ## Przepływ przypadku użycia w DDD, Clean Architecture i CQRS

@@ -8,6 +8,7 @@ $mainRoot = Join-Path $moduleRoot 'src/main/java/pl/jakubtworek/backend_engineer
 $testRoot = Join-Path $moduleRoot 'src/test/java/pl/jakubtworek/backend_engineering'
 $startMarker = '<!-- material-card:start -->'
 $endMarker = '<!-- material-card:end -->'
+$topics = Import-PowerShellDataFile (Join-Path $PSScriptRoot 'material-topics.psd1')
 
 $titleOverrides = @{
     'concurrent_hash_map' = 'ConcurrentHashMap i atomowe ładowanie cache'
@@ -42,6 +43,18 @@ function Get-Scope([string]$path) {
 }
 
 function Get-Boundary([string]$scope, [string]$path) {
+    if ($path -match 'stage_1[\\/]block_a') { return 'Test kontroluje wybrany przeplot w JVM; pojedyncze uruchomienie nie dowodzi wszystkich zachowań dopuszczonych przez JMM ani wydajności pod obciążeniem.' }
+    if ($path -match 'stage_1[\\/]block_c') { return 'Mock nie uruchamia proxy Springa ani transakcji bazy; sprawdź rodzaj kontekstu i storage użyte w konkretnym teście.' }
+    if ($path -match 'stage_1[\\/]block_d') { return 'Model i H2 sprawdzają logikę; blokady, plan zapytania i zachowanie silnika potwierdza dopiero odpowiedni profil infrastrukturalny.' }
+    if ($path -match 'stage_1[\\/]block_e') { return 'Characterization test chroni zaobserwowane zachowanie, także jego historyczne błędy; zmiana kontraktu wymaga osobnej decyzji.' }
+    if ($path -match 'stage_1[\\/]block_f') { return 'Lokalny socket lub model timeoutu nie odtwarza pełnej topologii DNS, proxy, TLS i load balancera.' }
+    if ($path -match 'stage_2[\\/]block_a') { return 'Test granicy modułu lub lokalnej transakcji nie gwarantuje atomowości między procesami ani zgodności niezależnie wdrażanych klientów.' }
+    if ($path -match 'stage_2[\\/]block_b') { return 'Fake broker sprawdza logikę obsługi; rebalance, offsety i trwałość wymagają brokera, a efekt zewnętrzny własnej idempotencji.' }
+    if ($path -match 'stage_2[\\/]block_c') { return 'Test modelu i manifestu nie uruchamia klastra; routing, SIGTERM, PVC i rollout wymagają osobnego eksperymentu wdrożeniowego.' }
+    if ($path -match 'stage_2[\\/]block_d') { return 'Negatywne testy obejmują nazwane wektory ataku; nie zastępują threat modelu środowiska ani skanów rzeczywistego artefaktu.' }
+    if ($path -match 'stage_3[\\/]block_a') { return 'Deterministyczny model obejmuje zdefiniowane awarie i przeploty; nie jest dowodem zachowania dowolnej sieci ani pomiarem capacity.' }
+    if ($path -match 'stage_3[\\/]block_b') { return 'Test eksportera lub reguły nie dowodzi dostarczenia telemetrii do wdrożonego backendu ani skuteczności reakcji operatora.' }
+    if ($path -match 'stage_3[\\/]block_c') { return 'Walidator planu DR i test lokalny nie wykonują regionalnego failoveru GCP; RPO/RTO trzeba zmierzyć w docelowym środowisku.' }
     if ($path -match '[\\/]block_b[\\/](allocation_rate|array_vs_linked|big_decimal|cpu_vs_io|escape_analysis|false_sharing|g1_vs_zgc|heap_size|heap_vs_stack|lock_contention|naive_vs_jmh|object_pooling|polymorphism_vs_jit|stream_vs_loop|thread_count)[\\/]') {
         return 'Wynik eksperymentu opisuje tę maszynę i workload; nie jest uniwersalną liczbą produkcyjną.'
     }
@@ -61,11 +74,19 @@ function Get-RelativeTopicPath([System.IO.FileInfo]$readme) {
 }
 
 function Get-TestCommand([System.IO.FileInfo]$readme) {
-    $topicPath = Get-RelativeTopicPath $readme
+    $topicPath = (Get-RelativeTopicPath $readme).Replace('\', '/')
+    $prefix = '.\mvnw.cmd --batch-mode --no-transfer-progress'
+    if ($topicPath -match '^stage_2/block_c/(configuration|docker|kubernetes|workshop)$' -or $topicPath -eq 'stage_2/block_c') {
+        return $prefix + ' -f src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_c/workshop/pom.xml verify'
+    }
+    if ($topicPath -eq 'stage_3/block_c') {
+        return $prefix + ' -f src/main/java/pl/jakubtworek/backend_engineering/stage_3/block_c/pom.xml verify'
+    }
     $candidate = Join-Path $testRoot $topicPath
     $tests = @()
     if (Test-Path -LiteralPath $candidate) {
         $tests = @(Get-ChildItem -LiteralPath $candidate -Recurse -Filter '*Test.java' |
+            Where-Object { [IO.File]::ReadAllText($_.FullName) -notmatch '@Tag\("infrastructure"\)|@Testcontainers' } |
             Sort-Object FullName |
             Select-Object -First 3 |
             ForEach-Object { $_.BaseName })
@@ -103,7 +124,7 @@ function Get-ClassRoles([System.IO.FileInfo]$readme) {
         $parts += $part
     }
     if ($parts.Count -eq 0) {
-        return 'brak klasy-kontrprzykładu; pozostałe typy są minimalnymi modelami pojęć opisanych niżej'
+        return 'brak jawnej roli w nazwach klas; intencję przykładu określają opis i test, nie sam brak prefiksu'
     }
     return $parts -join '; '
 }
@@ -113,7 +134,9 @@ function Get-Card([System.IO.FileInfo]$readme, [string]$title) {
     $testCommand = Get-TestCommand $readme
     $roles = Get-ClassRoles $readme
     $boundary = Get-Boundary $scope $readme.FullName
-    $mistake = 'Uznanie pojedynczego wyniku dotyczącego „{0}” za gwarancję bez sprawdzenia niezmiennika i failure modes.' -f $title
+    $key = (Get-RelativeTopicPath $readme).Replace('\', '/')
+    if (-not $topics.ContainsKey($key)) { throw "Missing reviewed teaching point: $key" }
+    $mistake = $topics[$key]
     return @"
 $startMarker
 > [!IMPORTANT]
@@ -122,33 +145,11 @@ $startMarker
 > - **Uczy:** $title.
 > - **Typowy błąd:** $mistake
 > - **Najkrótsza weryfikacja:** ``$testCommand``
+> - **Katalog uruchomienia:** ``backend-engineering`` (katalog głównego modułu).
 > - **Role klas:** $roles.
 > - **Granica:** $boundary
 $endMarker
 "@
-}
-
-function Normalize-BodyHeadings([string]$body, [string]$title) {
-    $insideFence = $false
-    $normalized = foreach ($line in ($body -split '\r?\n')) {
-        # Remove stray carriage returns left by documents that previously mixed
-        # CRLF and LF. A carriage return has no semantic role inside Markdown text.
-        $line = $line.Replace("`r", '')
-        if (-not $insideFence -and ($line.Trim() -ceq "# $title" -or $line.Trim() -ceq "## $title")) {
-            continue
-        }
-        if ($line -match '^\s*(```|~~~)') {
-            $insideFence = -not $insideFence
-            $line
-            continue
-        }
-        if (-not $insideFence -and $line -match '^#[ \t]+') {
-            '#' + $line
-        } else {
-            $line
-        }
-    }
-    return ($normalized -join "`n")
 }
 
 $readmes = @(Get-ChildItem -LiteralPath (Join-Path $moduleRoot 'src') -Recurse -Filter 'README.md' |
@@ -164,10 +165,11 @@ foreach ($readme in $readmes) {
             '> - **Uczy:**',
             '> - **Typowy błąd:**',
             '> - **Najkrótsza weryfikacja:**',
+            '> - **Katalog uruchomienia:**',
             '> - **Role klas:**',
             '> - **Granica:**',
             $endMarker)
-        $valid = $content.StartsWith('# ')
+        $valid = $content.StartsWith('# ') -and -not $content.Contains('Uznanie pojedynczego wyniku dotyczącego')
         foreach ($fragment in $requiredFragments) {
             $valid = $valid -and $content.Contains($fragment)
         }
@@ -200,15 +202,24 @@ foreach ($readme in $readmes) {
 
     $card = Get-Card $readme $title
     $cardPattern = '(?s)' + [regex]::Escape($startMarker) + '.*?' + [regex]::Escape($endMarker)
-    $withoutCard = [regex]::Replace($content, $cardPattern, '')
-    # A previous card changes offsets, so rebuild from semantic parts instead of
-    # reusing positions from the original string. Removing every identical H1 also
-    # repairs files produced by an interrupted or older version of this script.
-    $titleLine = '# ' + $title
-    $bodyLines = @($withoutCard -split '\r?\n' |
-        Where-Object { $_.Trim() -cne $titleLine })
-    $body = Normalize-BodyHeadings (($bodyLines -join "`n").Trim()) $title
-    $updated = '# ' + $title + "`n`n" + $card.Trim() + "`n`n" + $body + "`n"
+    $existingCard = [regex]::Match($content, $cardPattern)
+    if ($existingCard.Success) {
+        # Only migrate old generated prose. Reviewed prose in an existing card wins.
+        foreach ($field in @('Uczy', 'Typowy błąd', 'Role klas', 'Granica')) {
+            $fieldPattern = '(?m)^> - \*\*' + [regex]::Escape($field) + ':\*\*[^\r\n]+'
+            $old = [regex]::Match($existingCard.Value, $fieldPattern)
+            $legacy = $existingCard.Value.Contains('Uznanie pojedynczego wyniku dotyczącego')
+            if ($field -eq 'Role klas' -and $old.Value.Contains('brak klasy-kontrprzykładu;')) { continue }
+            if ($old.Success -and (-not $legacy -or $field -eq 'Uczy')) {
+                $preserved = $old.Value
+                $card = [regex]::Replace($card, $fieldPattern, [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $preserved })
+            }
+        }
+        $updated = $content.Substring(0, $existingCard.Index) + $card.Trim() + $content.Substring($existingCard.Index + $existingCard.Length)
+    } else {
+        $endOfTitle = $content.IndexOf("`n")
+        $updated = $content.Substring(0, $endOfTitle + 1) + "`n" + $card.Trim() + "`n" + $content.Substring($endOfTitle + 1)
+    }
 
     $comparableUpdated = $updated.Replace("`r`n", "`n")
     $comparableContent = $content.Replace("`r`n", "`n")

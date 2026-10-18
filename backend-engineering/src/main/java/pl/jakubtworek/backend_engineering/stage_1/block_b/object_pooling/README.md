@@ -5,9 +5,10 @@
 > **Karta materiału**
 > - **Zakres:** `fundament`
 > - **Uczy:** object pooling.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „object pooling” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Poolowanie tanich obiektów bez zmierzenia synchronizacji i kosztu resetu stanu.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
-> - **Role klas:** brak klasy-kontrprzykładu; pozostałe typy są minimalnymi modelami pojęć opisanych niżej.
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** brak jawnej roli w nazwach klas; intencję przykładu określają opis i test, nie sam brak prefiksu.
 > - **Granica:** Wynik eksperymentu opisuje tę maszynę i workload; nie jest uniwersalną liczbą produkcyjną.
 <!-- material-card:end -->
 

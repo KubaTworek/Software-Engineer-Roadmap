@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `praktyka-produkcyjna`
 > - **Uczy:** Stage 2D — Application Security i Secure SDLC.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „Stage 2D — Application Security i Secure SDLC” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Walidacja składni bez kontroli granicy zaufania, uprawnień i efektów odmowy.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=BrowserAndLoggingSecurityTest,ReleaseSecurityGateTest,SafeCommandDecoderTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `BoundedBodyReader` = `correct`, `SafeCommandDecoder` = `correct`, `SafeOutboundRequestPolicy` = `correct` (+1).
-> - **Granica:** Laboratorium pokazuje kontrakt i failure modes; nie zastępuje pełnego testu end-to-end ani operacyjnej konfiguracji środowiska.
+> - **Granica:** Negatywne testy obejmują nazwane wektory ataku; nie zastępują threat modelu środowiska ani skanów rzeczywistego artefaktu.
 <!-- material-card:end -->
 
 ## Cel bloku

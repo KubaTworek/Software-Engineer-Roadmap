@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `fundament`
 > - **Uczy:** Reactive Streams — demand i backpressure.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „Reactive Streams — demand i backpressure” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Emisja ponad demand subskrybenta lub kontynuacja po cancel.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=ReactiveStreamsDemandTest,ReactorRuntimeTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `NaivePushPublisher` = `naive`.
-> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+> - **Granica:** Test kontroluje wybrany przeplot w JVM; pojedyncze uruchomienie nie dowodzi wszystkich zachowań dopuszczonych przez JMM ani wydajności pod obciążeniem.
 <!-- material-card:end -->
 
 ## Problem

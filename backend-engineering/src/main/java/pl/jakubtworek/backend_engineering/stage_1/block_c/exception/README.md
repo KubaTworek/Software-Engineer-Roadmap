@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `fundament`
 > - **Uczy:** exception.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „exception” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Zwrócenie szczegółów wyjątku technicznego jako publicznego kontraktu API.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=ExceptionApiContractTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `UserController` = `production-boundary`.
-> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+> - **Granica:** Mock nie uruchamia proxy Springa ani transakcji bazy; sprawdź rodzaj kontekstu i storage użyte w konkretnym teście.
 <!-- material-card:end -->
 
 ## Walidacja i jeden kontrakt błędów REST

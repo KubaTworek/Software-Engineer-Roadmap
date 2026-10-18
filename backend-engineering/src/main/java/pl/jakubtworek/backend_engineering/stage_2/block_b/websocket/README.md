@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `praktyka-produkcyjna`
 > - **Uczy:** WebSocket — reconnect, replay i wolny konsument.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „WebSocket — reconnect, replay i wolny konsument” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Nieograniczony bufor wolnego klienta i brak wznowienia po reconnect.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=WebSocketRuntimeTest,WebSocketSessionProtocolTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `NaiveUnboundedSession` = `naive`; `BoundedSessionBuffer` = `correct`; `RoadmapWebSocketConfiguration` = `production-boundary`.
-> - **Granica:** Laboratorium pokazuje kontrakt i failure modes; nie zastępuje pełnego testu end-to-end ani operacyjnej konfiguracji środowiska.
+> - **Granica:** Fake broker sprawdza logikę obsługi; rebalance, offsety i trwałość wymagają brokera, a efekt zewnętrzny własnej idempotencji.
 <!-- material-card:end -->
 
 ## Problem i niezmiennik

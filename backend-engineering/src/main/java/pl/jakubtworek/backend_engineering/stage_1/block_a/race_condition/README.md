@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `fundament`
 > - **Uczy:** Race condition i utrata aktualizacji.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „Race condition i utrata aktualizacji” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Traktowanie read-modify-write jako jednej atomowej operacji.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=TicketStoreConcurrencyTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `BrokenTicketStore` = `naive`; `AtomicTicketStore` = `correct`.
-> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+> - **Granica:** Test kontroluje wybrany przeplot w JVM; pojedyncze uruchomienie nie dowodzi wszystkich zachowań dopuszczonych przez JMM ani wydajności pod obciążeniem.
 <!-- material-card:end -->
 
 Współbieżność i kontrola dostępu do współdzielonego stanu w Javie

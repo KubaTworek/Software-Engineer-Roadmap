@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `fundament`
 > - **Uczy:** connection pool.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „connection pool” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Powiększanie puli podczas nasycenia bazy i pomijanie czasu oczekiwania na connection.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=ConnectionPoolBudgetTest" test`
-> - **Role klas:** brak klasy-kontrprzykładu; pozostałe typy są minimalnymi modelami pojęć opisanych niżej.
-> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** brak jawnej roli w nazwach klas; intencję przykładu określają opis i test, nie sam brak prefiksu.
+> - **Granica:** Model i H2 sprawdzają logikę; blokady, plan zapytania i zachowanie silnika potwierdza dopiero odpowiedni profil infrastrukturalny.
 <!-- material-card:end -->
 
 ## Pula połączeń — budżet, kolejka i backpressure

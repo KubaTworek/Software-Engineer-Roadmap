@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `praktyka-produkcyjna`
 > - **Uczy:** test.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „test” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Sprawdzanie tylko odpowiedzi HTTP bez granic zależności i efektów transakcji.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=PlaceOrderApplicationServiceMockTest,PlaceOrderApplicationServiceTest,Stage2ArchitectureTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `IdempotentEventConsumerTest` = `correct`; `FakeDomainEventPublisher` = `simulation`, `FakeOrderRepository` = `simulation`, `FakeTransactionManager` = `simulation` (+1); `FakeDomainEventPublisher` = `production-boundary`.
-> - **Granica:** Laboratorium pokazuje kontrakt i failure modes; nie zastępuje pełnego testu end-to-end ani operacyjnej konfiguracji środowiska.
+> - **Granica:** Test granicy modułu lub lokalnej transakcji nie gwarantuje atomowości między procesami ani zgodności niezależnie wdrażanych klientów.
 <!-- material-card:end -->
 
 ## Testowanie w DDD, Clean Architecture i architekturze event-driven

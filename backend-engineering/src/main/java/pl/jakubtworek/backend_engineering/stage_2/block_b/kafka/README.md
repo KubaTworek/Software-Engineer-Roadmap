@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `praktyka-produkcyjna`
 > - **Uczy:** kafka.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „kafka” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Commit offsetu przed zatwierdzeniem efektu w bazie.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=KafkaConfigurationTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `SafeOffsetCommitCoordinator` = `correct`; `ConsumerConfiguration` = `production-boundary`, `EventPublisher` = `production-boundary`, `KafkaEventPublisher` = `production-boundary` (+2).
-> - **Granica:** Laboratorium pokazuje kontrakt i failure modes; nie zastępuje pełnego testu end-to-end ani operacyjnej konfiguracji środowiska.
+> - **Granica:** Fake broker sprawdza logikę obsługi; rebalance, offsety i trwałość wymagają brokera, a efekt zewnętrzny własnej idempotencji.
 <!-- material-card:end -->
 
 ## Apache Kafka: partycjonowanie, consumer groups, offsety i odporne przetwarzanie

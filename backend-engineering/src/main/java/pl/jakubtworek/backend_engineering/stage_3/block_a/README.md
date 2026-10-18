@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `temat-zaawansowany`
 > - **Uczy:** Stage 3A — system design i systemy rozproszone.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „Stage 3A — system design i systemy rozproszone” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Skalowanie API bez sprawdzenia nasycenia wspólnego downstreamu.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=CacheAsideAndCircuitBreakerTest,CapacityAndDegradationTest,ConsistentHashAndIdGenerationTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `NaiveCounterStore` = `naive`; `BoundedRequestExecutor` = `correct`, `FencedRegister` = `correct`, `IdempotentCounterStore` = `correct` (+1); `DeterministicRetrySimulation` = `simulation`, `InMemoryLeaseCoordinator` = `simulation`, `InMemoryTtlCache` = `simulation` (+1).
-> - **Granica:** Model weryfikuje nazwany niezmiennik; nie implementuje produkcyjnego protokołu rozproszonego ani infrastruktury dostawcy.
+> - **Granica:** Deterministyczny model obejmuje zdefiniowane awarie i przeploty; nie jest dowodem zachowania dowolnej sieci ani pomiarem capacity.
 <!-- material-card:end -->
 
 ## System Design: skalowanie i odporność

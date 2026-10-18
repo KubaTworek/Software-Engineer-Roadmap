@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `praktyka-produkcyjna`
 > - **Uczy:** Stage 2A — modelowanie, API i architektura.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „Stage 2A — modelowanie, API i architektura” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Warstwy nazwane architektonicznie, które nadal współdzielą model persystencji.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=ApiContractCompatibilityTest,AsyncCancellationTest,OpenApiContractTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `LegacyOrderAcl` = `naive`, `LegacyOrderDto` = `naive`, `LegacyOrderLineDto` = `naive` (+1); `BoundedContext` = `correct`, `IdempotentEventConsumer` = `correct`; `InMemoryOrderRepository` = `simulation`, `InMemoryProductQueryUseCase` = `simulation`; `DomainEventPublisher` = `production-boundary`, `IdempotentEventConsumer` = `production-boundary`, `IntegrationEventPublisher` = `production-boundary` (+13).
-> - **Granica:** Laboratorium pokazuje kontrakt i failure modes; nie zastępuje pełnego testu end-to-end ani operacyjnej konfiguracji środowiska.
+> - **Granica:** Test granicy modułu lub lokalnej transakcji nie gwarantuje atomowości między procesami ani zgodności niezależnie wdrażanych klientów.
 <!-- material-card:end -->
 
 ## Architektura nowoczesnego systemu e-commerce oparta o DDD, Clean Architecture i modularność

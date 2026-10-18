@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `fundament`
 > - **Uczy:** temporal correctness.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „temporal correctness” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Użycie LocalDateTime jako jednoznacznego momentu podczas zmiany DST.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=DeadlineAndClockTest,RecurringJobSchedulerTest,TimeRepresentationTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `FencedJobExecutionLedger` = `correct`; `InMemoryScheduleStore` = `simulation`.
-> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+> - **Granica:** Test kontroluje wybrany przeplot w JVM; pojedyncze uruchomienie nie dowodzi wszystkich zachowań dopuszczonych przez JMM ani wydajności pod obciążeniem.
 <!-- material-card:end -->
 
 ## Poprawność czasu i zadań okresowych

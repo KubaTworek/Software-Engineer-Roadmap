@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `temat-zaawansowany`
 > - **Uczy:** overload.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „overload” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Retry bez wspólnego budżetu i przyjmowanie pracy do nieograniczonej kolejki.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=BoundedRequestExecutorTest,DeadlinePropagationTest,OverloadProtectedRemoteClientTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `BoundedRequestExecutor` = `correct`.
-> - **Granica:** Model weryfikuje nazwany niezmiennik; nie implementuje produkcyjnego protokołu rozproszonego ani infrastruktury dostawcy.
+> - **Granica:** Deterministyczny model obejmuje zdefiniowane awarie i przeploty; nie jest dowodem zachowania dowolnej sieci ani pomiarem capacity.
 <!-- material-card:end -->
 
 ## Kontrola przeciążenia i budżet czasu

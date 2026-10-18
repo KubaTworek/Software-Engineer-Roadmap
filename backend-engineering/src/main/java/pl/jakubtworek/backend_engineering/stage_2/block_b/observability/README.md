@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `praktyka-produkcyjna`
 > - **Uczy:** observability.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „observability” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Brak correlation ID oraz metryk lag i DLQ utrudniający diagnozę procesu.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=AlertRulesTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `AlertPublisher` = `production-boundary`, `ConsoleAlertPublisher` = `production-boundary`.
-> - **Granica:** Laboratorium pokazuje kontrakt i failure modes; nie zastępuje pełnego testu end-to-end ani operacyjnej konfiguracji środowiska.
+> - **Granica:** Fake broker sprawdza logikę obsługi; rebalance, offsety i trwałość wymagają brokera, a efekt zewnętrzny własnej idempotencji.
 <!-- material-card:end -->
 
 ## Monitoring i obserwowalność w architekturze event-driven

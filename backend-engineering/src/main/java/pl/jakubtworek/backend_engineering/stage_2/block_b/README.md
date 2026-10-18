@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `praktyka-produkcyjna`
 > - **Uczy:** Stage 2B — event-driven, messaging i kanały live.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „Stage 2B — event-driven, messaging i kanały live” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Założenie pojedynczego dostarczenia i globalnego porządku zdarzeń.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=OnlineProjectionBackfillTest,PoisonRecordPartitionTest,ReconciliationAndRepairTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `NaiveUnboundedSession` = `naive`; `BoundedSessionBuffer` = `correct`, `FencedRegister` = `correct`, `IdempotentEventProcessor` = `correct` (+2); `InMemoryCdcSource` = `simulation`, `InMemoryLeaseCoordinator` = `simulation`; `AlertPublisher` = `production-boundary`, `ConsoleAlertPublisher` = `production-boundary`, `ConsumerConfiguration` = `production-boundary` (+8).
-> - **Granica:** Laboratorium pokazuje kontrakt i failure modes; nie zastępuje pełnego testu end-to-end ani operacyjnej konfiguracji środowiska.
+> - **Granica:** Fake broker sprawdza logikę obsługi; rebalance, offsety i trwałość wymagają brokera, a efekt zewnętrzny własnej idempotencji.
 <!-- material-card:end -->
 
 ## Architektura event-driven dla e-commerce z użyciem Apache Kafka

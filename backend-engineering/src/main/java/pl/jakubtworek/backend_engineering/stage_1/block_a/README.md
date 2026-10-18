@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `fundament`
 > - **Uczy:** Stage 1A — współbieżność, czas i modele wykonania.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „Stage 1A — współbieżność, czas i modele wykonania” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Współdzielenie stanu bez ustalenia właściciela i relacji happens-before.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=CancelTest,CompletableFutureTest,ConcurrentHashMapTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `BrokenCache` = `naive`, `BrokenOrderProcessor` = `naive`, `BrokenTicketStore` = `naive` (+1); `AtomicCache` = `correct`, `AtomicTicketStore` = `correct`, `BoundedDownstream` = `correct` (+1); `InMemoryScheduleStore` = `simulation`, `PinningDiagnosticDemo` = `simulation`.
-> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+> - **Granica:** Test kontroluje wybrany przeplot w JVM; pojedyncze uruchomienie nie dowodzi wszystkich zachowań dopuszczonych przez JMM ani wydajności pod obciążeniem.
 <!-- material-card:end -->
 
 ## Programowanie współbieżne w Javie — ujęcie teoretyczne

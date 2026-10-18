@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `fundament`
 > - **Uczy:** key value.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „key value” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Osobne INCR i EXPIRE pozostawiające licznik bez TTL po awarii.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=AtomicFixedWindowRateLimiterTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `AtomicFixedWindowRateLimiter` = `correct`.
-> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+> - **Granica:** Model i H2 sprawdzają logikę; blokady, plan zapytania i zachowanie silnika potwierdza dopiero odpowiedni profil infrastrukturalny.
 <!-- material-card:end -->
 
 ## Key-value: klucz, atomowość i TTL

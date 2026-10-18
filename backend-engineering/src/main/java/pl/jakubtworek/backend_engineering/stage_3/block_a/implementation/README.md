@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `temat-zaawansowany`
 > - **Uczy:** implementation.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „implementation” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Połączenie poprawnych mechanizmów w kolejności wzmacniającej retry storm.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=LoadTestRunnerTest,BoundedRequestExecutorTest,DeadlinePropagationTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `BoundedRequestExecutor` = `correct`.
-> - **Granica:** Model weryfikuje nazwany niezmiennik; nie implementuje produkcyjnego protokołu rozproszonego ani infrastruktury dostawcy.
+> - **Granica:** Deterministyczny model obejmuje zdefiniowane awarie i przeploty; nie jest dowodem zachowania dowolnej sieci ani pomiarem capacity.
 <!-- material-card:end -->
 
 ## System Design: kompozycja mechanizmów

@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `fundament`
 > - **Uczy:** Stage 1D — dane, persystencja i wyszukiwanie.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „Stage 1D — dane, persystencja i wyszukiwanie” za gwarancję bez sprawdzenia niezmiennika i failure modes.
-> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=PostgreSqlConcurrencyContainerTest,RedisAtomicCounterContainerTest,ConditionalDocumentStoreTest" test`
+> - **Typowy błąd:** Dobór storage przed określeniem zapytań i niezmienników danych.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=ConditionalDocumentStoreTest,QuorumConfigurationTest,ReplicatedValueStoreTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `NaiveSearchProjection` = `naive`; `AtomicFixedWindowRateLimiter` = `correct`; `QuorumConfiguration` = `production-boundary`.
-> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+> - **Granica:** Model i H2 sprawdzają logikę; blokady, plan zapytania i zachowanie silnika potwierdza dopiero odpowiedni profil infrastrukturalny.
 <!-- material-card:end -->
 
 ## SQL vs NoSQL — porównanie i wybór technologii

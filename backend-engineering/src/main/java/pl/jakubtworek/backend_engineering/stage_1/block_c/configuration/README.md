@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `fundament`
 > - **Uczy:** configuration.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „configuration” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Poleganie na wartości domyślnej bez walidacji i sprawdzenia precedence źródeł.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=ValidatedExternalApiPropertiesTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `ValidatedExternalApiProperties` = `correct`.
-> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+> - **Granica:** Mock nie uruchamia proxy Springa ani transakcji bazy; sprawdź rodzaj kontekstu i storage użyte w konkretnym teście.
 <!-- material-card:end -->
 
 ## Konfiguracja Spring Boot — źródła, typy i walidacja

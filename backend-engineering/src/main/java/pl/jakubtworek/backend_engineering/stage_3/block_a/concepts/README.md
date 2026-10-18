@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `temat-zaawansowany`
 > - **Uczy:** concepts.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „concepts” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Dobór cache, retry i circuit breakera bez modelu awarii oraz budżetu zasobów.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=CacheAsideAndCircuitBreakerTest,CapacityAndDegradationTest,ConsistentHashAndIdGenerationTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `NaiveCounterStore` = `naive`; `FencedRegister` = `correct`, `IdempotentCounterStore` = `correct`, `IdempotentQueueWorker` = `correct`; `DeterministicRetrySimulation` = `simulation`, `InMemoryLeaseCoordinator` = `simulation`, `InMemoryTtlCache` = `simulation`.
-> - **Granica:** Model weryfikuje nazwany niezmiennik; nie implementuje produkcyjnego protokołu rozproszonego ani infrastruktury dostawcy.
+> - **Granica:** Deterministyczny model obejmuje zdefiniowane awarie i przeploty; nie jest dowodem zachowania dowolnej sieci ani pomiarem capacity.
 <!-- material-card:end -->
 
 ## System Design: skalowanie i odporność

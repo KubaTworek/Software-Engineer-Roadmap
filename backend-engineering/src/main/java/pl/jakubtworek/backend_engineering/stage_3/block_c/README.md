@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `temat-zaawansowany`
 > - **Uczy:** Stage 3C — cloud architecture i disaster recovery.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „Stage 3C — cloud architecture i disaster recovery” za gwarancję bez sprawdzenia niezmiennika i failure modes.
-> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
-> - **Role klas:** brak klasy-kontrprzykładu; pozostałe typy są minimalnymi modelami pojęć opisanych niżej.
-> - **Granica:** Model weryfikuje nazwany niezmiennik; nie implementuje produkcyjnego protokołu rozproszonego ani infrastruktury dostawcy.
+> - **Typowy błąd:** Uznanie backupu lub HA za dowód recovery bez pomiaru RPO/RTO i testu restore.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress -f src/main/java/pl/jakubtworek/backend_engineering/stage_3/block_c/pom.xml verify`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** aplikacja zawiera adaptery infrastruktury (`production-boundary`); pakiet `operations` modeluje decyzje DR (`simulation`).
+> - **Granica:** Walidator planu DR i test lokalny nie wykonują regionalnego failoveru GCP; RPO/RTO trzeba zmierzyć w docelowym środowisku.
 <!-- material-card:end -->
 
 ## Blok C – Architektura Cloud na Google Cloud Platform

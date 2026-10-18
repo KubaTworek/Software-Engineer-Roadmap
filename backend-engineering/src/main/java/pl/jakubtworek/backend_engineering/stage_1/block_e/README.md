@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `fundament`
 > - **Uczy:** Stage 1E — refaktoryzacja i bezpieczna zmiana.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „Stage 1E — refaktoryzacja i bezpieczna zmiana” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Refaktoryzacja zmieniająca zaokrąglenie, kolejność efektów lub obsługę błędu.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=VersionedInvoiceExportContractTest,LegacyInvoiceBatchGoldenMasterTest,LegacyUserServiceCharacterizationTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `LegacyEmailService` = `naive`, `LegacyInvoiceBatchService` = `naive`, `LegacyInvoiceRow` = `naive` (+6); `LegacyUserController` = `production-boundary`, `RegisterUserController` = `production-boundary`, `RegistrationConfiguration` = `production-boundary`.
-> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+> - **Granica:** Characterization test chroni zaobserwowane zachowanie, także jego historyczne błędy; zmiana kontraktu wymaga osobnej decyzji.
 <!-- material-card:end -->
 
 ## Refaktoryzacja kodu legacy – podejście krok po kroku

@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `fundament`
 > - **Uczy:** Stage 1B — wydajność JVM i metodologia pomiaru.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „Stage 1B — wydajność JVM i metodologia pomiaru” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Optymalizacja na podstawie czasu jednego przebiegu bez profilu i kontroli poprawności.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=CollectionBenchmarkCorrectnessTest,JmhConfigurationTest,JmhSmokeTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `NaiveBenchmark` = `naive`; `AtomicCounter` = `correct`; `BimorphicCallSiteDemo` = `simulation`, `DirectCallDemo` = `simulation`, `HeapVsStackDemo` = `simulation` (+5).
-> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+> - **Granica:** Test poprawności nie mierzy szybkości; wynik JMH lub JFR dotyczy konkretnej JVM, maszyny, danych i parametrów eksperymentu.
 <!-- material-card:end -->
 
 ## Wydajność aplikacji Java — teoria, diagnostyka i praktyczne zasady optymalizacji

@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `temat-zaawansowany`
 > - **Uczy:** correctness.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „correctness” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Uznanie samych sukcesów requestów za dowód liniowalności historii.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=DistributedCorrectnessTest,LinearizableRegisterCheckerTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `NaiveCounterStore` = `naive`; `IdempotentCounterStore` = `correct`; `DeterministicRetrySimulation` = `simulation`.
-> - **Granica:** Model weryfikuje nazwany niezmiennik; nie implementuje produkcyjnego protokołu rozproszonego ani infrastruktury dostawcy.
+> - **Granica:** Deterministyczny model obejmuje zdefiniowane awarie i przeploty; nie jest dowodem zachowania dowolnej sieci ani pomiarem capacity.
 <!-- material-card:end -->
 
 ## Testowanie poprawności systemu rozproszonego

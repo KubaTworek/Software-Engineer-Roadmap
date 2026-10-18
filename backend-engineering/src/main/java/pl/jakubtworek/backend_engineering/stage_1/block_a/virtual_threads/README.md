@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `fundament`
 > - **Uczy:** virtual threads.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „virtual threads” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Zwiększanie liczby virtual threads bez ograniczenia połączeń do downstreamu.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=VirtualThreadLifecycleTest,VirtualThreadWorkloadTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `BoundedDownstream` = `correct`; `PinningDiagnosticDemo` = `simulation`.
-> - **Granica:** Przykład dowodzi mechanizmu w opisanej granicy; bez testu infrastrukturalnego nie dowodzi zachowania wielu procesów ani konkretnej usługi.
+> - **Granica:** Test kontroluje wybrany przeplot w JVM; pojedyncze uruchomienie nie dowodzi wszystkich zachowań dopuszczonych przez JMM ani wydajności pod obciążeniem.
 <!-- material-card:end -->
 
 ## Virtual threads w Javie 21

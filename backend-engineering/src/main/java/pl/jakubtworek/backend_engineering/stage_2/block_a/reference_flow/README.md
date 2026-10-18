@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `praktyka-produkcyjna`
 > - **Uczy:** Przekrojowy przepływ adapterów i projekcji.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „Przekrojowy przepływ adapterów i projekcji” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Osobny commit agregatu i outboxa pozostawiający lukę publikacji.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=ReferenceFlowTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `InMemoryProductQueryUseCase` = `simulation`; `VersionedProductSearchProjectionAdapter` = `production-boundary`.
-> - **Granica:** Laboratorium pokazuje kontrakt i failure modes; nie zastępuje pełnego testu end-to-end ani operacyjnej konfiguracji środowiska.
+> - **Granica:** Test granicy modułu lub lokalnej transakcji nie gwarantuje atomowości między procesami ani zgodności niezależnie wdrażanych klientów.
 <!-- material-card:end -->
 
 ## Problem i niezmiennik

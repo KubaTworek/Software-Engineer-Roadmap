@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `praktyka-produkcyjna`
 > - **Uczy:** gRPC — kontrakt, deadline i kompatybilność.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „gRPC — kontrakt, deadline i kompatybilność” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Wywołanie downstreamu bez deadline lub ponowne użycie numeru pola Protobuf.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=GrpcContractTest,GrpcInProcessRuntimeTest" test`
-> - **Role klas:** brak klasy-kontrprzykładu; pozostałe typy są minimalnymi modelami pojęć opisanych niżej.
-> - **Granica:** Laboratorium pokazuje kontrakt i failure modes; nie zastępuje pełnego testu end-to-end ani operacyjnej konfiguracji środowiska.
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** brak jawnej roli w nazwach klas; intencję przykładu określają opis i test, nie sam brak prefiksu.
+> - **Granica:** Test granicy modułu lub lokalnej transakcji nie gwarantuje atomowości między procesami ani zgodności niezależnie wdrażanych klientów.
 <!-- material-card:end -->
 
 ## Problem i niezmiennik

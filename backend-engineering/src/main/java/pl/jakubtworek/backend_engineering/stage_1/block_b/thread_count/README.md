@@ -5,9 +5,10 @@
 > **Karta materiału**
 > - **Zakres:** `fundament`
 > - **Uczy:** thread count.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „thread count” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Zwiększanie puli mimo nasycenia CPU lub limitu połączeń.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=ExperimentConfigTest" test`
-> - **Role klas:** brak klasy-kontrprzykładu; pozostałe typy są minimalnymi modelami pojęć opisanych niżej.
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** brak jawnej roli w nazwach klas; intencję przykładu określają opis i test, nie sam brak prefiksu.
 > - **Granica:** Wynik eksperymentu opisuje tę maszynę i workload; nie jest uniwersalną liczbą produkcyjną.
 <!-- material-card:end -->
 

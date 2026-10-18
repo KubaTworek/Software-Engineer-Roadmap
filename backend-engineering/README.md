@@ -11,7 +11,7 @@ najbliższy `README.md` — uproszczenie może być częścią ćwiczenia.
 
 ## Trzy osie nawigacji
 
-Materiał można czytać na dwa uzupełniające się sposoby:
+Materiał można czytać na trzy uzupełniające się sposoby:
 
 - **etapami** — gdy chcesz budować kontekst od mechanizmu języka i frameworka
   do architektury oraz operacji;

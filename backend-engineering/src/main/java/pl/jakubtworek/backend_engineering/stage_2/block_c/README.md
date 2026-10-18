@@ -5,10 +5,11 @@
 > **Karta materiału**
 > - **Zakres:** `praktyka-produkcyjna`
 > - **Uczy:** Stage 2C — delivery i operacje.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „Stage 2C — delivery i operacje” za gwarancję bez sprawdzenia niezmiennika i failure modes.
-> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=CanaryAndRollbackTest,FeatureFlagTest,GameDayAndIncidentTest" test`
+> - **Typowy błąd:** Zamiana awarii zależności w restart wszystkich replik przez błędną liveness probe.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress -f src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_c/workshop/pom.xml verify`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `ProgressiveDeliveryController` = `production-boundary`.
-> - **Granica:** Laboratorium pokazuje kontrakt i failure modes; nie zastępuje pełnego testu end-to-end ani operacyjnej konfiguracji środowiska.
+> - **Granica:** Test modelu i manifestu nie uruchamia klastra; routing, SIGTERM, PVC i rollout wymagają osobnego eksperymentu wdrożeniowego.
 <!-- material-card:end -->
 
 ## Stage 2C — od aplikacji do bezpiecznego wdrożenia

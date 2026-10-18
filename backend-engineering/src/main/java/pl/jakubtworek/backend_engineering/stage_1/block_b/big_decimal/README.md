@@ -5,9 +5,10 @@
 > **Karta materiału**
 > - **Zakres:** `fundament`
 > - **Uczy:** big decimal.
-> - **Typowy błąd:** Uznanie pojedynczego wyniku dotyczącego „big decimal” za gwarancję bez sprawdzenia niezmiennika i failure modes.
+> - **Typowy błąd:** Zmiana reprezentacji kwoty bez sprawdzenia skali i reguły zaokrąglania.
 > - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=BigDecimalBenchmarkCorrectnessTest,MoneyAsScaledLongTest" test`
-> - **Role klas:** brak klasy-kontrprzykładu; pozostałe typy są minimalnymi modelami pojęć opisanych niżej.
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** brak jawnej roli w nazwach klas; intencję przykładu określają opis i test, nie sam brak prefiksu.
 > - **Granica:** Wynik eksperymentu opisuje tę maszynę i workload; nie jest uniwersalną liczbą produkcyjną.
 <!-- material-card:end -->
 
