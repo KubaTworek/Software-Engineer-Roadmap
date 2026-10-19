@@ -131,18 +131,30 @@ class ClickHouseTenantIsolationInfrastructureTest {
     void replayOfTheSameLogDoesNotDoubleCountFullTextDocument() throws Exception {
         ensureRepositorySchema();
         String eventId = "00000000-0000-0000-0000-000000000042";
+        String bucketStart = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS")
+                .withZone(java.time.ZoneOffset.UTC).format(Instant.now().minusSeconds(60));
         try (var connection = CLICKHOUSE.createConnection("");
              var statement = connection.createStatement()) {
-            // now64() is constant within this INSERT: both deliveries retain the
-            // same sorting key, but stay inside the real 30-day retention window.
-            // A historical fixture races ClickHouse's asynchronous TTL cleanup.
-            statement.execute("""
+            // Replay must preserve the whole sorting key, including event time.
+            // Capture it once: evaluating now64() for separate VALUES/requests can
+            // create different keys. A current fixture also stays within the TTL.
+            String insert = """
                     INSERT INTO observability.log_fulltext_terms
                     (event_id, tenant_id, service, level, bucket_start, term, doc_count, sample_trace_ids)
                     VALUES
-                    ('%s','tenant-replay','api','ERROR',now64(3),'timeout',1,[]),
-                    ('%s','tenant-replay','api','ERROR',now64(3),'timeout',1,[])
-                    """.formatted(eventId, eventId));
+                    ('%s','tenant-replay','api','ERROR',toDateTime64('%s',3,'UTC'),'timeout',1,[])
+                    """.formatted(eventId, bucketStart);
+            statement.execute(insert);
+            statement.execute(insert);
+            // FINAL must deduplicate independent deliveries even before a forced merge.
+            try (var result = statement.executeQuery("""
+                    SELECT count(), sum(doc_count) FROM observability.log_fulltext_terms FINAL
+                    WHERE tenant_id='tenant-replay' AND term='timeout'
+                    """)) {
+                assertThat(result.next()).isTrue();
+                assertThat(result.getLong(1)).isEqualTo(1);
+                assertThat(result.getLong(2)).isEqualTo(1);
+            }
             // Check retention during a forced merge too, rather than depending on
             // whether the background merge happens before or after the assertion.
             statement.execute("OPTIMIZE TABLE observability.log_fulltext_terms FINAL");
