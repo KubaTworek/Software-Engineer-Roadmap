@@ -1,3 +1,17 @@
+# Deadlock — reprodukcja, wykrywanie i zapobieganie
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** Deadlock — reprodukcja, wykrywanie i zapobieganie.
+> - **Typowy błąd:** Zdobywanie tych samych locków w różnej kolejności.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=DeadlockTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** brak jawnej roli w nazwach klas; intencję przykładu określają opis i test, nie sam brak prefiksu.
+> - **Granica:** Test kontroluje wybrany przeplot w JVM; pojedyncze uruchomienie nie dowodzi wszystkich zachowań dopuszczonych przez JMM ani wydajności pod obciążeniem.
+<!-- material-card:end -->
+
 Deadlock w systemach współbieżnych
 ==================================
 

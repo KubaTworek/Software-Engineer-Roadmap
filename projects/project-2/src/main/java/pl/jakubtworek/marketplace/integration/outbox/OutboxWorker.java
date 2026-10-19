@@ -16,10 +16,10 @@ import java.util.UUID;
  * Jej zadaniem jest pobieranie zdarzeń zapisanych wcześniej w tabeli outbox_events
  * i przekazywanie ich dalej do lokalnego ApplicationEventBus.
  *
- * Ten worker jest użyteczny głównie w fazie 3, czyli zanim zdarzenia zaczną być
- * publikowane do Kafki.
+ * Profil local-events uruchamia edukacyjny wariant dostawy wewnątrz jednej JVM.
+ * Pozwala obserwować granicę outbox → handler bez uruchamiania brokera.
  *
- * Przepływ w fazie 3:
+ * Przepływ profilu local-events:
  * - use case zapisuje agregat,
  * - OutboxEventPublisher zapisuje zdarzenie do outboxa,
  * - OutboxWorker pobiera zdarzenie z outboxa,
@@ -27,9 +27,10 @@ import java.util.UUID;
  * - ApplicationEventBus wywołuje odpowiednie handlery modułów,
  * - OutboxWorker oznacza event jako PUBLISHED albo FAILED.
  *
- * Po fazie 4 odpowiedzialność publikacji do Kafki powinna przejść do KafkaOutboxWorker.
+ * Główny przepływ brokerowy realizuje KafkaOutboxWorker. Ten wariant nie dowodzi
+ * zachowania offsetów, rebalance ani wieloreplikowej publikacji do Kafki.
  */
-@Profile("stage3")
+@Profile("local-events")
 @Component
 public class OutboxWorker {
 
@@ -52,7 +53,7 @@ public class OutboxWorker {
     /**
      * Lokalny event bus aplikacyjny.
      *
-     * W fazie 3 worker publikuje zdarzenia do handlerów wewnątrz tego samego monolitu.
+     * W profilu local-events worker publikuje do handlerów tego samego monolitu.
      * To nadal nie jest Kafka — wszystko dzieje się synchronicznie w jednym procesie JVM.
      */
     private final ApplicationEventBus eventBus;

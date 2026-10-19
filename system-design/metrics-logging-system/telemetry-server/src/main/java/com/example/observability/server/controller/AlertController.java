@@ -3,6 +3,8 @@ package com.example.observability.server.controller;
 import com.example.observability.server.alert.AlertEvent;
 import com.example.observability.server.alert.AlertRule;
 import com.example.observability.server.alert.AlertRuleStore;
+import com.example.observability.server.alert.AlertSilence;
+import com.example.observability.server.metadata.MetadataStore;
 import com.example.observability.server.auth.Rbac;
 import com.example.observability.server.repository.TelemetryRepository;
 import org.springframework.http.ResponseEntity;
@@ -47,10 +49,12 @@ public class AlertController {
      * np. informacja, że konkretna reguła weszła w stan FIRING.
      */
     private final TelemetryRepository repository;
+    private final MetadataStore metadata;
 
-    public AlertController(AlertRuleStore store, TelemetryRepository repository) {
+    public AlertController(AlertRuleStore store, TelemetryRepository repository, MetadataStore metadata) {
         this.store = store;
         this.repository = repository;
+        this.metadata = metadata;
     }
 
     /**
@@ -129,8 +133,13 @@ public class AlertController {
             @PathVariable String id,
             @RequestParam(defaultValue = "demo") String tenantId
     ) {
-        Rbac.requireAdmin(tenantId);
-        store.delete(id);
+        var rule = store.find(id).orElseThrow(() -> new java.util.NoSuchElementException("alert rule not found"));
+        Rbac.requireAdmin(rule.getTenantId());
+        if (!tenantId.equals(rule.getTenantId())) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.FORBIDDEN, "alert rule belongs to another tenant");
+        }
+        store.delete(tenantId, id);
         return ResponseEntity.noContent().build();
     }
 
@@ -159,5 +168,18 @@ public class AlertController {
     ) {
         Rbac.requireRead(tenantId);
         return repository.queryAlertEvents(tenantId, limit);
+    }
+
+    @PostMapping("/silences")
+    public AlertSilence createSilence(@RequestBody AlertSilence silence) {
+        Rbac.requireAdmin(silence.tenantId());
+        metadata.saveSilence(silence);
+        return silence;
+    }
+
+    @GetMapping("/silences")
+    public List<AlertSilence> silences(@RequestParam String tenantId) {
+        Rbac.requireRead(tenantId);
+        return metadata.silences(tenantId);
     }
 }

@@ -1,0 +1,8 @@
+notification:
+  provider:
+    connect-timeout-ms: 500
+    request-timeout-ms: 1000
+    email-url: ${NOTIFICATION_EMAIL_PROVIDER_URL:http://localhost:9081/messages}
+    sms-url: ${NOTIFICATION_SMS_PROVIDER_URL:http://localhost:9082/messages}
+    push-url: ${NOTIFICATION_PUSH_PROVIDER_URL:http://localhost:9083/messages}
+    in-app-url: ${NOTIFICATION_IN_APP_PROVIDER_URL:http://localhost:9084/messages}

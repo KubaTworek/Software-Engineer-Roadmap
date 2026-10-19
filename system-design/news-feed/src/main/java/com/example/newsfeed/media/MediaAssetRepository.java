@@ -1,4 +1,6 @@
 package com.example.newsfeed.media;
 import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.UUID;
-public interface MediaAssetRepository extends JpaRepository<MediaAsset, UUID> {}
+public interface MediaAssetRepository extends JpaRepository<MediaAsset, UUID> {
+    long deleteByStatusAndCreatedAtBefore(String status, java.time.Instant cutoff);
+}

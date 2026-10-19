@@ -90,8 +90,6 @@ public class Organization {
     }
 
     /**
-     * Gettery udostępniają dane do mapowania DTO, zapytań i reguł security.
-     *
      * Brak setterów jest celowy. Jeśli w przyszłości organizację będzie można
      * zmienić, lepiej dodać jawne metody domenowe, np.:
      *

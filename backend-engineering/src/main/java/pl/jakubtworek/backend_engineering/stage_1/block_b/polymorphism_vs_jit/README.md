@@ -1,4 +1,20 @@
-# Case 5 — Polymorphism vs JIT Inlining
+# polymorphism vs jit
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** polymorphism vs jit.
+> - **Typowy błąd:** Uznanie kosztu wywołania wirtualnego za stały, niezależny od profilu typów.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** `BimorphicCallSiteDemo` = `simulation`, `DirectCallDemo` = `simulation`, `MegamorphicCallSiteDemo` = `simulation` (+1).
+> - **Granica:** Wynik eksperymentu opisuje tę maszynę i workload; nie jest uniwersalną liczbą produkcyjną.
+<!-- material-card:end -->
+
+## Case 5 — Polymorphism vs JIT Inlining
+
+
 
 ## Wprowadzenie
 
@@ -31,7 +47,7 @@ jest absolutnie kluczowe dla poprawnego modelu mentalnego HotSpot JVM.
 
 ---
 
-# Virtual call — co naprawdę dzieje się przy wywołaniu metody
+## Virtual call — co naprawdę dzieje się przy wywołaniu metody
 
 W Javie:
 
@@ -53,7 +69,7 @@ I właśnie tutaj zaczynają się problemy optymalizacyjne.
 
 ---
 
-# Dlaczego inlining jest tak ważny
+## Dlaczego inlining jest tak ważny
 
 Inlining sam w sobie oszczędza:
 - koszt call stack,
@@ -77,7 +93,7 @@ Dlatego:
 
 ---
 
-# Monomorphic call-site
+## Monomorphic call-site
 
 Najprostszy przypadek wygląda tak:
 
@@ -105,7 +121,7 @@ W praktyce:
 
 ---
 
-# Devirtualization
+## Devirtualization
 
 To kluczowe pojęcie.
 
@@ -125,7 +141,7 @@ Bez tego:
 
 ---
 
-# Bimorphic call-site
+## Bimorphic call-site
 
 Czasem JVM widzi:
 - dwa typy runtime.
@@ -165,7 +181,7 @@ To nadal pozwala zachować sporą część optymalizacji.
 
 ---
 
-# Megamorphic call-site
+## Megamorphic call-site
 
 Najtrudniejszy przypadek pojawia się wtedy, gdy:
 - pod jednym call-site pojawia się wiele różnych typów runtime.
@@ -193,7 +209,7 @@ A wtedy:
 
 ---
 
-# Dlaczego „polimorfizm jest wolny” to uproszczenie
+## Dlaczego „polimorfizm jest wolny” to uproszczenie
 
 To bardzo ważne.
 
@@ -219,7 +235,7 @@ Problemy zaczynają się głównie przy:
 
 ---
 
-# Type profiling
+## Type profiling
 
 HotSpot stale obserwuje:
 - jakie typy pojawiają się pod call-site.
@@ -240,7 +256,7 @@ Dlatego:
 
 ---
 
-# Dlaczego „final” czasem pomaga
+## Dlaczego „final” czasem pomaga
 
 Metody:
 - `final`,
@@ -263,7 +279,7 @@ Nowoczesny HotSpot często potrafi zdevirtualizować również zwykłe virtual m
 
 ---
 
-# Inlining ma ograniczenia
+## Inlining ma ograniczenia
 
 To kolejny ważny aspekt.
 
@@ -290,7 +306,7 @@ To właśnie momenty, w których JIT uznał:
 
 ---
 
-# Dlaczego eksperyment trzeba uruchamiać wielokrotnie
+## Dlaczego eksperyment trzeba uruchamiać wielokrotnie
 
 Inlining jest:
 - dynamiczny,
@@ -311,7 +327,7 @@ Dlatego eksperymenty z JIT:
 
 ---
 
-# Najważniejsza intuicja praktyczna
+## Najważniejsza intuicja praktyczna
 
 Najważniejszy wniosek brzmi:
 
@@ -327,7 +343,7 @@ I właśnie dlatego:
 
 ---
 
-# Najważniejsze wnioski
+## Najważniejsze wnioski
 
 Najbardziej użyteczny model mentalny wygląda tak:
 

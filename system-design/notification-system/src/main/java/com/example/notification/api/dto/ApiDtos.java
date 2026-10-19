@@ -24,8 +24,15 @@ public final class ApiDtos {
             @NotNull ContactPointRequest contactPoint,
             @NotNull Map<String, Object> payload,
             String idempotencyKey,
-            Instant expiresAt
-    ) {}
+            Instant expiresAt,
+            Instant scheduledAt
+    ) {
+        public CreateNotificationRequest(String userId, NotificationType notificationType, List<Channel> channels,
+                                         ContactPointRequest contactPoint, Map<String, Object> payload,
+                                         String idempotencyKey, Instant expiresAt) {
+            this(userId, notificationType, channels, contactPoint, payload, idempotencyKey, expiresAt, null);
+        }
+    }
 
     public record NotificationResponse(
             UUID id,
@@ -38,6 +45,7 @@ public final class ApiDtos {
             Map<String, Object> payload,
             String idempotencyKey,
             Instant expiresAt,
+            Instant scheduledAt,
             Instant createdAt,
             Instant updatedAt,
             Instant archivedAt
@@ -45,7 +53,7 @@ public final class ApiDtos {
         public static NotificationResponse from(Notification n) {
             return new NotificationResponse(n.getId(), n.getTenantId(), n.getUserId(), n.getNotificationType(),
                     n.getRequestedChannels(), n.getSelectedChannels(), n.getStatus(), n.getPayload(), n.getIdempotencyKey(),
-                    n.getExpiresAt(), n.getCreatedAt(), n.getUpdatedAt(), n.getArchivedAt());
+                    n.getExpiresAt(), n.getScheduledAt(), n.getCreatedAt(), n.getUpdatedAt(), n.getArchivedAt());
         }
     }
 

@@ -2,7 +2,8 @@
 
 ## Objaw
 
-Order Service zwraca zamówienia w stanie `PAYMENT_PENDING`, a circuit breaker `payment` jest otwarty.
+Rośnie liczba zamówień `PAYMENT_UNKNOWN`, `COMPENSATION_PENDING` lub `MANUAL_REVIEW`,
+a circuit breaker `payment` jest otwarty.
 
 ## Metryki
 
@@ -21,7 +22,7 @@ histogram_quantile(0.95, sum(rate(http_client_requests_seconds_bucket[5m])) by (
 ## Logi
 
 ```logql
-{service="order-service"} |= "order_degraded_to_payment_pending"
+{service="order-service"} |~ "payment_unknown|order_reservation_confirmation_pending"
 ```
 
 ## Trace
@@ -30,7 +31,8 @@ W Tempo znajdź span do `payment-mock-service`. Sprawdź, czy problem to timeout
 
 ## Reakcja
 
-1. Potwierdź, że Order Service degraduje bezpiecznie do `PAYMENT_PENDING`.
+1. Potwierdź, że Order Service używa lookupu i nie zamienia timeoutu automatycznie w `FAILED`.
 2. Sprawdź retry — jeżeli retry zwiększa obciążenie paymentów, zmniejsz liczbę prób.
 3. Nie zamykaj circuit breakera ręcznie bez potwierdzenia poprawy dependency.
-4. Po stabilizacji dependency sprawdź, czy half-open wraca do closed.
+4. Sprawdź wiek `PAYMENT_UNKNOWN`; przypadki `MANUAL_REVIEW` porównaj z ledgerem providera.
+5. Po stabilizacji dependency sprawdź, czy half-open wraca do closed.

@@ -1,0 +1,16 @@
+syntax = "proto3";
+package marketplace.order.v1;
+
+option java_multiple_files = true;
+
+service OrderQueryService {
+  rpc GetOrder(GetOrderRequest) returns (GetOrderResponse);
+}
+
+message GetOrderRequest { string order_id = 1; }
+message GetOrderResponse {
+  string order_id = 1;
+  string status = 2;
+  int64 version = 3;
+  reserved 4 to 9; // usuniętych numerów pól nie wolno wykorzystać ponownie
+}

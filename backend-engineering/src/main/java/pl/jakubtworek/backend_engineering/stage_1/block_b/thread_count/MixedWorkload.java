@@ -6,6 +6,12 @@ public final class MixedWorkload implements Workload {
     private final int waitMillis;
 
     public MixedWorkload(int cpuIterations, int waitMillis) {
+        if (cpuIterations < 0) {
+            throw new IllegalArgumentException("cpuIterations must not be negative");
+        }
+        if (waitMillis < 0) {
+            throw new IllegalArgumentException("waitMillis must not be negative");
+        }
         this.cpuIterations = cpuIterations;
         this.waitMillis = waitMillis;
     }

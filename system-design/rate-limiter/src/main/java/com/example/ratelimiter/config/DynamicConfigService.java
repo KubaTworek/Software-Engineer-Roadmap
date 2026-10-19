@@ -1,204 +1,121 @@
 package com.example.ratelimiter.config;
 
-import com.github.benmanes.caffeine.cache.Cache;
-import com.github.benmanes.caffeine.cache.Caffeine;
-import org.springframework.stereotype.Service;
-
-import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
 
 /**
- * DynamicConfigService jest centralnym miejscem dostępu do aktualnych reguł Rate Limitera.
- *
- * Jego rola:
- * - trzyma konfigurację reguł z RateLimiterProperties,
- * - wystawia listę aktywnych reguł,
- * - sortuje reguły po priorytecie,
- * - cache'uje wynik, żeby nie przeliczać listy przy każdym requestcie,
- * - pozwala dynamicznie dodać/zaktualizować regułę,
- * - pozwala wyłączyć regułę,
- * - wersjonuje konfigurację.
- *
- * Z tej klasy korzysta m.in. RuleMatcher.
- *
- * Przepływ:
- *
- * AdminController
- *   -> DynamicConfigService.upsertRule(...) / disableRule(...)
- *   -> invalidate cache + increment version
- *
- * RateLimitFilter
- *   -> RateLimiterEngine
- *   -> RuleMatcher
- *   -> DynamicConfigService.allRules()
+ * Local control-plane simulation. Readers receive an immutable snapshot, while
+ * mutations use optimistic version checks. Persistence and cross-node delivery
+ * remain an explicit production boundary rather than an implicit promise.
  */
 @Service
 public class DynamicConfigService {
-
-    /**
-     * Główna konfiguracja Rate Limitera.
-     *
-     * W tym projekcie reguły są trzymane w properties.getRules().
-     * Na starcie aplikacji pochodzą z application.yml,
-     * ale Admin API może je później modyfikować w pamięci procesu.
-     *
-     * Ważne:
-     * ta implementacja nie zapisuje zmian do trwałej bazy danych.
-     * Po restarcie aplikacji dynamiczne zmiany z Admin API znikną.
-     */
-    private final RateLimiterProperties properties;
-
-    /**
-     * Lokalny cache listy aktywnych reguł.
-     *
-     * RuleMatcher może być wywoływany dla każdego requestu,
-     * więc nie chcemy za każdym razem:
-     * - filtrować reguł,
-     * - sortować ich po priority,
-     * - tworzyć nowej listy.
-     *
-     * Cache przechowuje gotową listę aktywnych reguł pod kluczem "all-rules".
-     */
-    private final Cache<String, List<RateLimiterProperties.Rule>> cache;
-
-    /**
-     * Wersja konfiguracji.
-     *
-     * Każda zmiana reguł zwiększa version.
-     *
-     * Przydaje się do:
-     * - debug endpointów,
-     * - sprawdzania, czy config został odświeżony,
-     * - logów,
-     * - potencjalnej synchronizacji wielu instancji.
-     */
+    private static final int AUDIT_LIMIT = 1_000;
+    private final RuleConfigurationValidator validator;
     private final AtomicLong version = new AtomicLong(1);
+    private final ArrayDeque<RuleAuditEntry> audit = new ArrayDeque<>();
+    private volatile List<RateLimiterProperties.Rule> snapshot;
 
+    @Autowired
+    public DynamicConfigService(RateLimiterProperties properties, RuleConfigurationValidator validator) {
+        this.validator = validator;
+        this.snapshot = immutable(properties.getRules());
+    }
+
+    /** Kept for small unit tests that construct the control plane directly. */
     public DynamicConfigService(RateLimiterProperties properties) {
-        this.properties = properties;
-
-        /*
-         * Budujemy cache Caffeine zgodnie z konfiguracją.
-         *
-         * maximumSize:
-         * - maksymalna liczba wpisów w cache'u.
-         *
-         * expireAfterWrite:
-         * - po jakim czasie wpis ma wygasnąć od momentu zapisu.
-         *
-         * W praktyce ten cache ma tylko jeden główny wpis: "all-rules".
-         * Mimo tego Caffeine daje wygodny mechanizm TTL i invalidacji.
-         */
-        this.cache = Caffeine.newBuilder()
-                .maximumSize(properties.getConfigCache().getMaximumSize())
-                .expireAfterWrite(Duration.ofSeconds(properties.getConfigCache().getExpireAfterWriteSeconds()))
-                .build();
+        this(properties, new RuleConfigurationValidator(properties));
     }
 
-    /**
-     * Zwraca aktualną listę aktywnych reguł.
-     *
-     * To jest metoda używana przez RuleMatcher.
-     *
-     * Reguły są:
-     * - pobierane z properties,
-     * - filtrowane po enabled=true,
-     * - sortowane po priority rosnąco,
-     * - zapisywane w cache'u.
-     *
-     * Niższy priority oznacza wcześniejsze dopasowanie/przetwarzanie.
-     *
-     * Dzięki cache'owi większość requestów nie musi ponownie sortować reguł.
-     */
     public List<RateLimiterProperties.Rule> allRules() {
-        return cache.get("all-rules", key -> properties.getRules().stream()
-                .filter(RateLimiterProperties.Rule::isEnabled)
-                .sorted(Comparator.comparingInt(RateLimiterProperties.Rule::getPriority))
-                .toList());
+        return snapshot.stream().filter(RateLimiterProperties.Rule::isEnabled).toList();
     }
 
-    /**
-     * Zwraca aktualną wersję konfiguracji.
-     *
-     * Admin/debug API może pokazywać version,
-     * żeby łatwo sprawdzić, czy zmiany reguł zostały zastosowane.
-     */
     public long version() {
         return version.get();
     }
 
-    /**
-     * Dodaje nową regułę albo aktualizuje istniejącą po tym samym ID.
-     *
-     * Mechanizm:
-     * - szukamy reguły o tym samym id,
-     * - jeśli istnieje, usuwamy starą,
-     * - dodajemy nową,
-     * - invalidujemy cache,
-     * - zwiększamy wersję konfiguracji.
-     *
-     * To pozwala Admin API zmieniać limity w runtime.
-     *
-     * Przykład:
-     * można podnieść limit dla tenanta enterprise
-     * bez restartowania aplikacji.
-     */
-    public void upsertRule(RateLimiterProperties.Rule rule) {
-        Optional<RateLimiterProperties.Rule> existing = properties.getRules().stream()
-                .filter(r -> r.getId().equals(rule.getId()))
-                .findFirst();
-
-        existing.ifPresent(properties.getRules()::remove);
-
-        properties.getRules().add(rule);
-
-        invalidate();
+    public synchronized long upsertRule(RateLimiterProperties.Rule incoming, long expectedVersion, String actor) {
+        requireVersion(expectedVersion);
+        validator.validate(incoming);
+        List<RateLimiterProperties.Rule> next = new ArrayList<>(snapshot);
+        next.removeIf(rule -> rule.getId().equals(incoming.getId()));
+        next.add(copy(incoming));
+        snapshot = immutable(next);
+        return record("UPSERT", incoming.getId(), actor);
     }
 
-    /**
-     * Wyłącza regułę o podanym ID.
-     *
-     * Reguła nie jest fizycznie usuwana.
-     * Zmieniamy tylko enabled=false.
-     *
-     * Dzięki temu:
-     * - łatwiej debugować konfigurację,
-     * - można potencjalnie przywrócić regułę,
-     * - Admin API może pokazać, że reguła istnieje, ale jest nieaktywna.
-     *
-     * allRules() zwraca tylko enabled=true,
-     * więc wyłączona reguła przestaje być używana przez RuleMatcher.
-     */
-    public boolean disableRule(String id) {
-        boolean changed = false;
+    public synchronized boolean disableRule(String id, long expectedVersion, String actor) {
+        requireVersion(expectedVersion);
+        boolean found = snapshot.stream().anyMatch(rule -> rule.getId().equals(id));
+        if (!found) return false;
+        List<RateLimiterProperties.Rule> next = snapshot.stream().map(rule -> {
+            RateLimiterProperties.Rule copied = copy(rule);
+            if (copied.getId().equals(id)) copied.setEnabled(false);
+            return copied;
+        }).toList();
+        snapshot = immutable(next);
+        record("DISABLE", id, actor);
+        return true;
+    }
 
-        for (RateLimiterProperties.Rule rule : properties.getRules()) {
-            if (rule.getId().equals(id)) {
-                rule.setEnabled(false);
-                changed = true;
-            }
+    public synchronized List<RuleAuditEntry> audit() {
+        return List.copyOf(audit);
+    }
+
+    /** Installs an already validated durable snapshot with one volatile swap. */
+    public synchronized void installSnapshot(long durableVersion, List<RateLimiterProperties.Rule> rules) {
+        if (durableVersion < version.get()) return;
+        snapshot = immutable(rules);
+        version.set(durableVersion);
+    }
+
+    /** Includes disabled rules so a durable tombstone can be built from the last definition. */
+    public synchronized RateLimiterProperties.Rule findIncludingDisabled(String id) {
+        return snapshot.stream().filter(rule -> rule.getId().equals(id))
+                .findFirst().map(DynamicConfigService::copy).orElse(null);
+    }
+
+    private List<RateLimiterProperties.Rule> immutable(List<RateLimiterProperties.Rule> rules) {
+        validator.validate(rules);
+        return rules.stream().map(DynamicConfigService::copy)
+                .sorted(Comparator.comparingInt(RateLimiterProperties.Rule::getPriority))
+                .toList();
+    }
+
+    private void requireVersion(long expected) {
+        if (expected != version.get()) {
+            throw new ConfigVersionConflictException(expected, version.get());
         }
-
-        if (changed) {
-            invalidate();
-        }
-
-        return changed;
     }
 
-    /**
-     * Czyści cache i zwiększa wersję konfiguracji.
-     *
-     * Ta metoda musi być wywołana po każdej zmianie reguł.
-     *
-     * Bez invalidacji RuleMatcher mógłby nadal używać starej,
-     * zcache'owanej listy reguł.
-     */
-    public void invalidate() {
-        cache.invalidateAll();
-        version.incrementAndGet();
+    private long record(String action, String ruleId, String actor) {
+        long newVersion = version.incrementAndGet();
+        audit.addFirst(new RuleAuditEntry(newVersion, action, ruleId,
+                actor == null || actor.isBlank() ? "unknown" : actor, Instant.now()));
+        while (audit.size() > AUDIT_LIMIT) audit.removeLast();
+        return newVersion;
     }
+
+    private static RateLimiterProperties.Rule copy(RateLimiterProperties.Rule source) {
+        RateLimiterProperties.Rule target = new RateLimiterProperties.Rule();
+        target.setId(source.getId()); target.setEnabled(source.isEnabled()); target.setType(source.getType());
+        target.setPriority(source.getPriority()); target.setAlgorithm(source.getAlgorithm());
+        target.setCapacity(source.getCapacity()); target.setRefillTokensPerSecond(source.getRefillTokensPerSecond());
+        target.setCost(source.getCost()); target.setFailureStrategy(source.getFailureStrategy());
+        target.setRegionMode(source.getRegionMode()); target.setEnforcementMode(source.getEnforcementMode());
+        target.setTenantId(source.getTenantId());
+        target.setUserId(source.getUserId()); target.setApiKeyHash(source.getApiKeyHash());
+        target.setPlan(source.getPlan()); target.setMethod(source.getMethod());
+        target.setPathPattern(source.getPathPattern());
+        return target;
+    }
+
+    public record RuleAuditEntry(long version, String action, String ruleId, String actor, Instant occurredAt) {}
 }

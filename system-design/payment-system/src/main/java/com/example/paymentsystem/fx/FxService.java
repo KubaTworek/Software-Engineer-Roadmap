@@ -5,6 +5,12 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Map;
+import java.util.Currency;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.nio.charset.StandardCharsets;
+import java.util.UUID;
 
 /**
  * Serwis odpowiedzialny za prostą konwersję walut.
@@ -23,6 +29,11 @@ import java.util.Map;
  */
 @Service
 public class FxService {
+    private final Clock clock;
+
+    public FxService() { this(Clock.systemUTC()); }
+
+    FxService(Clock clock) { this.clock = clock; }
 
     /**
      * Lokalna tabela kursów względem PLN.
@@ -45,7 +56,8 @@ public class FxService {
             "PLN", new BigDecimal("1.0000"),
             "EUR", new BigDecimal("4.3000"),
             "USD", new BigDecimal("4.0000"),
-            "GBP", new BigDecimal("5.0500")
+            "GBP", new BigDecimal("5.0500"),
+            "JPY", new BigDecimal("0.0270")
     );
 
     /**
@@ -74,13 +86,7 @@ public class FxService {
          * - merchant rozlicza się w PLN.
          */
         if (sourceCurrency.equals(targetCurrency)) {
-            return new FxQuote(
-                    amount,
-                    sourceCurrency,
-                    amount,
-                    targetCurrency,
-                    "1.0000"
-            );
+            return quote(amount, sourceCurrency, amount, targetCurrency, "1.0000");
         }
 
         /**
@@ -94,7 +100,7 @@ public class FxService {
          * W produkcji lepiej byłoby rzucić wyjątek, bo ciche użycie kursu 1.0
          * może prowadzić do błędnego settlementu.
          */
-        BigDecimal sourceToPln = PLN_RATES.getOrDefault(sourceCurrency, BigDecimal.ONE);
+        BigDecimal sourceToPln = requiredRate(sourceCurrency);
 
         /**
          * Pobieramy kurs waluty docelowej względem PLN.
@@ -103,7 +109,7 @@ public class FxService {
          * targetCurrency = USD
          * targetToPln = 4.0000
          */
-        BigDecimal targetToPln = PLN_RATES.getOrDefault(targetCurrency, BigDecimal.ONE);
+        BigDecimal targetToPln = requiredRate(targetCurrency);
 
         /**
          * Wyliczamy kurs source -> target przez PLN jako walutę bazową.
@@ -132,8 +138,12 @@ public class FxService {
          * Przykład:
          * 10000 EUR-centów * 4.3000 = 43000 PLN-groszy
          */
-        long targetAmount = BigDecimal.valueOf(amount)
+        int sourceScale = Currency.getInstance(sourceCurrency).getDefaultFractionDigits();
+        int targetScale = Currency.getInstance(targetCurrency).getDefaultFractionDigits();
+        BigDecimal sourceMajorUnits = BigDecimal.valueOf(amount, sourceScale);
+        long targetAmount = sourceMajorUnits
                 .multiply(rate)
+                .movePointRight(targetScale)
                 .setScale(0, RoundingMode.HALF_UP)
                 .longValueExact();
 
@@ -149,12 +159,23 @@ public class FxService {
          *
          * To jest ważne dla audytu, raportowania i późniejszego reconciliation.
          */
-        return new FxQuote(
-                amount,
-                sourceCurrency,
-                targetAmount,
-                targetCurrency,
-                rate.toPlainString()
-        );
+        return quote(amount, sourceCurrency, targetAmount, targetCurrency, rate.toPlainString());
+    }
+
+    private FxQuote quote(long amount, String sourceCurrency, long targetAmount,
+                          String targetCurrency, String rate) {
+        Instant quotedAt = clock.instant();
+        String identity = sourceCurrency + ":" + targetCurrency + ":" + rate + ":" + quotedAt;
+        return new FxQuote(UUID.nameUUIDFromBytes(identity.getBytes(StandardCharsets.UTF_8)).toString(),
+                "EDUCATIONAL_PLN_TABLE", quotedAt, quotedAt.plus(Duration.ofMinutes(5)),
+                amount, sourceCurrency, targetAmount, targetCurrency, rate, RoundingMode.HALF_UP.name());
+    }
+
+    private BigDecimal requiredRate(String currency) {
+        BigDecimal rate = PLN_RATES.get(currency);
+        if (rate == null) {
+            throw new IllegalArgumentException("Unsupported currency: " + currency);
+        }
+        return rate;
     }
 }

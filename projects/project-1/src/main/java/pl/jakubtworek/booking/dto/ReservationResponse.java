@@ -13,6 +13,7 @@ public record ReservationResponse(
         String customerEmail,
         ReservationStatus status,
         Instant createdAt,
+        Instant expiresAt,
         Instant confirmedAt,
         Instant cancelledAt
 ) {

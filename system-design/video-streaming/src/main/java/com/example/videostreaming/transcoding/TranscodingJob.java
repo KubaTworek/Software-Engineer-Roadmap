@@ -3,6 +3,7 @@ package com.example.videostreaming.transcoding;
 import com.example.videostreaming.catalog.Video;
 import jakarta.persistence.*;
 import java.time.Instant;
+import java.time.Duration;
 import java.util.UUID;
 
 @Entity
@@ -28,6 +29,13 @@ public class TranscodingJob {
     private Instant updatedAt;
     @Column(name = "completed_at")
     private Instant completedAt;
+    @Version
+    @Column(name = "row_version", nullable = false)
+    private long rowVersion;
+    @Column(name = "lease_token", nullable = false)
+    private long leaseToken;
+    @Column(name = "lease_until")
+    private Instant leaseUntil;
 
     protected TranscodingJob() {}
 
@@ -46,11 +54,63 @@ public class TranscodingJob {
     public TranscodingJobStatus getStatus() { return status; }
     public int getAttempts() { return attempts; }
     public String getErrorMessage() { return errorMessage; }
+    public long getLeaseToken() { return leaseToken; }
+    public Instant getLeaseUntil() { return leaseUntil; }
 
-    public void running() { this.status = TranscodingJobStatus.RUNNING; this.attempts++; touch(); }
-    public void completed() { this.status = TranscodingJobStatus.COMPLETED; this.completedAt = Instant.now(); touch(); }
+    /**
+     * Lease pozwala odzyskać job po śmierci workera, a rosnący token odcina
+     * spóźniony rezultat poprzedniego właściciela. @Version rozstrzyga wyścig
+     * dwóch instancji próbujących uzyskać lease w tej samej chwili.
+     */
+    public long claim(Instant now, Duration duration) {
+        if (status == TranscodingJobStatus.COMPLETED || status == TranscodingJobStatus.DEAD_LETTER) {
+            throw new IllegalStateException("Terminal transcoding job cannot be claimed");
+        }
+        if (status == TranscodingJobStatus.RUNNING && leaseUntil != null && leaseUntil.isAfter(now)) {
+            throw new IllegalStateException("Transcoding job already has an active lease");
+        }
+        this.status = TranscodingJobStatus.RUNNING;
+        this.attempts++;
+        this.leaseToken++;
+        this.leaseUntil = now.plus(duration);
+        touch(now);
+        return leaseToken;
+    }
+
+    public void completed(long token, Instant now) {
+        assertFence(token);
+        this.status = TranscodingJobStatus.COMPLETED;
+        this.completedAt = now;
+        this.leaseUntil = null;
+        touch(now);
+    }
+    public void running() { claim(Instant.now(), Duration.ofHours(2)); }
+    public void completed() { completed(leaseToken, Instant.now()); }
     public void retrying(String message) { this.status = TranscodingJobStatus.RETRYING; this.errorMessage = message; touch(); }
     public void failed(String message) { this.status = TranscodingJobStatus.FAILED; this.errorMessage = message; touch(); }
     public void deadLetter(String message) { this.status = TranscodingJobStatus.DEAD_LETTER; this.errorMessage = message; touch(); }
-    private void touch() { this.updatedAt = Instant.now(); }
+    public void retrying(long token, String message, Instant now) {
+        assertFence(token);
+        this.status = TranscodingJobStatus.RETRYING;
+        this.errorMessage = message;
+        this.leaseUntil = null;
+        touch(now);
+    }
+
+    public void deadLetter(long token, String message, Instant now) {
+        assertFence(token);
+        this.status = TranscodingJobStatus.DEAD_LETTER;
+        this.errorMessage = message;
+        this.leaseUntil = null;
+        touch(now);
+    }
+
+    private void assertFence(long token) {
+        if (token != leaseToken || status != TranscodingJobStatus.RUNNING) {
+            throw new IllegalStateException("Stale transcoding worker fencing token");
+        }
+    }
+
+    private void touch() { touch(Instant.now()); }
+    private void touch(Instant now) { this.updatedAt = now; }
 }

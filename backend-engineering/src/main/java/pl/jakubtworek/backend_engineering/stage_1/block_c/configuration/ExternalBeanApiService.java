@@ -8,10 +8,10 @@ import org.springframework.stereotype.Service;
 @Service
 public class ExternalBeanApiService {
 
-    private final ExternalApiProperties properties;
+    private final ValidatedExternalApiProperties properties;
 
     public ExternalBeanApiService(
-            ExternalApiProperties properties
+            ValidatedExternalApiProperties properties
     ) {
         this.properties = properties;
     }
@@ -22,11 +22,11 @@ public class ExternalBeanApiService {
     public void printConfiguration() {
 
         System.out.println(
-                "API URL: " + properties.getBaseUrl()
+                "API URL: " + properties.baseUrl()
         );
 
         System.out.println(
-                "Timeout: " + properties.getTimeout()
+                "Timeout: " + properties.timeout()
         );
     }
 }

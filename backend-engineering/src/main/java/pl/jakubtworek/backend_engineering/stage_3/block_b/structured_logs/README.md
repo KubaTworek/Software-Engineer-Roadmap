@@ -1,4 +1,20 @@
-# Structured logging i observability w aplikacji Java
+# structured logs
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `temat-zaawansowany`
+> - **Uczy:** structured logs.
+> - **Typowy błąd:** Logowanie sekretów i PII zamiast bezpiecznego kontekstu diagnostycznego.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** brak jawnej roli w nazwach klas; intencję przykładu określają opis i test, nie sam brak prefiksu.
+> - **Granica:** Test eksportera lub reguły nie dowodzi dostarczenia telemetrii do wdrożonego backendu ani skuteczności reakcji operatora.
+<!-- material-card:end -->
+
+## Structured logging i observability w aplikacji Java
+
+
 
 ## Cel koncepcji
 
@@ -101,6 +117,12 @@ Warto jednak pamiętać, że serializacja mapy do JSON-a nie rozwiązuje problem
 Ten model nie zastępuje pełnego OpenTelemetry SDK. Nie tworzy automatycznie spanów, nie eksportuje metryk i nie propaguje nagłówków W3C Trace Context. Jego rolą jest uporządkowanie warstwy logów aplikacyjnych tak, by była kompatybilna z myśleniem observability.
 
 W praktycznej implementacji warto połączyć taki model z instrumentacją OpenTelemetry. Trace i span powinny powstawać w rzeczywistym kontekście wykonania, a `trace_id` i `span_id` najlepiej pobierać z aktywnego spana, zamiast generować ręcznie. Podobnie `request_id` może pochodzić z gatewaya, middleware’u HTTP albo filtra aplikacyjnego.
+
+Taką integrację pokazuje `../pipeline/CheckoutTelemetryPipeline`. Log błędu
+powstaje wewnątrz aktywnego scope’u spana zależności, dlatego `span_id` logu
+wskazuje dokładnie span z wyjątkiem i statusem `ERROR`. Test in-memory chroni
+przed regresją, w której log zostałby utworzony dopiero po zamknięciu scope’u i
+skorelował się tylko ze spanem rodzica.
 
 Nie należy też zakładać, że wszystkie semantic conventions są równie stabilne w każdej wersji bibliotek. Część konwencji, szczególnie wokół niektórych systemów bazodanowych lub cache’y, może zmieniać się wraz z rozwojem OpenTelemetry. Dlatego nazwy pól powinny być świadomie dobrane i okresowo weryfikowane względem wersji używanego SDK oraz wymagań organizacji.
 

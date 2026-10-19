@@ -1,0 +1,18 @@
+# Warstwa hardeningu. Łącz z profilem infrastruktury, np. postgres,production.
+spring:
+  h2:
+    console:
+      enabled: false
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+app:
+  outbox:
+    publisher-enabled: true
+  payments:
+    reconciliation:
+      enabled: true

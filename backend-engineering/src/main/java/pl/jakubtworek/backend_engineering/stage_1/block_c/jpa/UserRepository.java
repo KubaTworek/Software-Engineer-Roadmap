@@ -2,6 +2,7 @@ package pl.jakubtworek.backend_engineering.stage_1.block_c.jpa;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Slice;
 import org.springframework.data.jpa.repository.*;
 import org.springframework.data.repository.query.Param;
 
@@ -58,7 +59,7 @@ public interface UserRepository
      */
     @Query("""
             SELECT u
-            FROM User u
+            FROM JpaExampleUser u
             WHERE u.age > :age
             """)
     List<User> findOlderThan(@Param("age") int age);
@@ -70,10 +71,28 @@ public interface UserRepository
      */
     @Query("""
             SELECT DISTINCT u
-            FROM User u
+            FROM JpaExampleUser u
             LEFT JOIN FETCH u.orders
             """)
     List<User> findAllWithOrders();
+
+    /**
+     * Seek pagination ordered by the same columns as idx_jpa_users_last_name_id.
+     * A null cursor means the first slice.
+     */
+    @Query("""
+            SELECT u
+            FROM JpaExampleUser u
+            WHERE :lastName IS NULL
+               OR u.lastName > :lastName
+               OR (u.lastName = :lastName AND u.id > :id)
+            ORDER BY u.lastName ASC, u.id ASC
+            """)
+    Slice<User> findNextSlice(
+            @Param("lastName") String lastName,
+            @Param("id") Long id,
+            Pageable pageable
+    );
 
     /**
      * EntityGraph is alternative to JOIN FETCH.
@@ -92,7 +111,7 @@ public interface UserRepository
     @Query(
             value = """
                     SELECT *
-                    FROM users
+                    FROM jpa_users
                     WHERE age > :age
                     """,
             nativeQuery = true

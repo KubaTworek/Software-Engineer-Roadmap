@@ -71,6 +71,12 @@ public class LocationController {
         return locationService.update(request);
     }
 
+    /** Usuwa kierowcę ze wszystkich indeksów live po OFFLINE lub przydziale. */
+    @DeleteMapping("/drivers/{driverId}")
+    void remove(@PathVariable String driverId) {
+        locationService.remove(driverId);
+    }
+
     /**
      * Zwraca listę dostępnych kierowców w pobliżu wskazanego punktu.
      *

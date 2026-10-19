@@ -3,10 +3,11 @@ package pl.jakubtworek.backend_engineering.stage_1.block_a.race_condition;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
-import pl.jakubtworek.backend_engineering.stage_1.block_a.race_condition.*;
+import pl.jakubtworek.backend_engineering.stage_1.block_a.testing.ConcurrentTestHelper;
 
 import java.util.List;
-import java.util.concurrent.*;
+import java.util.concurrent.BrokenBarrierException;
+import java.util.concurrent.CyclicBarrier;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -19,22 +20,17 @@ class TicketStoreConcurrencyTest {
     // ===============================
 
     @Test
-    void brokenStore_shouldEventuallyOversell() throws InterruptedException {
+    void brokenStoreShouldOversellUnderForcedCheckThenActInterleaving()
+            throws InterruptedException {
+        CyclicBarrier bothBuyersReadAvailability = new CyclicBarrier(2);
+        TicketStore store = new BrokenTicketStore(
+                () -> await(bothBuyersReadAvailability));
 
-        boolean oversellingDetected = false;
+        runConcurrent(store, 2);
 
-        for (int i = 0; i < 10_000; i++) {
-            TicketStore store = new BrokenTicketStore();
-            runConcurrent(store, 2);
-
-            if (store.getSold() > store.getInitial()) {
-                oversellingDetected = true;
-                break;
-            }
-        }
-
-        assertTrue(oversellingDetected,
-                "Race condition was not observed in BrokenTicketStore");
+        assertEquals(2, store.getSold());
+        assertTrue(store.getSold() > store.getInitial(),
+                "Both buyers passed the check for the same ticket");
     }
 
     // ===============================
@@ -52,12 +48,14 @@ class TicketStoreConcurrencyTest {
 
     @ParameterizedTest
     @MethodSource("correctStores")
-    void correctStores_shouldPreserveInvariant(TicketStore store)
+    void correctStoresShouldPreserveInvariant(TicketStore store)
             throws InterruptedException {
-
-        runConcurrent(store, THREADS);
-
-        assertInvariant(store);
+        try {
+            runConcurrent(store, THREADS);
+            assertInvariant(store);
+        } finally {
+            closeIfNecessary(store);
+        }
     }
 
     // ===============================
@@ -65,51 +63,24 @@ class TicketStoreConcurrencyTest {
     // ===============================
 
     @Test
-    void synchronizedStore_shouldNeverOversell_underHeavyLoad()
+    void synchronizedStoreShouldPreserveInvariantUnderContention()
             throws InterruptedException {
 
         TicketStore store = new SynchronizedTicketStore();
-
-        for (int i = 0; i < 1000; i++) {
-            runConcurrent(store, THREADS);
-            assertInvariant(store);
-        }
+        runConcurrent(store, THREADS);
+        assertInvariant(store);
     }
 
     // ===============================
     // 🧪 WSPÓLNA LOGIKA TESTOWA
     // ===============================
 
-    private void runConcurrent(TicketStore store, int threads)
+    private static void runConcurrent(TicketStore store, int threads)
             throws InterruptedException {
-
-        CountDownLatch ready = new CountDownLatch(threads);
-        CountDownLatch start = new CountDownLatch(1);
-        CountDownLatch done = new CountDownLatch(threads);
-
-        ExecutorService executor = Executors.newFixedThreadPool(threads);
-
-        for (int i = 0; i < threads; i++) {
-            executor.execute(() -> {
-                try {
-                    ready.countDown();
-                    start.await();
-                    store.buy();
-                } catch (InterruptedException ignored) {
-                } finally {
-                    done.countDown();
-                }
-            });
-        }
-
-        ready.await();      // wszystkie wątki gotowe
-        start.countDown();  // jednoczesny start
-        done.await();       // czekamy na zakończenie
-
-        executor.shutdown();
+        ConcurrentTestHelper.runConcurrent(threads, store::buy);
     }
 
-    private void assertInvariant(TicketStore store) {
+    private static void assertInvariant(TicketStore store) {
 
         assertTrue(store.getSold() <= store.getInitial(),
                 "Sold exceeded initial stock in " + store.name());
@@ -122,5 +93,26 @@ class TicketStoreConcurrencyTest {
                 store.getAvailable() + store.getSold(),
                 "Invariant broken in " + store.name()
         );
+    }
+
+    private static void await(CyclicBarrier barrier) {
+        try {
+            barrier.await();
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Buyer interrupted at test barrier", exception);
+        } catch (BrokenBarrierException exception) {
+            throw new IllegalStateException("Buyer test barrier was broken", exception);
+        }
+    }
+
+    private static void closeIfNecessary(TicketStore store) {
+        if (store instanceof AutoCloseable closeable) {
+            try {
+                closeable.close();
+            } catch (Exception exception) {
+                throw new AssertionError("Could not close ticket store", exception);
+            }
+        }
     }
 }

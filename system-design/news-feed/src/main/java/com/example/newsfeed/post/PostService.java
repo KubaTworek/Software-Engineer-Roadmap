@@ -3,10 +3,12 @@ package com.example.newsfeed.post;
 import com.example.newsfeed.common.NotFoundException;
 import com.example.newsfeed.common.UnauthorizedException;
 import com.example.newsfeed.embedding.EmbeddingService;
-import com.example.newsfeed.events.*;
+import com.example.newsfeed.events.DomainEvent;
+import com.example.newsfeed.events.NewsFeedTopics;
 import com.example.newsfeed.feature.FeatureStoreService;
 import com.example.newsfeed.feed.FeedCacheService;
 import com.example.newsfeed.moderation.*;
+import com.example.newsfeed.outbox.DomainEventPublisher;
 import com.example.newsfeed.region.RegionGuardService;
 import com.example.newsfeed.search.SearchIndexService;
 import com.example.newsfeed.user.User;
@@ -14,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.Clock;
 import java.util.Map;
 import java.util.UUID;
 
@@ -50,7 +53,7 @@ public class PostService {
      * poinformowane asynchronicznie, np. fan-out worker, feed inbox,
      * liczniki, search albo analityka.
      */
-    private final KafkaEventPublisher eventPublisher;
+    private final DomainEventPublisher eventPublisher;
 
     /**
      * Cache feedu w Redis.
@@ -90,7 +93,7 @@ public class PostService {
      * Po utworzeniu posta trafia on do search indexu,
      * a po usunięciu powinien z niego zniknąć.
      */
-    private final SearchIndexService searchIndexService;
+    private final ContentAccessPolicy contentAccessPolicy;
 
     /**
      * Ochrona przed zapisem w niewłaściwym regionie.
@@ -99,6 +102,7 @@ public class PostService {
      * Read replica nie może tworzyć ani usuwać postów.
      */
     private final RegionGuardService regionGuardService;
+    private final Clock clock;
 
     /**
      * Konstruktor wstrzykujący wszystkie zależności potrzebne do obsługi posta.
@@ -107,18 +111,19 @@ public class PostService {
      * to nie tylko INSERT do bazy, ale uruchomienie całego pipeline’u:
      * moderation, ML, search, events, cache.
      */
-    public PostService(PostRepository postRepository, KafkaEventPublisher eventPublisher, FeedCacheService feedCacheService,
+    public PostService(PostRepository postRepository, DomainEventPublisher eventPublisher, FeedCacheService feedCacheService,
                        ModerationService moderationService, EmbeddingService embeddingService,
-                       FeatureStoreService featureStoreService, SearchIndexService searchIndexService,
-                       RegionGuardService regionGuardService) {
+                       FeatureStoreService featureStoreService, ContentAccessPolicy contentAccessPolicy,
+                       RegionGuardService regionGuardService, Clock clock) {
         this.postRepository = postRepository;
         this.eventPublisher = eventPublisher;
         this.feedCacheService = feedCacheService;
         this.moderationService = moderationService;
         this.embeddingService = embeddingService;
         this.featureStoreService = featureStoreService;
-        this.searchIndexService = searchIndexService;
+        this.contentAccessPolicy = contentAccessPolicy;
         this.regionGuardService = regionGuardService;
+        this.clock = clock;
     }
 
     /**
@@ -154,8 +159,10 @@ public class PostService {
          * Autor nie pochodzi z request body, tylko z kontekstu zalogowanego użytkownika.
          * To zabezpiecza przed podszyciem się pod innego autora.
          */
-        Instant now = Instant.now();
-        Post post = new Post(UUID.randomUUID(), author, request.content().trim(), request.topics(), now, now, null);
+        Instant now = clock.instant();
+        Post post = new Post(UUID.randomUUID(), author, request.content().trim(), request.topics(), now, now, null,
+                PostStatus.PENDING_REVIEW,
+                request.visibility() == null ? PostVisibility.PUBLIC : request.visibility());
 
         /*
          * Zapis posta do głównej bazy.
@@ -198,13 +205,10 @@ public class PostService {
         featureStoreService.upsertDefaultPostFeatures(savedPost.getId());
 
         /*
-         * Search indexing.
-         *
-         * Post trafia do indeksu wyszukiwarki, żeby użytkownicy mogli go znaleźć
-         * przez endpoint search.
+         * Indeks wyszukiwania jest projekcją aktualizowaną przez obsługę zdarzeń.
+         * Ta metoda nie zapisuje bezpośrednio do silnika search; sukces create
+         * nie oznacza natychmiastowej widoczności posta w wynikach wyszukiwania.
          */
-        searchIndexService.indexPost(savedPost);
-
         /*
          * Publikacja eventu post.created.
          *
@@ -217,7 +221,8 @@ public class PostService {
          *
          * Jeśli moderacja ukryła post automatycznie, nie dystrybuujemy go dalej.
          */
-        if (!"auto_hidden".equals(decision.status())) {
+        if ("approved".equals(decision.status())) {
+            savedPost.publish(clock.instant());
             DomainEvent event = DomainEvent.of(
                     NewsFeedTopics.POST_CREATED,
                     author.getId(),
@@ -236,6 +241,8 @@ public class PostService {
              * co pomaga zachować ich kolejność w obrębie autora.
              */
             eventPublisher.publish(NewsFeedTopics.POST_CREATED, author.getId().toString(), event);
+        } else if ("auto_hidden".equals(decision.status())) {
+            savedPost.hide(clock.instant());
         }
 
         /*
@@ -265,7 +272,7 @@ public class PostService {
      * findByIdAndDeletedAtIsNull.
      */
     @Transactional(readOnly = true)
-    public PostResponse getPost(UUID id) {
+    public PostResponse getPost(User viewer, UUID id) {
         /*
          * Szukamy tylko aktywnego posta.
          *
@@ -274,6 +281,11 @@ public class PostService {
          */
         Post post = postRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new NotFoundException("Post not found."));
+
+        if (!contentAccessPolicy.canView(viewer, post)) {
+            // 404 ogranicza możliwość enumerowania prywatnych identyfikatorów.
+            throw new NotFoundException("Post not found.");
+        }
 
         return PostResponse.from(post);
     }
@@ -330,8 +342,6 @@ public class PostService {
          *
          * Dzięki temu post nie będzie pojawiał się w wynikach search.
          */
-        searchIndexService.deletePost(post.getId().toString());
-
         /*
          * Event post.deleted.
          *

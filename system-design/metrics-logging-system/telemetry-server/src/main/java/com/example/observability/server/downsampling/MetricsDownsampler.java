@@ -147,7 +147,7 @@ public class MetricsDownsampler {
      * - metrics_rollup_5m czyta z metrics_rollup_1m,
      * - metrics_rollup_1h czyta z metrics_rollup_5m.
      */
-    private void downsample(
+    void downsample(
             String table,
             String bucketExpression,
             String startExpression,
@@ -162,52 +162,15 @@ public class MetricsDownsampler {
          * Dzięki temu rollup godzinowy nie musi skanować raw samples
          * z ostatnich 90 dni.
          */
-        String source = switch (table) {
-            case "metrics_rollup_5m" -> "metrics_rollup_1m";
-            case "metrics_rollup_1h" -> "metrics_rollup_5m";
-            default -> "metrics_samples";
-        };
-
-        /*
-         * Źródła raw i rollupowe mają inne nazwy kolumn czasu i wartości.
-         *
-         * metrics_samples:
-         * - timestamp,
-         * - value.
-         *
-         * metrics_rollup_*:
-         * - bucket_start,
-         * - avg_value.
-         */
-        String timeColumn = source.equals("metrics_samples")
-                ? "timestamp"
-                : "bucket_start";
-
-        String valueColumn = source.equals("metrics_samples")
-                ? "value"
-                : "avg_value";
-
-        /*
-         * labels_json zostaje zachowany jako część grupowania.
-         *
-         * To oznacza, że rollup jest liczony osobno dla każdej kombinacji labeli.
-         */
-        String labelsColumn = source.equals("metrics_samples")
-                ? "labels_json"
-                : "labels_json";
-
-        /*
-         * Jeśli źródłem jest już rollup, bucketExpression musi operować
-         * na bucket_start zamiast timestamp.
-         *
-         * Przykład:
-         * toStartOfInterval(timestamp, INTERVAL 5 MINUTE)
-         * zmienia się na:
-         * toStartOfInterval(bucket_start, INTERVAL 5 MINUTE)
-         */
-        String bucket = source.equals("metrics_samples")
-                ? bucketExpression
-                : bucketExpression.replace("timestamp", "bucket_start");
+        // Każdy poziom liczymy bezpośrednio z raw samples. Jest to droższe niż
+        // kaskada, ale dydaktycznie poprawne: avg(avg) nie jest średnią ważoną,
+        // a min/max z avg_value tracą ekstrema. ReplacingMergeTree(updated_at)
+        // sprawia, że ponowne obliczenie tego samego bucketu jest idempotentne.
+        String source = "metrics_samples";
+        String timeColumn = "timestamp";
+        String valueColumn = "value";
+        String labelsColumn = "labels_json";
+        String bucket = bucketExpression;
 
         /*
          * INSERT INTO ... SELECT wykonuje agregację bezpośrednio w ClickHouse.
@@ -227,7 +190,8 @@ public class MetricsDownsampler {
                        avg(%s) AS avg_value,
                        min(%s) AS min_value,
                        max(%s) AS max_value,
-                       count() AS sample_count
+                       count() AS sample_count,
+                       now64(3) AS updated_at
                 FROM %s
                 WHERE %s >= %s AND %s < %s
                 GROUP BY tenant_id, metric_name, bucket_start, %s

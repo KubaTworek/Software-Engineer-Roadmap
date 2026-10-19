@@ -6,6 +6,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import pl.jakubtworek.marketplace.ordering.application.CancelOrderUseCase;
 import pl.jakubtworek.marketplace.ordering.application.OrderRepository;
@@ -60,15 +62,18 @@ public class OrderController {
      * z repozytorium agregatu.
      */
     private final OrderRepository repository;
+    private final IdempotencyKeyRegistry idempotencyKeys;
 
     public OrderController(
             PlaceOrderUseCase placeOrder,
             CancelOrderUseCase cancelOrder,
-            OrderRepository repository
+            OrderRepository repository,
+            IdempotencyKeyRegistry idempotencyKeys
     ) {
         this.placeOrder = placeOrder;
         this.cancelOrder = cancelOrder;
         this.repository = repository;
+        this.idempotencyKeys = idempotencyKeys;
     }
 
     /**
@@ -85,8 +90,11 @@ public class OrderController {
      * Ordering -> Payment -> Inventory -> Fulfillment/Notification.
      */
     @PostMapping
-    @ResponseStatus(HttpStatus.CREATED)
-    public IdResponse place(@Valid @RequestBody PlaceOrderRequest request) {
+    @PreAuthorize("@orderOwnership.canCreate(#request.customerId(), authentication)")
+    public ResponseEntity<IdResponse> place(
+            @Valid @RequestBody PlaceOrderRequest request,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey
+    ) {
         UUID correlationId = request.correlationId() == null
                 ? UUID.randomUUID()
                 : request.correlationId();
@@ -94,21 +102,24 @@ public class OrderController {
         var lines = request.lines().stream()
                 .map(line -> new PlaceOrderUseCase.Line(
                         line.productId(),
-                        line.quantity(),
-                        line.unitAmount(),
-                        line.currency()
+                        line.quantity()
                 ))
                 .toList();
 
-        var id = placeOrder.handle(
+        String canonicalRequest = request.customerId() + "|" + request.lines().stream()
+                .map(line -> line.productId() + ":" + line.quantity()).sorted()
+                .reduce((left, right) -> left + "," + right).orElse("");
+        var result = idempotencyKeys.execute(idempotencyKey, RequestFingerprint.sha256(canonicalRequest), () -> placeOrder.handle(
                 new PlaceOrderUseCase.Command(
                         request.customerId(),
                         lines,
                         correlationId
                 )
-        );
+        ).value());
 
-        return new IdResponse(id.value());
+        return ResponseEntity.status(result.replayed() ? HttpStatus.OK : HttpStatus.CREATED)
+                .header("Idempotency-Replayed", Boolean.toString(result.replayed()))
+                .body(new IdResponse(result.value()));
     }
 
     /**
@@ -124,17 +135,21 @@ public class OrderController {
      * - zmapować go na HTTP 404 Not Found w @ControllerAdvice.
      */
     @GetMapping("/{id}")
-    public OrderResponse get(@PathVariable UUID id) {
+    @PreAuthorize("@orderOwnership.canRead(#id, authentication)")
+    public ResponseEntity<OrderResponse> get(@PathVariable UUID id) {
         var order = repository.findById(OrderId.of(id))
                 .orElseThrow();
 
-        return new OrderResponse(
+        return ResponseEntity.ok()
+                .eTag(Long.toString(order.version()))
+                .body(new OrderResponse(
                 order.id().value(),
                 order.customerId().value(),
                 order.status().name(),
                 order.total().amount().toPlainString(),
-                order.total().currency().getCurrencyCode()
-        );
+                order.total().currency().getCurrencyCode(),
+                order.version()
+        ));
     }
 
     /**
@@ -149,11 +164,20 @@ public class OrderController {
      * - reguła anulowania powinna być egzekwowana w agregacie Order.
      */
     @PostMapping("/{id}/cancel")
+    @PreAuthorize("@orderOwnership.canRead(#id, authentication)")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void cancel(
             @PathVariable UUID id,
-            @RequestHeader(value = "X-Correlation-Id", required = false) UUID correlationId
+            @RequestHeader(value = "X-Correlation-Id", required = false) UUID correlationId,
+            @RequestHeader(value = "If-Match", required = false) String ifMatch
     ) {
+        if (ifMatch != null) {
+            long expected = Long.parseLong(ifMatch.replace("\"", ""));
+            long actual = repository.findById(OrderId.of(id)).orElseThrow().version();
+            if (expected != actual) {
+                throw new ApiExceptionHandler.PreconditionFailedException(expected, actual);
+            }
+        }
         cancelOrder.handle(
                 id,
                 correlationId == null ? UUID.randomUUID() : correlationId
@@ -200,20 +224,7 @@ public class OrderController {
              *
              * @Min(1) blokuje ilość równą 0 albo ujemną.
              */
-            @Min(1) int quantity,
-
-            /**
-             * Kwota jednostkowa jako tekst.
-             *
-             * W prostym API przyjmujemy String, ale docelowo warto dodać silniejszą walidację,
-             * np. pattern liczbowy albo dedykowany typ DTO.
-             */
-            @NotBlank String unitAmount,
-
-            /**
-             * Kod waluty, np. PLN, EUR, USD.
-             */
-            @NotBlank String currency
+            @Min(1) int quantity
     ) {
     }
 
@@ -234,7 +245,8 @@ public class OrderController {
             UUID customerId,
             String status,
             String totalAmount,
-            String currency
+            String currency,
+            long version
     ) {
     }
 }

@@ -1,4 +1,20 @@
-# Monitoring i obserwowalność w architekturze event-driven
+# observability
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `praktyka-produkcyjna`
+> - **Uczy:** observability.
+> - **Typowy błąd:** Brak correlation ID oraz metryk lag i DLQ utrudniający diagnozę procesu.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=AlertRulesTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** `AlertPublisher` = `production-boundary`, `ConsoleAlertPublisher` = `production-boundary`.
+> - **Granica:** Fake broker sprawdza logikę obsługi; rebalance, offsety i trwałość wymagają brokera, a efekt zewnętrzny własnej idempotencji.
+<!-- material-card:end -->
+
+## Monitoring i obserwowalność w architekturze event-driven
+
+
 
 W systemie rozproszonym opartym na zdarzeniach monitoring i obserwowalność nie są dodatkiem, lecz jednym z warunków bezpiecznego działania architektury. W tradycyjnej aplikacji monolitycznej błąd często można prześledzić w jednym procesie i jednym zestawie logów. W architekturze event-driven pojedyncza operacja biznesowa może przejść przez wiele usług, kilka topików Kafka, wiele baz danych oraz procesy asynchroniczne działające z opóźnieniem. Bez odpowiedniego kontekstu diagnostycznego taki system bardzo szybko staje się czarną skrzynką: wiadomo, że coś się nie udało, ale nie wiadomo gdzie, dlaczego ani który komunikat był źródłem problemu.
 

@@ -3,7 +3,7 @@ server:
 
 spring:
   application:
-    name: search-autocomplete-stage-6
+    name: search-autocomplete
 
 management:
   endpoints:
@@ -12,4 +12,12 @@ management:
         include: health,info,prometheus,metrics
   metrics:
     tags:
-      application: search-autocomplete-stage-6
+      application: search-autocomplete
+
+app:
+  privacy:
+    hmac-key: ${AUTOCOMPLETE_PRIVACY_HMAC_KEY:local-development-key-change-me}
+  security:
+    operator:
+      username: ${AUTOCOMPLETE_OPERATOR_USERNAME:operator}
+      password: ${AUTOCOMPLETE_OPERATOR_PASSWORD:{noop}change-me}

@@ -30,6 +30,29 @@ public final class Order {
         return new Order(id, customerId, currency);
     }
 
+    // Reconstitutes an aggregate from trusted persistence data without emitting new events.
+    public static Order restore(
+            OrderId id,
+            CustomerId customerId,
+            List<OrderLine> lines,
+            OrderStatus status,
+            Money persistedTotal
+    ) {
+        Order order = new Order(id, customerId, persistedTotal.currency());
+        order.lines.addAll(List.copyOf(lines));
+        order.recalculateTotal();
+
+        if (!order.total.equals(persistedTotal)) {
+            throw new IllegalStateException("Persisted total does not match order lines");
+        }
+        if (status == OrderStatus.PLACED && order.lines.isEmpty()) {
+            throw new IllegalStateException("Placed order must contain at least one line");
+        }
+
+        order.status = status;
+        return order;
+    }
+
     // Adds an order line while the aggregate is still in draft state.
     public void addLine(ProductId productId, int quantity, Money unitPrice) {
         ensureDraft();

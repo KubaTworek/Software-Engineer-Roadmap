@@ -3,6 +3,7 @@ package pl.jakubtworek.chatsystem.outbox;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.context.annotation.Profile;
 
 import java.util.List;
 
@@ -23,6 +24,7 @@ import java.util.List;
  * na powiadomienia, WebSocket broadcast albo indeksowanie search.
  */
 @Component
+@Profile("!kafka")
 public class QueuedEventWorker {
 
     /**
@@ -52,15 +54,18 @@ public class QueuedEventWorker {
      * - failed, jeśli któryś handler rzucił wyjątek.
      */
     private final OutboxEventRepository repository;
+    private final OutboxHandlerExecutor handlerExecutor;
 
     public QueuedEventWorker(
             InMemoryQueueEventBus queue,
             List<DomainEventHandler> handlers,
-            OutboxEventRepository repository
+            OutboxEventRepository repository,
+            OutboxHandlerExecutor handlerExecutor
     ) {
         this.queue = queue;
         this.handlers = handlers;
         this.repository = repository;
+        this.handlerExecutor = handlerExecutor;
     }
 
     /**
@@ -94,6 +99,7 @@ public class QueuedEventWorker {
          * Jeśli kolejka jest pusta, zwraca null.
          */
         while ((event = queue.poll()) != null && processed < 200) {
+            OutboxEvent managed = repository.findById(event.getId()).orElse(event);
             try {
                 /*
                  * Przekazujemy event do wszystkich handlerów,
@@ -110,7 +116,7 @@ public class QueuedEventWorker {
                  */
                 for (DomainEventHandler handler : handlers) {
                     if (handler.supports(event.getEventType())) {
-                        handler.handle(event);
+                        handlerExecutor.executeOnce(managed, handler);
                     }
                 }
 
@@ -118,7 +124,7 @@ public class QueuedEventWorker {
                  * Jeśli wszystkie pasujące handlery zakończyły się sukcesem,
                  * oznaczamy event jako opublikowany/przetworzony.
                  */
-                event.markPublished();
+                managed.markPublished();
 
             } catch (RuntimeException ex) {
                 /*
@@ -132,7 +138,7 @@ public class QueuedEventWorker {
                  * - osobny status dla każdego handlera,
                  * - rozdzielenie eventu na osobne kolejki konsumentów.
                  */
-                event.markFailed(ex.getMessage());
+                managed.markFailed(ex.getMessage());
             }
 
             /*
@@ -142,7 +148,7 @@ public class QueuedEventWorker {
              * które eventy zostały przetworzone,
              * a które zakończyły się błędem.
              */
-            repository.save(event);
+            repository.save(managed);
 
             processed++;
         }

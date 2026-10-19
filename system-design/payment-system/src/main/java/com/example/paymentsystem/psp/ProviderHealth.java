@@ -4,6 +4,7 @@ import com.example.paymentsystem.payment.PaymentProvider;
 import jakarta.persistence.*;
 
 import java.time.Instant;
+import java.time.Duration;
 
 @Entity
 @Table(name = "provider_health")
@@ -63,6 +64,18 @@ public class ProviderHealth {
         failureCount = 0;
         openedAt = null;
         updatedAt = Instant.now();
+    }
+
+    /** Only the caller changing OPEN to HALF_OPEN owns the single recovery probe. */
+    public boolean acquirePermission(Instant now, Duration openDuration) {
+        if (status == ProviderHealthStatus.CLOSED) return true;
+        if (status == ProviderHealthStatus.OPEN && openedAt != null
+                && !now.isBefore(openedAt.plus(openDuration))) {
+            status = ProviderHealthStatus.HALF_OPEN;
+            updatedAt = now;
+            return true;
+        }
+        return false;
     }
 
     public PaymentProvider getProvider() {

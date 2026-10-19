@@ -89,7 +89,7 @@ curl -i -X POST http://localhost:8080/orders \
 Oczekiwane statusy:
 
 - `PAID` — płatność się udała, rezerwacja została potwierdzona, event poszedł do RabbitMQ,
-- `PAYMENT_PENDING` — Payment Mock zwrócił błąd lub timeout; to będzie wejście do Fazy 3.
+- `PAYMENT_UNKNOWN` — odpowiedź Payment Mock zginęła lub przekroczyła timeout; lookup rozstrzygnie wynik bez ponownego efektu.
 
 ### 4. Sprawdzenie rezerwacji
 

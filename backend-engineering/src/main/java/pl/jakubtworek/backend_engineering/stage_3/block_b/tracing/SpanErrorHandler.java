@@ -19,7 +19,11 @@ public final class SpanErrorHandler {
         }
 
         span.recordException(throwable);
-        span.setStatus(StatusCode.ERROR, throwable.getMessage());
+        String description = throwable.getMessage();
+        if (description == null || description.isBlank()) {
+            description = throwable.getClass().getSimpleName();
+        }
+        span.setStatus(StatusCode.ERROR, description);
         span.setAttribute(TracingAttributes.ERROR_TYPE, throwable.getClass().getSimpleName());
     }
 }

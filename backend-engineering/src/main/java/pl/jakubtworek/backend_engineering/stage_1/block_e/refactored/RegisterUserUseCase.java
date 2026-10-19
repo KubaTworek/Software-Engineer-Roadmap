@@ -41,6 +41,9 @@ public final class RegisterUserUseCase {
     }
 
     private void validate(RegisterUserInput input) {
+        if (input == null) {
+            throw new ValidationException("input is required");
+        }
         if (input.username() == null || input.username().isBlank()) {
             throw new ValidationException("username is required");
         }

@@ -90,6 +90,10 @@ public class WarehouseConsumer {
          * Typ eventu, np. RideRequested, PaymentCaptured, SupportTicketCreated.
          * Jeśli producer nie doda eventType, wartość będzie null.
          */
+        String eventId = string(event.get("eventId"));
+        if (eventId == null || eventId.isBlank()) {
+            throw new IllegalArgumentException("Event envelope must contain eventId");
+        }
         String eventType = string(event.get("eventType"));
 
         /*
@@ -106,7 +110,8 @@ public class WarehouseConsumer {
          * cityId pozwala później analizować wolumen eventów per miasto.
          * Nie każdy event musi mieć cityId, dlatego dopuszczamy null.
          */
-        String cityId = string(event.get("cityId"));
+        Map<String, Object> domainPayload = payload(event);
+        String cityId = string(domainPayload.get("cityId"));
 
         /*
          * Pełny event zapisujemy jako JSON.
@@ -124,14 +129,17 @@ public class WarehouseConsumer {
         jdbc.update(
                 """
                 INSERT INTO fact_events(
+                    event_id,
                     source_topic,
                     event_type,
                     aggregate_id,
                     city_id,
                     payload
                 )
-                VALUES (?, ?, ?, ?, ?::jsonb)
+                VALUES (?, ?, ?, ?, ?, ?::jsonb)
+                ON CONFLICT (event_id) DO NOTHING
                 """,
+                eventId,
                 topic,
                 eventType,
                 aggregateId,
@@ -150,5 +158,11 @@ public class WarehouseConsumer {
      */
     private String string(Object value) {
         return value == null ? null : value.toString();
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> payload(Map<String, Object> event) {
+        Object payload = event.get("payload");
+        return payload instanceof Map<?, ?> map ? (Map<String, Object>) map : event;
     }
 }

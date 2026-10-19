@@ -1,0 +1,10 @@
+spring:
+  autoconfigure:
+    # Load test mierzy ścieżkę HTTP -> transakcja -> PostgreSQL. Redis i MongoDB
+    # nie uczestniczą w decyzji o sprzedaży miejsca, więc ich klienty wyłączamy,
+    # aby niedostępny magazyn pomocniczy nie generował szumu ani nie zniekształcał
+    # profilu CPU/połączeń badanego write pathu.
+    exclude:
+      - org.springframework.boot.mongodb.autoconfigure.MongoAutoConfiguration
+      - org.springframework.boot.data.mongodb.autoconfigure.DataMongoAutoConfiguration
+      - org.springframework.boot.data.redis.autoconfigure.DataRedisAutoConfiguration

@@ -230,6 +230,13 @@ public class SearchIndexWorker {
             return Long.valueOf(aggregateId);
         }
 
+        if ("InventoryItem".equals(aggregateType)) {
+            Long variantId = Long.valueOf(aggregateId);
+            return inventory.findByVariantId(variantId)
+                    .map(item -> item.getVariant().getProduct().getId())
+                    .orElse(null);
+        }
+
         return null;
     }
 

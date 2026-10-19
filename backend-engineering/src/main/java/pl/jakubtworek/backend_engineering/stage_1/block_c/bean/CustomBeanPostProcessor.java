@@ -18,6 +18,9 @@ import org.springframework.stereotype.Component;
 @Component
 public class CustomBeanPostProcessor implements BeanPostProcessor {
 
+    private static final String DEMO_PACKAGE =
+            "pl.jakubtworek.backend_engineering.stage_1.block_c.bean";
+
     /**
      * Called BEFORE initialization callbacks.
      */
@@ -27,7 +30,9 @@ public class CustomBeanPostProcessor implements BeanPostProcessor {
             String beanName
     ) throws BeansException {
 
-        System.out.println("Before Initialization: " + beanName);
+        if (belongsToBeanLifecycleDemo(bean)) {
+            System.out.println("Before Initialization: " + beanName);
+        }
 
         return bean;
     }
@@ -44,8 +49,14 @@ public class CustomBeanPostProcessor implements BeanPostProcessor {
             String beanName
     ) throws BeansException {
 
-        System.out.println("After Initialization: " + beanName);
+        if (belongsToBeanLifecycleDemo(bean)) {
+            System.out.println("After Initialization: " + beanName);
+        }
 
         return bean;
+    }
+
+    private boolean belongsToBeanLifecycleDemo(Object bean) {
+        return bean.getClass().getPackageName().startsWith(DEMO_PACKAGE);
     }
 }

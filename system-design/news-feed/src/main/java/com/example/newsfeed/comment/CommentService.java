@@ -3,8 +3,8 @@ package com.example.newsfeed.comment;
 import com.example.newsfeed.common.NotFoundException;
 import com.example.newsfeed.common.UnauthorizedException;
 import com.example.newsfeed.events.DomainEvent;
-import com.example.newsfeed.events.KafkaEventPublisher;
 import com.example.newsfeed.events.NewsFeedTopics;
+import com.example.newsfeed.outbox.DomainEventPublisher;
 import com.example.newsfeed.post.Post;
 import com.example.newsfeed.post.PostRepository;
 import com.example.newsfeed.user.User;
@@ -82,7 +82,7 @@ public class CommentService {
      *
      * Dlatego po utworzeniu lub usunięciu komentarza publikujemy event.
      */
-    private final KafkaEventPublisher eventPublisher;
+    private final DomainEventPublisher eventPublisher;
 
     /**
      * Wstrzyknięcie zależności przez konstruktor.
@@ -94,7 +94,7 @@ public class CommentService {
             CommentRepository commentRepository,
             PostRepository postRepository,
             UserRepository userRepository,
-            KafkaEventPublisher eventPublisher
+            DomainEventPublisher eventPublisher
     ) {
         this.commentRepository = commentRepository;
         this.postRepository = postRepository;

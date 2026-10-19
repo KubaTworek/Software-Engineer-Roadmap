@@ -6,12 +6,15 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 public interface ClickEventRepository extends JpaRepository<ClickEvent, Long> {
     long countByShortCode(String shortCode);
     boolean existsByEventId(String eventId);
     long countByShortCodeAndSuspiciousTrue(String shortCode);
     long countBySuspiciousTrue();
+    @Transactional long deleteByClickedAtBefore(Instant cutoff);
+
 
     @Query("""
         select new com.example.urlshortener.analytics.DimensionCount(coalesce(c.country, 'unknown'), count(c))

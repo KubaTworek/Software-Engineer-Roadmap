@@ -1,4 +1,20 @@
-# Metryki Prometheus w aplikacji Java
+# prometheus
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `temat-zaawansowany`
+> - **Uczy:** prometheus.
+> - **Typowy błąd:** Identyfikator użytkownika jako label metryki powodujący wysoką cardinality.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** brak jawnej roli w nazwach klas; intencję przykładu określają opis i test, nie sam brak prefiksu.
+> - **Granica:** Test eksportera lub reguły nie dowodzi dostarczenia telemetrii do wdrożonego backendu ani skuteczności reakcji operatora.
+<!-- material-card:end -->
+
+## Metryki Prometheus w aplikacji Java
+
+
 
 ## Cel dokumentu
 
@@ -113,3 +129,15 @@ Metryki Prometheus w aplikacji Java powinny być projektowane jako stabilny kont
 W `checkout-api` metryki powinny najpierw pokazywać objaw użytkownika na warstwie HTTP, a potem pozwalać zawęzić problem do cache, bazy danych, puli połączeń albo zewnętrznego providera płatności. PromQL, recording rules i exemplars tworzą nad tym warstwę interpretacji. PromQL pozwala liczyć RPS, error ratio i percentyle. Recording rules stabilizują i przyspieszają najważniejsze zapytania. Exemplars łączą agregaty metryczne z konkretnymi trace’ami bez niszczenia kardynalności.
 
 Najkrótsza praktyczna zasada brzmi: metryki mają powiedzieć, że użytkownik cierpi, gdzie cierpi i jak bardzo; trace’y oraz logi mają wyjaśnić, dlaczego. Jeżeli metryki próbują przejąć rolę trace’ów przez labelowanie `trace_id` albo `request_id`, projekt zaczyna iść w złą stronę. Jeśli jednak metryki pozostają agregatami o kontrolowanej kardynalności, a exemplars prowadzą do trace’ów, system observability staje się spójny i użyteczny podczas realnych incydentów.
+
+## Wykonywalna ochrona kardynalności
+
+`MetricCardinalityGuard` blokuje znane niebezpieczne nazwy, natomiast
+`MetricCardinalityBudget` obserwuje liczbę różnych wartości również dla pozornie
+poprawnego labela. `TelemetryPipelineTest` pokazuje, że po wyczerpaniu budżetu
+nowa trasa jest odrzucana, ale istniejąca seria nadal może być aktualizowana.
+
+Jest to lokalne zabezpieczenie awaryjne, a nie kompletna kontrola kosztu.
+Produkcyjnie nadal trzeba obserwować series count, churn, pamięć backendu i liczbę
+wartości per label. Budżet powinien także uwzględniać pełną kombinację labeli,
+nie tylko każdą etykietę osobno.

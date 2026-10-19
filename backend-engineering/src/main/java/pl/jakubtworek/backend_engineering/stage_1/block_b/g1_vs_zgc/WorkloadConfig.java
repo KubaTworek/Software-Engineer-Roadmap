@@ -9,6 +9,15 @@ public record WorkloadConfig(
         int latencyProbeSleepMillis
 ) {
 
+    public WorkloadConfig {
+        requirePositive(durationSeconds, "durationSeconds");
+        requirePositive(allocationBatchSize, "allocationBatchSize");
+        requirePositive(objectSizeBytes, "objectSizeBytes");
+        requireNonNegative(liveSetTargetMb, "liveSetTargetMb");
+        requireNonNegative(mediumLivedRetentionCycles, "mediumLivedRetentionCycles");
+        requireNonNegative(latencyProbeSleepMillis, "latencyProbeSleepMillis");
+    }
+
     public static WorkloadConfig fromArgs(String[] args) {
         // Defaults are intentionally moderate.
         // They should create visible GC activity without requiring a very large machine.
@@ -35,6 +44,8 @@ public record WorkloadConfig(
                 mediumLivedRetentionCycles = Integer.parseInt(arg.substring("--mediumLivedRetentionCycles=".length()));
             } else if (arg.startsWith("--latencyProbeSleepMillis=")) {
                 latencyProbeSleepMillis = Integer.parseInt(arg.substring("--latencyProbeSleepMillis=".length()));
+            } else {
+                throw new IllegalArgumentException("Unsupported argument: " + arg);
             }
         }
 
@@ -46,5 +57,17 @@ public record WorkloadConfig(
                 mediumLivedRetentionCycles,
                 latencyProbeSleepMillis
         );
+    }
+
+    private static void requirePositive(int value, String name) {
+        if (value <= 0) {
+            throw new IllegalArgumentException(name + " must be greater than zero");
+        }
+    }
+
+    private static void requireNonNegative(int value, String name) {
+        if (value < 0) {
+            throw new IllegalArgumentException(name + " must not be negative");
+        }
     }
 }

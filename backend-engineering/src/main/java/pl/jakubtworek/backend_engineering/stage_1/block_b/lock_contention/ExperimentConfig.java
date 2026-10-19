@@ -5,6 +5,15 @@ public record ExperimentConfig(
         int durationSecondsPerScenario
 ) {
 
+    public ExperimentConfig {
+        if (threadCount <= 0) {
+            throw new IllegalArgumentException("threadCount must be greater than zero");
+        }
+        if (durationSecondsPerScenario <= 0) {
+            throw new IllegalArgumentException("durationSecondsPerScenario must be greater than zero");
+        }
+    }
+
     public static ExperimentConfig fromArgs(String[] args) {
         // Default thread count uses available processors.
         // This usually creates enough contention to make differences visible.
@@ -20,6 +29,8 @@ public record ExperimentConfig(
                 durationSecondsPerScenario = Integer.parseInt(
                         arg.substring("--durationSecondsPerScenario=".length())
                 );
+            } else {
+                throw new IllegalArgumentException("Unsupported argument: " + arg);
             }
         }
 

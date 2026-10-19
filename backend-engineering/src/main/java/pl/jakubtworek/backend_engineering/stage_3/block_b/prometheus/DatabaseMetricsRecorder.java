@@ -5,6 +5,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 
 import java.time.Duration;
+import java.util.Locale;
 import java.util.Objects;
 
 /**
@@ -21,6 +22,7 @@ public final class DatabaseMetricsRecorder {
     public DatabaseMetricsRecorder(MeterRegistry meterRegistry, String serviceName) {
         this.meterRegistry = Objects.requireNonNull(meterRegistry, "meterRegistry must not be null");
         this.serviceName = requireNonBlank(serviceName, "serviceName");
+        MetricCardinalityGuard.validateLabelValue(MetricLabels.SERVICE, this.serviceName);
     }
 
     /**
@@ -34,8 +36,9 @@ public final class DatabaseMetricsRecorder {
             String operation,
             Duration duration
     ) {
-        String normalizedDbSystem = requireNonBlank(dbSystem, "dbSystem").toLowerCase();
-        String normalizedOperation = requireNonBlank(operation, "operation").toUpperCase();
+        validateDuration(duration);
+        String normalizedDbSystem = requireNonBlank(dbSystem, "dbSystem").toLowerCase(Locale.ROOT);
+        String normalizedOperation = requireNonBlank(operation, "operation").toUpperCase(Locale.ROOT);
 
         MetricCardinalityGuard.validateLabelValue(MetricLabels.DB_SYSTEM, normalizedDbSystem);
         MetricCardinalityGuard.validateLabelValue(MetricLabels.OPERATION, normalizedOperation);
@@ -73,5 +76,12 @@ public final class DatabaseMetricsRecorder {
             throw new IllegalArgumentException(fieldName + " must not be blank");
         }
         return value;
+    }
+
+    private static void validateDuration(Duration duration) {
+        Objects.requireNonNull(duration, "duration must not be null");
+        if (duration.isNegative()) {
+            throw new IllegalArgumentException("duration must not be negative");
+        }
     }
 }

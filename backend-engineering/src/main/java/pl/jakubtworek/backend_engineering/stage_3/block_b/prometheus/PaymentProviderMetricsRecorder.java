@@ -5,6 +5,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 
 import java.time.Duration;
+import java.util.Locale;
 import java.util.Objects;
 
 /**
@@ -21,6 +22,7 @@ public final class PaymentProviderMetricsRecorder {
     public PaymentProviderMetricsRecorder(MeterRegistry meterRegistry, String serviceName) {
         this.meterRegistry = Objects.requireNonNull(meterRegistry, "meterRegistry must not be null");
         this.serviceName = requireNonBlank(serviceName, "serviceName");
+        MetricCardinalityGuard.validateLabelValue(MetricLabels.SERVICE, this.serviceName);
     }
 
     /**
@@ -31,7 +33,9 @@ public final class PaymentProviderMetricsRecorder {
             int statusCode,
             Duration duration
     ) {
-        String normalizedProvider = requireNonBlank(provider, "provider").toLowerCase();
+        validateStatusCode(statusCode);
+        validateDuration(duration);
+        String normalizedProvider = requireNonBlank(provider, "provider").toLowerCase(Locale.ROOT);
         String statusClass = StatusClass.fromStatusCode(statusCode).labelValue();
 
         MetricCardinalityGuard.validateLabelValue(MetricLabels.PROVIDER, normalizedProvider);
@@ -59,5 +63,18 @@ public final class PaymentProviderMetricsRecorder {
             throw new IllegalArgumentException(fieldName + " must not be blank");
         }
         return value;
+    }
+
+    private static void validateStatusCode(int statusCode) {
+        if (statusCode < 100 || statusCode > 599) {
+            throw new IllegalArgumentException("statusCode must be between 100 and 599");
+        }
+    }
+
+    private static void validateDuration(Duration duration) {
+        Objects.requireNonNull(duration, "duration must not be null");
+        if (duration.isNegative()) {
+            throw new IllegalArgumentException("duration must not be negative");
+        }
     }
 }

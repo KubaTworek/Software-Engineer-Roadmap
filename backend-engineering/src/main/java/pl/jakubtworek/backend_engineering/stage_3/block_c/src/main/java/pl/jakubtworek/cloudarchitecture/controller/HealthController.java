@@ -1,8 +1,8 @@
-package pl.jakubtworek.backend_engineering.stage_3.block_c.src.main.java.pl.jakubtworek.cloudarchitecture.controller;
+package pl.jakubtworek.cloudarchitecture.controller;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import pl.jakubtworek.backend_engineering.stage_3.block_c.src.main.java.pl.jakubtworek.cloudarchitecture.service.ReadinessService;
+import pl.jakubtworek.cloudarchitecture.service.ReadinessService;
 
 import java.time.Instant;
 import java.util.Map;

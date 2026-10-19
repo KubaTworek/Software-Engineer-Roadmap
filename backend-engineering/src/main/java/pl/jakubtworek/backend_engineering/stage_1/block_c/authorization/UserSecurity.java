@@ -26,7 +26,8 @@ public class UserSecurity {
      */
     public boolean isOwner(Authentication authentication, Long orderId) {
 
-        if (authentication == null || !authentication.isAuthenticated()) {
+        if (authentication == null || !authentication.isAuthenticated()
+                || orderId == null || orderId <= 0) {
             return false;
         }
 

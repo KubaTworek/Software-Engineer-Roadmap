@@ -1,7 +1,7 @@
-package pl.jakubtworek.backend_engineering.stage_2.block_c.workshop.src.main.java.com.example.demoapi.debug;
+package com.example.demoapi.debug;
 
 import org.springframework.stereotype.Service;
-import pl.jakubtworek.backend_engineering.stage_2.block_c.workshop.src.main.java.com.example.demoapi.config.AppProperties;
+import com.example.demoapi.config.AppProperties;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;

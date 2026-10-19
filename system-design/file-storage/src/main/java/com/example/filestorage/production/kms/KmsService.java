@@ -3,7 +3,11 @@ package com.example.filestorage.production.kms;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.KeyGenerator;
+import javax.crypto.Cipher;
+import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
 import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.HexFormat;
 
@@ -16,15 +20,9 @@ import java.util.HexFormat;
  * - Azure Key Vault,
  * - HashiCorp Vault.
  *
- * Ta implementacja jest uproszczona i nadaje się głównie do local/dev/stage.
- * Generuje losowy klucz AES-256 i zwraca go jako plaintext w Base64.
- *
- * Uwaga bezpieczeństwa:
- * prawdziwy KMS zwykle zwraca:
- * - plaintext data key do jednorazowego użycia w aplikacji,
- * - encrypted data key do zapisania obok zaszyfrowanego obiektu.
- *
- * Tutaj encrypted data key nie istnieje, więc to nie jest pełny envelope encryption.
+ * Lokalny adapter realizuje semantyke envelope encryption: losowy DEK szyfruje
+ * dane, a KEK pochodzacy z master key szyfruje DEK. Produkcyjnie operacje KEK
+ * powinny zostac przeniesione do zewnetrznego KMS/HSM.
  */
 @Service
 public class KmsService {
@@ -32,13 +30,13 @@ public class KmsService {
     /**
      * Konfiguracja lokalnego KMS.
      *
-     * Zawiera masterKey, z którego w tej implementacji wyliczany jest fingerprint
-     * używany tylko do stworzenia keyId.
-     *
-     * Ten masterKey nie szyfruje tutaj data key.
-     * Jest używany wyłącznie jako materiał do identyfikatora.
+     * Zawiera lokalny masterKey, z którego SHA-256 wyprowadza 256-bitowy KEK.
+     * KEK opakowuje losowy data key; do metadanych trafia wyłącznie jego
+     * wersja/fingerprint. To model dydaktyczny: produkcyjny KEK nie powinien
+     * opuszczać KMS/HSM, a aplikacja powinna wywołać operację wrap/unwrap.
      */
     private final KmsProperties properties;
+    private final SecureRandom random = new SecureRandom();
 
     public KmsService(KmsProperties properties) {
         this.properties = properties;
@@ -52,9 +50,11 @@ public class KmsService {
      *
      * Działanie:
      * - generuje losowy klucz AES-256,
-     * - liczy fingerprint masterKey,
-     * - buduje keyId z keyPurpose i fingerprintu,
-     * - zwraca plaintext key w Base64.
+     * - wyprowadza KEK z lokalnego masterKey,
+     * - opakowuje data key przez AES-GCM z losowym IV,
+     * - buduje keyId z keyPurpose i wersji KEK,
+     * - zwraca plaintext wyłącznie do natychmiastowego szyfrowania oraz
+     *   encryptedDataKey bezpieczny do zapisania przy metadanych bloba.
      *
      * Ten data key może być później użyty np. do szyfrowania zawartości pliku
      * przed zapisem w object storage.
@@ -83,14 +83,15 @@ public class KmsService {
             byte[] plain = generator.generateKey().getEncoded();
 
             /*
-             * Fingerprint masterKey.
-             *
-             * W tej implementacji służy tylko do zbudowania identyfikatora keyId.
-             * Nie jest używany do szyfrowania wygenerowanego data key.
+             * Dydaktyczny KEK wyprowadzony z masterKey. W prawdziwym KMS ta
+             * operacja zachodzi po stronie usługi, bez ujawniania KEK aplikacji.
              */
-            byte[] masterFingerprint = MessageDigest
-                    .getInstance("SHA-256")
-                    .digest(properties.masterKey().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            byte[] kek = deriveKek(properties.masterKey());
+            byte[] iv = new byte[12];
+            random.nextBytes(iv);
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(kek, "AES"), new GCMParameterSpec(128, iv));
+            byte[] wrapped = cipher.doFinal(plain);
 
             /*
              * keyId identyfikuje logicznie, z jakiego "master key" pochodzi data key.
@@ -100,13 +101,13 @@ public class KmsService {
              */
             String keyId = keyPurpose
                     + ":"
-                    + HexFormat.of()
-                    .formatHex(masterFingerprint)
-                    .substring(0, 16);
+                    + keyVersion(properties.masterKey());
 
             return new DataKey(
                     keyId,
-                    Base64.getEncoder().encodeToString(plain)
+                    Base64.getEncoder().encodeToString(plain),
+                    Base64.getEncoder().encodeToString(concat(iv, wrapped)),
+                    keyVersion(properties.masterKey())
             );
         } catch (Exception e) {
             /*
@@ -115,6 +116,60 @@ public class KmsService {
              */
             throw new IllegalStateException("Could not generate local development data key", e);
         }
+    }
+
+    public byte[] decryptDataKey(String encryptedDataKey) {
+        return decryptDataKey(encryptedDataKey, properties.masterKey());
+    }
+
+    /**
+     * Rotacja KEK nie wymaga ponownego szyfrowania wielkiego pliku. Odszyfrowuje
+     * tylko maly DEK starym KEK i opakowuje go aktualnym KEK.
+     */
+    public RotatedDataKey rewrap(String encryptedDataKey, String previousMasterKey) {
+        try {
+            byte[] plain = decryptDataKey(encryptedDataKey, previousMasterKey);
+            byte[] iv = new byte[12];
+            random.nextBytes(iv);
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(deriveKek(properties.masterKey()), "AES"),
+                    new GCMParameterSpec(128, iv));
+            return new RotatedDataKey(
+                    Base64.getEncoder().encodeToString(concat(iv, cipher.doFinal(plain))),
+                    keyVersion(properties.masterKey()));
+        } catch (Exception exception) {
+            throw new IllegalStateException("Could not rotate encrypted data key", exception);
+        }
+    }
+
+    private byte[] decryptDataKey(String encryptedDataKey, String masterKey) {
+        try {
+            byte[] envelope = Base64.getDecoder().decode(encryptedDataKey);
+            if (envelope.length <= 12) throw new IllegalArgumentException("Invalid encrypted data key");
+            byte[] iv = java.util.Arrays.copyOfRange(envelope, 0, 12);
+            byte[] ciphertext = java.util.Arrays.copyOfRange(envelope, 12, envelope.length);
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(deriveKek(masterKey), "AES"),
+                    new GCMParameterSpec(128, iv));
+            return cipher.doFinal(ciphertext);
+        } catch (Exception exception) {
+            throw new IllegalStateException("Could not decrypt data key", exception);
+        }
+    }
+
+    private byte[] deriveKek(String masterKey) throws Exception {
+        return MessageDigest.getInstance("SHA-256")
+                .digest(masterKey.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    private String keyVersion(String masterKey) throws Exception {
+        return HexFormat.of().formatHex(deriveKek(masterKey)).substring(0, 16);
+    }
+
+    private byte[] concat(byte[] left, byte[] right) {
+        byte[] result = java.util.Arrays.copyOf(left, left.length + right.length);
+        System.arraycopy(right, 0, result, left.length, right.length);
+        return result;
     }
 
     /**
@@ -130,5 +185,7 @@ public class KmsService {
      * w produkcji plaintext key powinien żyć krótko w pamięci procesu
      * i nie powinien być zapisywany w logach, bazie ani response API.
      */
-    public record DataKey(String keyId, String base64PlaintextKey) {}
+    public record DataKey(String keyId, String base64PlaintextKey,
+                          String encryptedDataKey, String keyVersion) {}
+    public record RotatedDataKey(String encryptedDataKey, String keyVersion) {}
 }

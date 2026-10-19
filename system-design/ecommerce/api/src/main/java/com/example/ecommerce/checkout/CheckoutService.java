@@ -16,6 +16,8 @@ import com.example.ecommerce.payment.Payment;
 import com.example.ecommerce.payment.PaymentService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import io.micrometer.observation.annotation.Observed;
+import java.time.Duration;
 
 /**
  * Serwis odpowiedzialny za główny proces checkoutu.
@@ -141,6 +143,7 @@ public class CheckoutService {
      * albo przy błędzie transakcja zostanie wycofana.
      */
     @Transactional
+    @Observed(name = "ecommerce.checkout", contextualName = "checkout")
     public CheckoutDtos.CheckoutResponse checkout(
             AppUser user,
             String idempotencyKey,
@@ -153,6 +156,7 @@ public class CheckoutService {
          * także te zakończone błędem walidacji albo brakiem stocku.
          */
         metrics.checkoutStarted();
+        long startedAt = System.nanoTime();
 
         /*
          * Checkout wymaga Idempotency-Key.
@@ -199,6 +203,15 @@ public class CheckoutService {
                 requestHash
         );
 
+        if (record.getStatus() == IdempotencyStatus.PROCESSING) {
+            /*
+             * Nowy rekord również ma status PROCESSING. IdempotencyService
+             * oznacza go jednak jako świeżo utworzony przez brak identyfikatora
+             * wyniku; istniejący PROCESSING reprezentuje operację w toku.
+             */
+            idempotency.assertOwnedByCurrentAttempt(record);
+        }
+
         /*
          * Jeśli checkout z tym kluczem już zakończył się sukcesem,
          * nie tworzymy nowego zamówienia i nowej płatności.
@@ -213,6 +226,7 @@ public class CheckoutService {
             CustomerOrder existingOrder = orders.getOrderEntityForUser(user, record.getOrderId());
             Payment existingPayment = payments.getByOrderId(existingOrder.getId());
 
+            metrics.recordCheckout(Duration.ofNanos(System.nanoTime() - startedAt));
             return new CheckoutDtos.CheckoutResponse(
                     orders.toResponse(existingOrder),
                     payments.toResponse(existingPayment)
@@ -315,6 +329,7 @@ public class CheckoutService {
              * utworzeniu płatności i zapisaniu idempotencji.
              */
             metrics.checkoutSucceeded();
+            metrics.recordCheckout(Duration.ofNanos(System.nanoTime() - startedAt));
 
             return new CheckoutDtos.CheckoutResponse(
                     orders.toResponse(order),
@@ -333,7 +348,10 @@ public class CheckoutService {
              * Następnie rzucamy wyjątek dalej, żeby transakcja została wycofana
              * i żeby klient API dostał właściwy błąd.
              */
-            idempotency.fail(record);
+            // Nowo utworzony rekord należy do tej samej transakcji i zostanie
+            // wycofany razem z checkoutem. Nie zapisujemy mylącego FAILED,
+            // który obiecywałby trwały ślad mimo rollbacku całej operacji.
+            metrics.recordCheckout(Duration.ofNanos(System.nanoTime() - startedAt));
             throw ex;
         }
     }

@@ -30,12 +30,21 @@ public class Post {
     @Column(nullable = false)
     private Instant updatedAt;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 30)
+    private PostStatus status;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 30)
+    private PostVisibility visibility;
+
     private Instant deletedAt;
 
     protected Post() {
     }
 
-    public Post(UUID id, User author, String content, List<String> topics, Instant createdAt, Instant updatedAt, Instant deletedAt) {
+    public Post(UUID id, User author, String content, List<String> topics, Instant createdAt, Instant updatedAt,
+                Instant deletedAt, PostStatus status, PostVisibility visibility) {
         this.id = id;
         this.author = author;
         this.content = content;
@@ -43,6 +52,8 @@ public class Post {
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
         this.deletedAt = deletedAt;
+        this.status = status;
+        this.visibility = visibility;
     }
 
     public UUID getId() {
@@ -76,9 +87,25 @@ public class Post {
         return deletedAt;
     }
 
+    public PostStatus getStatus() { return status; }
+    public PostVisibility getVisibility() { return visibility; }
+
+    public void publish() {
+        publish(Instant.now());
+    }
+
+    public void publish(Instant now) { this.status = PostStatus.PUBLISHED; this.updatedAt = now; }
+
+    public void hide() {
+        hide(Instant.now());
+    }
+
+    public void hide(Instant now) { this.status = PostStatus.HIDDEN; this.updatedAt = now; }
+
     public void softDelete() {
         Instant now = Instant.now();
         this.deletedAt = now;
+        this.status = PostStatus.DELETED;
         this.updatedAt = now;
     }
 }

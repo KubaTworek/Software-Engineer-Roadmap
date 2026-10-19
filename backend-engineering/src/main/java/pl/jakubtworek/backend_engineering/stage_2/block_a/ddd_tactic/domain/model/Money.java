@@ -65,12 +65,12 @@ public final class Money implements ValueObject {
         if (!(other instanceof Money that)) {
             return false;
         }
-        return Objects.equals(this.amount, that.amount)
+        return this.amount.compareTo(that.amount) == 0
                 && Objects.equals(this.currency, that.currency);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(amount, currency);
+        return Objects.hash(amount.stripTrailingZeros(), currency);
     }
 }

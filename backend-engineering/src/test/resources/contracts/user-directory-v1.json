@@ -1,0 +1,17 @@
+{
+  "consumer": "checkout-service",
+  "provider": "user-directory",
+  "description": "active user required by checkout",
+  "request": {
+    "method": "GET",
+    "path": "/internal/users/42"
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "id": 42,
+      "displayName": "Ada",
+      "active": true
+    }
+  }
+}

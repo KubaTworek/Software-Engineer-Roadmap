@@ -54,7 +54,7 @@ Reset ustawień chaosowych:
 | Browse events | `load-tests/browse-events.js` | cache, read path, latency p95/p99 |
 | Create reservation | `load-tests/create-reservation.js` | write path, catalog dependency, DB writes |
 | Create order | `load-tests/create-order.js` | pełny przepływ order → reservation → payment → broker |
-| Payment timeout | `load-tests/payment-timeout.js` | timeout, retry/backoff, circuit breaker, `PAYMENT_PENDING` |
+| Payment timeout | `load-tests/payment-timeout.js` | timeout, retry/backoff, circuit breaker, `PAYMENT_UNKNOWN` i lookup |
 | Payment errors | `load-tests/payment-errors.js` | błędy downstream, circuit breaker, graceful degradation |
 | Redis down | `load-tests/redis-down.js` | fallback cache do DB i fail-open rate limitera |
 | DB slow | `load-tests/db-slow.js` | wpływ wolnej bazy na p95/p99 i downstreamy |
@@ -128,7 +128,7 @@ Bottleneckiem zwykle będzie DB rezerwacji albo zależność do katalogu. Warto 
 
 ### Create order
 
-Najbardziej wrażliwy element to płatność. Payment timeout lub błędy powinny prowadzić do degradacji `PAYMENT_PENDING`, a nie do kaskadowej awarii całego endpointu.
+Najbardziej wrażliwy element to płatność. Timeout powinien prowadzić do `PAYMENT_UNKNOWN`, lookupu i ograniczonego retry, a nie do zgadywania wyniku lub kaskadowej awarii endpointu.
 
 ### Redis down
 
@@ -155,10 +155,12 @@ load-tests/reports/*.summary.json
 load-tests/reports/*.summary.md
 ```
 
-Dodatkowo wypełnij ręcznie szablony w:
+Przed eksperymentem skopiuj odpowiedni szablon z:
 
 ```text
-docs/load-testing/results/
+docs/load-testing/templates/
 ```
 
-To jest ważniejsze niż sam wynik k6, bo uczy argumentowania decyzji technicznych.
+Wypełniony raport zapisz w `docs/load-testing/results/` pod nazwą zawierającą
+scenariusz i datę. Dzięki temu katalog wyników nie udaje dowodu, dopóki nie zawiera
+parametrów, metryk oraz wniosku z rzeczywistego przebiegu.

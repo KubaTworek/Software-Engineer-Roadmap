@@ -1,10 +1,10 @@
 package pl.jakubtworek.backend.common.web;
 
 import org.slf4j.MDC;
-import org.springframework.boot.web.reactive.function.client.WebClientCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.reactive.function.client.ClientRequest;
+import org.springframework.web.reactive.function.client.ExchangeFilterFunction;
 
 /**
  * Konfiguracja propagacji correlation ID i request ID dla wywołań wychodzących przez WebClient.
@@ -32,14 +32,15 @@ import org.springframework.web.reactive.function.client.ClientRequest;
 public class CorrelationWebClientConfig {
 
     /**
-     * Globalny customizer dla WebClient.Builder.
+     * Filtr kontraktu dla każdego WebClient.Builder udostępnianego przez moduł common.
      *
-     * Spring Boot aplikuje ten customizer do builderów WebClienta tworzonych w aplikacji.
-     * Dzięki temu nie trzeba ręcznie dodawać nagłówków korelacyjnych w każdym kliencie HTTP.
+     * Spring Boot 4 nie udostępnia dawnego WebClientCustomizer. Filtr pozostaje osobnym
+     * beanem, a OutboundHttpClientConfig składa go z technicznym connectorem w jeden
+     * kanoniczny builder. Dzięki temu nie trzeba ręcznie dodawać nagłówków w klientach.
      */
     @Bean
-    WebClientCustomizer correlationWebClientCustomizer() {
-        return builder -> builder.filter((request, next) -> {
+    ExchangeFilterFunction correlationPropagationFilter() {
+        return (request, next) -> {
             /*
              * Tworzymy kopię istniejącego requestu.
              *
@@ -61,6 +62,7 @@ public class CorrelationWebClientConfig {
              */
             String correlationId = MDC.get(CorrelationId.MDC_CORRELATION_ID);
             String requestId = MDC.get(CorrelationId.MDC_REQUEST_ID);
+            String deadline = DeadlineContext.currentHeader();
 
             /*
              * Jeśli correlationId istnieje, dodajemy go jako nagłówek HTTP do requestu wychodzącego.
@@ -81,6 +83,9 @@ public class CorrelationWebClientConfig {
             if (requestId != null && !requestId.isBlank()) {
                 mutated.header(CorrelationId.REQUEST_ID_HEADER, requestId);
             }
+            if (deadline != null) {
+                mutated.header(DeadlineContext.HEADER, deadline);
+            }
 
             /*
              * Przekazujemy zmodyfikowany request do kolejnego elementu łańcucha WebClienta.
@@ -89,6 +94,6 @@ public class CorrelationWebClientConfig {
              * do kolejnych filtrów WebClienta.
              */
             return next.exchange(mutated.build());
-        });
+        };
     }
 }

@@ -25,7 +25,22 @@ public class AuditLog {
     }
 
     public AuditLog(String message) {
+        if (message == null || message.isBlank()) {
+            throw new IllegalArgumentException("message must not be blank");
+        }
         this.message = message;
         this.createdAt = LocalDateTime.now();
+    }
+
+    public Long getId() {
+        return id;
+    }
+
+    public String getMessage() {
+        return message;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
     }
 }

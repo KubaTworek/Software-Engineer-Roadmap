@@ -30,13 +30,16 @@ public class SearchIndexService {
 
     private final OpenSearchClient client;
     private final String indexName;
+    private final boolean initializeIndex;
 
     public SearchIndexService(
             OpenSearchClient client,
-            @Value("${newsfeed.search.index:newsfeed_posts}") String indexName
+            @Value("${newsfeed.search.index:newsfeed_posts}") String indexName,
+            @Value("${newsfeed.search.initialize-index:true}") boolean initializeIndex
     ) {
         this.client = client;
         this.indexName = indexName;
+        this.initializeIndex = initializeIndex;
     }
 
     /**
@@ -49,6 +52,14 @@ public class SearchIndexService {
      */
     @PostConstruct
     public void ensureIndexExists() throws IOException {
+        /*
+         * Szybki test kontekstu nie powinien wymagać lokalnego OpenSearch.
+         * Test integracyjny może włączyć inicjalizację przy kontenerze, natomiast
+         * ta flaga rozdziela czysty wiring Springa od kontraktu infrastruktury.
+         */
+        if (!initializeIndex) {
+            return;
+        }
         BooleanResponse exists = client.indices().exists(
                 ExistsRequest.of(e -> e.index(indexName))
         );

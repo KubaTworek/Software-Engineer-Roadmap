@@ -22,6 +22,7 @@ app:
     expiration-minutes: 60
   media:
     local-dir: ./target/test-uploads
+    scanner-enabled: false
   outbox:
     batch-size: 100
     max-attempts: 5

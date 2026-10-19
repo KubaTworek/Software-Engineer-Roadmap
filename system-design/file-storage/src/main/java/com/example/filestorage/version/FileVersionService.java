@@ -11,6 +11,8 @@ import com.example.filestorage.sharing.AccessControlService;
 import com.example.filestorage.sharing.PermissionRole;
 import com.example.filestorage.sharing.ResourceType;
 import com.example.filestorage.storage.StorageService;
+import com.example.filestorage.production.processing.FileProcessingService;
+import com.example.filestorage.production.outbox.OutboxService;
 import com.example.filestorage.sync.ChangeLogService;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.data.domain.Page;
@@ -22,6 +24,8 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.InputStream;
@@ -98,6 +102,8 @@ public class FileVersionService {
      * Po zmianie aktualnej wersji pliku trzeba odświeżyć rekord w indeksie.
      */
     private final SearchIndexService searchIndexService;
+    private final FileProcessingService processingService;
+    private final OutboxService outboxService;
 
     public FileVersionService(FileVersionRepository versionRepository,
                               FileMetadataRepository fileRepository,
@@ -106,7 +112,9 @@ public class FileVersionService {
                               AccessControlService accessControlService,
                               AuditService auditService,
                               ChangeLogService changeLogService,
-                              SearchIndexService searchIndexService) {
+                              SearchIndexService searchIndexService,
+                              FileProcessingService processingService,
+                              OutboxService outboxService) {
         this.versionRepository = versionRepository;
         this.fileRepository = fileRepository;
         this.userRepository = userRepository;
@@ -115,6 +123,8 @@ public class FileVersionService {
         this.auditService = auditService;
         this.changeLogService = changeLogService;
         this.searchIndexService = searchIndexService;
+        this.processingService = processingService;
+        this.outboxService = outboxService;
     }
 
     /**
@@ -177,7 +187,7 @@ public class FileVersionService {
          * Pobieramy plik przez AccessControlService,
          * żeby jednocześnie sprawdzić istnienie pliku i uprawnienia.
          */
-        FileMetadata file = accessControlService.requireFileRole(actorUserId, fileId, PermissionRole.VIEWER);
+        FileMetadata file = accessControlService.requireDownloadableFile(actorUserId, fileId);
 
         /*
          * Wersja musi należeć do tego konkretnego fileId.
@@ -292,6 +302,7 @@ public class FileVersionService {
          * Fizyczny upload zawartości nowej wersji.
          */
         storageService.upload(objectKey, multipartFile);
+        deleteObjectAfterRollback(objectKey);
 
         /*
          * Wyliczenie kolejnego numeru wersji.
@@ -322,6 +333,7 @@ public class FileVersionService {
                 objectKey,
                 sha256
         );
+        file.quarantine();
 
         fileRepository.save(file);
         userRepository.save(owner);
@@ -343,7 +355,10 @@ public class FileVersionService {
                 "{\"versionId\":\"" + version.getId() + "\"}"
         );
 
-        searchIndexService.reindexFileAsync(file.getId());
+        searchIndexService.deleteAsync(file.getId());
+        processingService.enqueueSecurityGate(file.getId(), version.getId());
+        outboxService.enqueue("FILE_VERSION_UPLOADED", "FILE", file.getId(),
+                "{\"versionId\":\"" + version.getId() + "\"}");
 
         return new FileVersionUploadResponse(
                 FileResponse.from(file),
@@ -462,12 +477,12 @@ public class FileVersionService {
         String sha256 = sha256(multipartFile);
 
         storageService.upload(objectKey, multipartFile);
+        deleteObjectAfterRollback(objectKey);
 
         /*
          * Conflict copy to nowy plik, nie nowa wersja oryginału.
          */
-        FileMetadata conflictFile = fileRepository.save(
-                new FileMetadata(
+        FileMetadata conflictFile = new FileMetadata(
                         original.getOwnerId(),
                         original.getParentFolderId(),
                         conflictName,
@@ -476,8 +491,9 @@ public class FileVersionService {
                         multipartFile.getSize(),
                         objectKey,
                         sha256
-                )
-        );
+                );
+        conflictFile.quarantine();
+        conflictFile = fileRepository.save(conflictFile);
 
         FileVersion version = versionRepository.save(
                 new FileVersion(
@@ -513,7 +529,9 @@ public class FileVersionService {
                 "{\"sourceFileId\":\"" + original.getId() + "\"}"
         );
 
-        searchIndexService.reindexFileAsync(conflictFile.getId());
+        processingService.enqueueSecurityGate(conflictFile.getId(), version.getId());
+        outboxService.enqueue("FILE_CONFLICT_COPY_UPLOADED", "FILE", conflictFile.getId(),
+                "{\"versionId\":\"" + version.getId() + "\"}");
 
         return new FileVersionUploadResponse(
                 FileResponse.from(conflictFile),
@@ -550,6 +568,17 @@ public class FileVersionService {
         return parentFolderId == null
                 ? fileRepository.existsByOwnerIdAndParentFolderIdIsNullAndNameAndDeletedAtIsNull(ownerId, name)
                 : fileRepository.existsByOwnerIdAndParentFolderIdAndNameAndDeletedAtIsNull(ownerId, parentFolderId, name);
+    }
+
+    private void deleteObjectAfterRollback(String objectKey) {
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (status != STATUS_COMMITTED) {
+                    storageService.delete(objectKey);
+                }
+            }
+        });
     }
 
     /**

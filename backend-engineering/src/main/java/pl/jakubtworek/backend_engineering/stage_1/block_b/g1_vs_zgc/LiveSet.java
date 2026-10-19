@@ -9,6 +9,9 @@ public final class LiveSet {
     private final List<Payload> retainedObjects = new ArrayList<>();
 
     public LiveSet(int targetMb) {
+        if (targetMb < 0) {
+            throw new IllegalArgumentException("targetMb must not be negative");
+        }
         this.targetMb = targetMb;
     }
 
@@ -18,6 +21,10 @@ public final class LiveSet {
         //
         // For G1, a large live set can increase marking and evacuation pressure.
         // For ZGC, a large live set is expected, but concurrent work and memory overhead still matter.
+        if (objectSizeBytes <= 0) {
+            throw new IllegalArgumentException("objectSizeBytes must be greater than zero");
+        }
+
         long targetBytes = targetMb * 1024L * 1024L;
         long currentBytes = (long) retainedObjects.size() * objectSizeBytes;
 

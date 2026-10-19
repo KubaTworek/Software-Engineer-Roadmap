@@ -11,6 +11,8 @@ public record CreatePostRequest(
         String content,
 
         @Size(max = 10)
-        List<@Size(max = 50) String> topics
+        List<@Size(max = 50) String> topics,
+
+        PostVisibility visibility
 ) {
 }

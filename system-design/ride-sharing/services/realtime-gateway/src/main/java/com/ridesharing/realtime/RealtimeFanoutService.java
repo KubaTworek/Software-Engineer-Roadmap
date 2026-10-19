@@ -68,16 +68,18 @@ public class RealtimeFanoutService {
             String rideId,
             Map<String, Object> payload
     ) {
-        messagingTemplate.convertAndSend(
-                "/topic/rides/" + rideId,
-                new RealtimeEvent(
-                        "RIDE_EVENT",
-                        rideId,
-                        city(payload),
-                        payload,
-                        Instant.now()
-                )
+        var event = new RealtimeEvent(
+                "RIDE_EVENT",
+                rideId,
+                city(payload),
+                payload,
+                Instant.now()
         );
+
+        // Przejazd nie jest publicznym kanałem. Event trafia wyłącznie do
+        // prywatnych kolejek uczestników wskazanych przez domenę.
+        sendToParticipant(payload.get("passengerUsername"), event);
+        sendToParticipant(payload.get("driverUsername"), event);
     }
 
     /**
@@ -124,5 +126,11 @@ public class RealtimeFanoutService {
         return value == null
                 ? "unknown"
                 : value.toString();
+    }
+
+    private void sendToParticipant(Object username, RealtimeEvent event) {
+        if (username != null && !username.toString().isBlank()) {
+            messagingTemplate.convertAndSendToUser(username.toString(), "/queue/rides", event);
+        }
     }
 }

@@ -59,6 +59,8 @@ public class DeadlockingAccount {
     private void sleep(long ms) {
         try {
             Thread.sleep(ms);
-        } catch (InterruptedException ignored) {}
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+        }
     }
 }

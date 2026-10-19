@@ -2,6 +2,7 @@ package com.example.filestorage.storage;
 
 import io.minio.*;
 import io.minio.http.Method;
+import io.minio.messages.Item;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -9,6 +10,7 @@ import java.io.InputStream;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.ArrayList;
 
 /**
  * Serwis odpowiedzialny za fizyczną komunikację z object storage.
@@ -186,6 +188,70 @@ public class StorageService {
             throw new IllegalStateException("Could not stat object in object storage", e);
         }
     }
+
+    /** Pobiera zakres bez przesylania i odrzucania calego prefiksu obiektu. */
+    public InputStream downloadRange(String objectKey, long offset, long length) {
+        if (offset < 0 || length <= 0) {
+            throw new IllegalArgumentException("Invalid object byte range");
+        }
+        try {
+            return minioClient.getObject(GetObjectArgs.builder()
+                    .bucket(properties.bucket()).object(objectKey)
+                    .offset(offset).length(length).build());
+        } catch (Exception exception) {
+            throw new IllegalStateException("Could not download object range", exception);
+        }
+    }
+
+    /**
+     * Sprawdza istnienie obiektu bez pobierania jego tresci. Brak obiektu jest
+     * zwyklym wynikiem rekoncyliacji, ale blad sieci lub autoryzacji pozostaje
+     * wyjatkiem -- nie wolno pomylic awarii storage z utrata danych.
+     */
+    public boolean exists(String objectKey) {
+        try {
+            minioClient.statObject(StatObjectArgs.builder()
+                    .bucket(properties.bucket())
+                    .object(objectKey)
+                    .build());
+            return true;
+        } catch (io.minio.errors.ErrorResponseException exception) {
+            if ("NoSuchKey".equals(exception.errorResponse().code())) {
+                return false;
+            }
+            throw new IllegalStateException("Could not check object in object storage", exception);
+        } catch (Exception exception) {
+            throw new IllegalStateException("Could not check object in object storage", exception);
+        }
+    }
+
+    /** Zwraca ograniczona probke kluczy; produkcyjny skan musi byc stronicowany. */
+    public List<String> listObjectKeys(String prefix, int limit) {
+        return listObjects(prefix, limit).stream().map(ObjectSummary::key).toList();
+    }
+
+    public List<ObjectSummary> listObjects(String prefix, int limit) {
+        try {
+            List<ObjectSummary> objects = new ArrayList<>();
+            Iterable<Result<Item>> results = minioClient.listObjects(ListObjectsArgs.builder()
+                    .bucket(properties.bucket())
+                    .prefix(prefix)
+                    .recursive(true)
+                    .build());
+            for (Result<Item> result : results) {
+                Item item = result.get();
+                objects.add(new ObjectSummary(item.objectName(), item.lastModified().toInstant(), item.size()));
+                if (objects.size() >= Math.max(1, limit)) {
+                    break;
+                }
+            }
+            return List.copyOf(objects);
+        } catch (Exception exception) {
+            throw new IllegalStateException("Could not list object storage", exception);
+        }
+    }
+
+    public record ObjectSummary(String key, java.time.Instant lastModified, long sizeBytes) {}
 
     /**
      * Składa wiele obiektów źródłowych w jeden finalny obiekt.

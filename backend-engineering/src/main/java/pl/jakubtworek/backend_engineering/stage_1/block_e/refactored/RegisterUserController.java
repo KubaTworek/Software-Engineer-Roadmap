@@ -1,4 +1,3 @@
-// src/main/java/com/example/registration/api/RegisterUserController.java
 package pl.jakubtworek.backend_engineering.stage_1.block_e.refactored;
 
 import org.springframework.http.HttpStatus;
@@ -8,7 +7,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/users")
+@RequestMapping("/refactored/users")
 public class RegisterUserController {
 
     private final RegisterUserUseCase useCase;

@@ -161,6 +161,16 @@ public class Event {
      * Dzięki temu nowy Event od razu jest w sensownym stanie.
      */
     public Event(Organization organization, String name, String city, String category, OffsetDateTime startsAt) {
+        this(organization, name, city, category, startsAt, Instant.now());
+    }
+
+    /**
+     * Wariant używany przez warstwę aplikacyjną. Jawny czas pozwala oprzeć
+     * decyzję biznesową na wstrzykniętym {@link java.time.Clock}, a w teście
+     * odtworzyć dokładnie tę samą historię bez oczekiwania na zegar systemowy.
+     */
+    public Event(Organization organization, String name, String city, String category,
+                 OffsetDateTime startsAt, Instant createdAt) {
         this.id = UUID.randomUUID();
         this.organization = organization;
         this.name = name;
@@ -168,12 +178,10 @@ public class Event {
         this.category = category;
         this.startsAt = startsAt;
         this.status = EventStatus.PUBLISHED;
-        this.createdAt = Instant.now();
+        this.createdAt = createdAt;
     }
 
     /**
-     * Gettery są potrzebne dla mapowania DTO i logiki aplikacyjnej.
-     *
      * Brak setterów jest świadomą decyzją:
      * encja nie jest dowolnie modyfikowalnym workiem na dane.
      *

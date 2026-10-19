@@ -1,4 +1,20 @@
-# Alerting i runbooki w systemie observability
+# alerts
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `temat-zaawansowany`
+> - **Uczy:** alerts.
+> - **Typowy błąd:** Alert na pojedynczy skok CPU bez powiązania z wpływem na SLO.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** brak jawnej roli w nazwach klas; intencję przykładu określają opis i test, nie sam brak prefiksu.
+> - **Granica:** Test eksportera lub reguły nie dowodzi dostarczenia telemetrii do wdrożonego backendu ani skuteczności reakcji operatora.
+<!-- material-card:end -->
+
+## Alerting i runbooki w systemie observability
+
+
 
 ## Cel dokumentu
 

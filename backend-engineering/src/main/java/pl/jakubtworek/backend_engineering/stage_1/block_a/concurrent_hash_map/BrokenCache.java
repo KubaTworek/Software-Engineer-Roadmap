@@ -56,8 +56,10 @@ public class BrokenCache {
     private void sleep(long ms) {
         try {
             Thread.sleep(ms);
-        } catch (InterruptedException ignored) {
-            // interruption ignored for simplicity
+        } catch (InterruptedException interrupted) {
+            // The cache race is intentional; losing the cancellation signal is not.
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("cache computation interrupted", interrupted);
         }
     }
 }

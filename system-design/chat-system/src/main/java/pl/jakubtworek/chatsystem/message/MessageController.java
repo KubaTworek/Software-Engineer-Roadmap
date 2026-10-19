@@ -1,12 +1,10 @@
 package pl.jakubtworek.chatsystem.message;
 
 import jakarta.validation.Valid;
-import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import pl.jakubtworek.chatsystem.auth.UserPrincipal;
 
-import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -91,12 +89,10 @@ public class MessageController {
     public MessagePageResponse getMessages(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID conversationId,
-            @RequestParam(required = false)
-            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
-            Instant before,
+            @RequestParam(required = false) Long beforeSequence,
             @RequestParam(defaultValue = "50") int limit
     ) {
-        return messageService.getMessages(principal.id(), conversationId, before, limit);
+        return messageService.getMessages(principal.id(), conversationId, beforeSequence, limit);
     }
 
     /**
@@ -119,12 +115,24 @@ public class MessageController {
     public List<MessageResponse> getMessagesSince(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID conversationId,
-            @RequestParam
-            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
-            Instant after,
+            @RequestHeader(value = "X-Device-Id", defaultValue = "default-device") String deviceId,
+            @RequestParam(defaultValue = "0") long afterSequence,
             @RequestParam(defaultValue = "100") int limit
     ) {
-        return messageService.getMessagesSince(principal.id(), conversationId, after, limit);
+        return messageService.getMessagesSince(principal.id(), deviceId, conversationId, afterSequence, limit);
+    }
+
+    @PatchMapping("/{messageId}")
+    public MessageResponse editMessage(@AuthenticationPrincipal UserPrincipal principal,
+                                       @PathVariable UUID conversationId, @PathVariable UUID messageId,
+                                       @Valid @RequestBody EditMessageRequest request) {
+        return messageService.editMessage(principal.id(), conversationId, messageId, request);
+    }
+
+    @DeleteMapping("/{messageId}")
+    public MessageResponse deleteMessage(@AuthenticationPrincipal UserPrincipal principal,
+                                         @PathVariable UUID conversationId, @PathVariable UUID messageId) {
+        return messageService.deleteMessage(principal.id(), conversationId, messageId);
     }
 
     /**

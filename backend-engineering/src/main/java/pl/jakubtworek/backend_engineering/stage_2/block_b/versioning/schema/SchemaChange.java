@@ -12,6 +12,15 @@ public record SchemaChange(
         boolean hasDefaultValue,
         boolean optional
 ) {
+    public SchemaChange {
+        if (fieldName == null || fieldName.isBlank()) {
+            throw new IllegalArgumentException("Schema field name cannot be empty");
+        }
+        if (changeType == null) {
+            throw new IllegalArgumentException("Schema change type is required");
+        }
+    }
+
     /**
      * Returns true when the change is usually safe for compatible evolution.
      *

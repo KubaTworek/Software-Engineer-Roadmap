@@ -4,8 +4,8 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
-import pl.jakubtworek.marketplace.catalog.domain.ProductId;
 import pl.jakubtworek.marketplace.ordering.application.OrderRepository;
+import pl.jakubtworek.marketplace.ordering.application.ConcurrentOrderModificationException;
 import pl.jakubtworek.marketplace.ordering.domain.CustomerId;
 import pl.jakubtworek.marketplace.ordering.domain.Order;
 import pl.jakubtworek.marketplace.ordering.domain.OrderId;
@@ -48,7 +48,9 @@ public class JdbcOrderRepository implements OrderRepository {
      * - ordering.orders jako nagłówek zamówienia,
      * - ordering.order_lines jako linie zamówienia.
      *
-     * Używamy UPSERT-a dla tabeli orders.
+     * Nowy agregat jest wstawiany, a istniejący aktualizowany warunkowo po wersji.
+     * Zwykły UPSERT byłby tu błędem: dwa równoległe handlery mogłyby odczytać ten
+     * sam stan i ostatni zapis wymazałby rezultat pierwszego (lost update).
      * Linie zamówienia są usuwane i wstawiane ponownie, ponieważ w obecnym modelu
      * lista linii jest niemutowalna po utworzeniu zamówienia.
      *
@@ -57,7 +59,8 @@ public class JdbcOrderRepository implements OrderRepository {
     @Override
     @Transactional
     public Order save(Order order) {
-        jdbcTemplate.update("""
+        if (order.version() < 0) {
+            jdbcTemplate.update("""
                 INSERT INTO ordering.orders (
                     id,
                     customer_id,
@@ -65,22 +68,34 @@ public class JdbcOrderRepository implements OrderRepository {
                     payment_reserved,
                     stock_reserved,
                     created_at,
-                    updated_at
+                    updated_at,
+                    version
                 )
-                VALUES (?, ?, ?, ?, ?, now(), now())
-                ON CONFLICT (id) DO UPDATE SET
-                    customer_id = EXCLUDED.customer_id,
-                    status = EXCLUDED.status,
-                    payment_reserved = EXCLUDED.payment_reserved,
-                    stock_reserved = EXCLUDED.stock_reserved,
-                    updated_at = now()
+                VALUES (?, ?, ?, ?, ?, now(), now(), 0)
                 """,
                 order.id().value(),
                 order.customerId().value(),
                 order.status().name(),
                 order.paymentReserved(),
-                order.stockReserved()
-        );
+                    order.stockReserved()
+            );
+            order.markPersisted(0L);
+        } else {
+            long expectedVersion = order.version();
+            int updated = jdbcTemplate.update("""
+                    UPDATE ordering.orders
+                    SET customer_id = ?, status = ?, payment_reserved = ?, stock_reserved = ?,
+                        updated_at = now(), version = version + 1
+                    WHERE id = ? AND version = ?
+                    """,
+                    order.customerId().value(), order.status().name(), order.paymentReserved(),
+                    order.stockReserved(), order.id().value(), expectedVersion
+            );
+            if (updated != 1) {
+                throw new ConcurrentOrderModificationException(order.id(), expectedVersion);
+            }
+            order.markPersisted(expectedVersion + 1);
+        }
 
         jdbcTemplate.update(
                 "DELETE FROM ordering.order_lines WHERE order_id = ?",
@@ -103,7 +118,7 @@ public class JdbcOrderRepository implements OrderRepository {
                     """,
                     order.id().value(),
                     lineNumber++,
-                    line.productId().value(),
+                    line.productId(),
                     line.quantity(),
                     line.unitPrice().amount(),
                     line.unitPrice().currency().getCurrencyCode()
@@ -131,7 +146,8 @@ public class JdbcOrderRepository implements OrderRepository {
                             customer_id,
                             status,
                             payment_reserved,
-                            stock_reserved
+                            stock_reserved,
+                            version
                         FROM ordering.orders
                         WHERE id = ?
                         """,
@@ -140,7 +156,8 @@ public class JdbcOrderRepository implements OrderRepository {
                         rs.getObject("customer_id", UUID.class),
                         rs.getString("status"),
                         rs.getBoolean("payment_reserved"),
-                        rs.getBoolean("stock_reserved")
+                        rs.getBoolean("stock_reserved"),
+                        rs.getLong("version")
                 ),
                 id.value()
         );
@@ -162,7 +179,7 @@ public class JdbcOrderRepository implements OrderRepository {
                         ORDER BY line_number ASC
                         """,
                 (rs, rowNum) -> new OrderLine(
-                        ProductId.of(rs.getObject("product_id", UUID.class)),
+                        rs.getObject("product_id", UUID.class),
                         rs.getInt("quantity"),
                         Money.of(
                                 rs.getBigDecimal("unit_amount"),
@@ -178,7 +195,8 @@ public class JdbcOrderRepository implements OrderRepository {
                 lines,
                 OrderStatus.valueOf(header.status()),
                 header.paymentReserved(),
-                header.stockReserved()
+                header.stockReserved(),
+                header.version()
         );
 
         return Optional.of(order);
@@ -195,7 +213,8 @@ public class JdbcOrderRepository implements OrderRepository {
             UUID customerId,
             String status,
             boolean paymentReserved,
-            boolean stockReserved
+            boolean stockReserved,
+            long version
     ) {
     }
 }

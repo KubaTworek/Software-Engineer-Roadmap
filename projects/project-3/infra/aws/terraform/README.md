@@ -35,6 +35,7 @@ Internet
 - CloudWatch log groups.
 - ECS Service Auto Scaling based on CPU.
 - RDS automated backups.
+- Secrets Manager injection to ECS with a narrowly scoped execution role.
 
 ## Prerequisites
 
@@ -72,6 +73,11 @@ Set strong values for:
 database_password = "..."
 mq_password       = "..."
 ```
+
+Te wartości nadal znajdują się w stanie Terraform, dlatego stan jest danymi poufnymi.
+Dla współdzielonego środowiska skopiuj `backend.tf.example` do `backend.tf`, ustaw własny
+zaszyfrowany bucket z wersjonowaniem i wykonaj ponownie `terraform init -migrate-state`.
+Nie commituj ani `backend.tf` z nazwą firmowego bucketa, ani lokalnego `terraform.tfstate`.
 
 Initialize and create ECR repositories first:
 
@@ -148,7 +154,8 @@ RDS automated backups are enabled. A restore runbook is included in `docs/cloud/
 ## Known limitations
 
 - HTTP only. Add HTTPS with ACM before exposing anything serious.
-- Secrets are plain Terraform variables and ECS environment variables. Use Secrets Manager for a more mature setup.
+- Sekrety są wstrzykiwane z Secrets Manager, ale wejściowe wartości i tak są chronione
+  dopiero przez szyfrowany, ograniczony IAM-em remote state; przykład backendu wymaga konfiguracji.
 - One shared RDS database is used to reduce cost.
 - Redis and RabbitMQ are single-node/single-instance.
 - Observability is mostly CloudWatch in this stack. The local Grafana/Tempo/Loki stack is not deployed to AWS here.

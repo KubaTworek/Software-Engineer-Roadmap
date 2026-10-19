@@ -1,5 +1,7 @@
 package pl.jakubtworek.backend_engineering.stage_1.block_c.authorization;
 
+import jakarta.validation.Valid;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -21,16 +23,16 @@ public class AuthController {
     /**
      * User logs in and receives access token + refresh token.
      */
-    @PostMapping("/login")
-    public TokenResponse login(@RequestBody LoginRequest request) {
+    @PostMapping(value = "/login", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public TokenResponse login(@Valid @RequestBody LoginRequest request) {
         return authService.login(request);
     }
 
     /**
      * Client exchanges refresh token for new tokens.
      */
-    @PostMapping("/refresh")
-    public TokenResponse refresh(@RequestBody RefreshTokenRequest request) {
+    @PostMapping(value = "/refresh", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public TokenResponse refresh(@Valid @RequestBody RefreshTokenRequest request) {
         return authService.refresh(request);
     }
 }

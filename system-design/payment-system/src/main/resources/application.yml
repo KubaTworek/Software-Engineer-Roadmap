@@ -1,18 +1,23 @@
 spring:
   application:
-    name: payment-system-stage-6
+    name: payment-system
   datasource:
-    url: jdbc:h2:mem:payments;MODE=PostgreSQL;DATABASE_TO_UPPER=false
+    url: jdbc:h2:mem:payments;MODE=PostgreSQL
     username: sa
     password:
     driver-class-name: org.h2.Driver
+  sql:
+    init:
+      # Schemat edukacyjnego środowiska H2 jest źródłem definicji tabel. Jawne
+      # `always` nie uzależnia testów od heurystyki rozpoznawania embedded DB.
+      mode: never
   jpa:
     hibernate:
       ddl-auto: validate
     open-in-view: false
   h2:
     console:
-      enabled: true
+      enabled: false
       path: /h2-console
 
 management:
@@ -23,14 +28,27 @@ management:
 
 payment-system:
   webhooks:
-    mock-secret: stage-6-demo-secret
+    mock-secret: ${PAYMENT_WEBHOOK_SECRET:local-only-webhook-secret}
+    # Poprzedni sekret pozostaje akceptowany wyłącznie podczas kontrolowanego
+    # okna rotacji. Nowe podpisy zawsze powstają kluczem bieżącym.
+    previous-secret: ${PAYMENT_WEBHOOK_PREVIOUS_SECRET:}
   circuit-breaker:
     failure-threshold: 3
+    open-duration: PT30S
   risk:
     high-risk-threshold: 80
     review-threshold: 50
   fx:
     settlement-currency: PLN
+  security:
+    operator-password: ${PAYMENT_OPERATOR_PASSWORD:change-me-locally}
+    admin-password: ${PAYMENT_ADMIN_PASSWORD:change-me-locally}
+    allowed-origin: ${PAYMENT_ALLOWED_ORIGIN:http://localhost:3000}
+  approval:
+    # Kwoty są zapisane w minor units. Progi są dydaktyczne, a w produkcji
+    # powinny zależeć także od waluty, roli, merchanta i dziennej ekspozycji.
+    refund-threshold: 100000
+    payout-threshold: 500000
 
 springdoc:
   swagger-ui:

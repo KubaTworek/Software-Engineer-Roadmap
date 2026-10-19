@@ -10,6 +10,7 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.util.Map;
 
@@ -32,7 +33,8 @@ public class RabbitMqConfig {
     @Bean
     SimpleRabbitListenerContainerFactory rabbitListenerContainerFactory(
         ConnectionFactory connectionFactory,
-        Jackson2JsonMessageConverter converter
+        Jackson2JsonMessageConverter converter,
+        @Value("${app.queue.enabled:true}") boolean queueEnabled
     ) {
         SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
         factory.setConnectionFactory(connectionFactory);
@@ -40,6 +42,9 @@ public class RabbitMqConfig {
         factory.setConcurrentConsumers(2);
         factory.setMaxConcurrentConsumers(8);
         factory.setDefaultRequeueRejected(false);
+        // Wyłączony adapter kolejki nie może próbować łączyć się z brokerem.
+        // Fast tests sprawdzają wtedy HTTP i source of truth bez ukrytej infrastruktury.
+        factory.setAutoStartup(queueEnabled);
         return factory;
     }
 

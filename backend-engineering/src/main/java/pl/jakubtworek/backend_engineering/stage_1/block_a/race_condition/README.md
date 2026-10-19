@@ -1,3 +1,17 @@
+# Race condition i utrata aktualizacji
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** Race condition i utrata aktualizacji.
+> - **Typowy błąd:** Traktowanie read-modify-write jako jednej atomowej operacji.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=TicketStoreConcurrencyTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** `BrokenTicketStore` = `naive`; `AtomicTicketStore` = `correct`.
+> - **Granica:** Test kontroluje wybrany przeplot w JVM; pojedyncze uruchomienie nie dowodzi wszystkich zachowań dopuszczonych przez JMM ani wydajności pod obciążeniem.
+<!-- material-card:end -->
+
 Współbieżność i kontrola dostępu do współdzielonego stanu w Javie
 ==================================================
 

@@ -6,6 +6,9 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.LongAdder;
+import java.time.Clock;
+import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.NavigableMap;
 
 /**
  * Serwis prognozowania popytu na przejazdy.
@@ -40,7 +43,13 @@ public class DemandPredictionService {
      * Ważne: to jest pamięć lokalna procesu.
      * Po restarcie dane znikną, a przy wielu instancjach każda instancja będzie miała własne liczniki.
      */
-    private final Map<String, LongAdder> recentRequests = new ConcurrentHashMap<>();
+    private static final long WINDOW_MINUTES = 15;
+    private final Map<String, NavigableMap<Long, LongAdder>> recentRequests = new ConcurrentHashMap<>();
+    private final Clock clock;
+
+    public DemandPredictionService(Clock clock) {
+        this.clock = clock;
+    }
 
     /**
      * Zwraca prognozę popytu dla miasta i opcjonalnej komórki H3.
@@ -72,9 +81,7 @@ public class DemandPredictionService {
          * Uwaga: new LongAdder() w getOrDefault nie zapisuje nic do mapy.
          * To tylko bezpieczny sposób zwrócenia 0, gdy klucz nie istnieje.
          */
-        double recent = recentRequests
-                .getOrDefault(key, new LongAdder())
-                .sum();
+        double recent = recent(key);
 
         /*
          * Bazowy popyt per miasto.
@@ -131,7 +138,7 @@ public class DemandPredictionService {
                         "horizonFactor", horizonFactor
                 ),
 
-                Instant.now()
+                clock.instant()
         );
     }
 
@@ -151,16 +158,31 @@ public class DemandPredictionService {
          * Uwaga: jeśli h3Cell jest null, klucz będzie miał postać cityId:null.
          * Warto to doprecyzować produkcyjnie, żeby nie mieszać null z realną komórką.
          */
-        recentRequests
-                .computeIfAbsent(cityId + ":" + h3Cell, k -> new LongAdder())
-                .increment();
+        increment(cityId + ":" + (h3Cell == null ? "city" : h3Cell));
 
         /*
          * Licznik agregatu miejskiego.
          */
-        recentRequests
-                .computeIfAbsent(cityId + ":city", k -> new LongAdder())
-                .increment();
+        if (h3Cell != null) {
+            increment(cityId + ":city");
+        }
+    }
+
+    private void increment(String key) {
+        long minute = clock.instant().getEpochSecond() / 60;
+        var buckets = recentRequests.computeIfAbsent(key, ignored -> new ConcurrentSkipListMap<>());
+        buckets.computeIfAbsent(minute, ignored -> new LongAdder()).increment();
+        buckets.headMap(minute - WINDOW_MINUTES + 1, false).clear();
+    }
+
+    private long recent(String key) {
+        long minute = clock.instant().getEpochSecond() / 60;
+        var buckets = recentRequests.get(key);
+        if (buckets == null) {
+            return 0;
+        }
+        buckets.headMap(minute - WINDOW_MINUTES + 1, false).clear();
+        return buckets.values().stream().mapToLong(LongAdder::sum).sum();
     }
 
     /**

@@ -4,6 +4,9 @@ import java.util.concurrent.*;
 
 public class ExecutorConfigurations {
 
+    private ExecutorConfigurations() {
+    }
+
     /**
      * Cached thread pool
      *
@@ -43,6 +46,7 @@ public class ExecutorConfigurations {
      *   the queue can grow indefinitely and eventually cause OutOfMemoryError.
      */
     public static ExecutorService fixedPool(int size) {
+        requirePositive(size, "size");
         return Executors.newFixedThreadPool(size);
     }
 
@@ -66,6 +70,8 @@ public class ExecutorConfigurations {
             int core,
             int max,
             int queueCapacity) {
+
+        validatePoolConfiguration(core, max, queueCapacity);
 
         return new ThreadPoolExecutor(
                 core,
@@ -100,6 +106,8 @@ public class ExecutorConfigurations {
             int max,
             int queueCapacity) {
 
+        validatePoolConfiguration(core, max, queueCapacity);
+
         return new ThreadPoolExecutor(
                 core,
                 max,
@@ -108,5 +116,20 @@ public class ExecutorConfigurations {
                 new ArrayBlockingQueue<>(queueCapacity),
                 new ThreadPoolExecutor.CallerRunsPolicy() // caller executes task when overloaded
         );
+    }
+
+    private static void validatePoolConfiguration(int core, int max, int queueCapacity) {
+        requirePositive(core, "core");
+        requirePositive(max, "max");
+        requirePositive(queueCapacity, "queueCapacity");
+        if (max < core) {
+            throw new IllegalArgumentException("max must be greater than or equal to core");
+        }
+    }
+
+    private static void requirePositive(int value, String name) {
+        if (value <= 0) {
+            throw new IllegalArgumentException(name + " must be greater than zero");
+        }
     }
 }

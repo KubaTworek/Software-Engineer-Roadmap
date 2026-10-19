@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.Optional;
 import java.util.UUID;
+import java.util.List;
 
 public interface FileVersionRepository extends JpaRepository<FileVersion, UUID> {
     Page<FileVersion> findAllByFileIdOrderByVersionNumberDesc(UUID fileId, Pageable pageable);
@@ -15,4 +16,7 @@ public interface FileVersionRepository extends JpaRepository<FileVersion, UUID> 
 
     @Query("select coalesce(max(v.versionNumber), 0) from FileVersion v where v.fileId = :fileId")
     int maxVersionNumber(@Param("fileId") UUID fileId);
+
+    @Query("select distinct v.objectKey from FileVersion v")
+    List<String> findAllReferencedObjectKeys();
 }

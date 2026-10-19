@@ -33,4 +33,16 @@ class UrlValidatorTest {
     void rejectsUrlWithUserInfo() {
         assertThatThrownBy(() -> validator.validatePublicHttpUrl("https://user:pass@example.com")).isInstanceOf(InvalidUrlException.class);
     }
+
+    @Test
+    void rejectsIpv6Loopback() {
+        assertThatThrownBy(() -> validator.validatePublicHttpUrl("http://[::1]/admin"))
+                .isInstanceOf(InvalidUrlException.class);
+    }
+
+    @Test
+    void rejectsCloudMetadataLinkLocalAddress() {
+        assertThatThrownBy(() -> validator.validatePublicHttpUrl("http://169.254.169.254/latest/meta-data"))
+                .isInstanceOf(InvalidUrlException.class);
+    }
 }

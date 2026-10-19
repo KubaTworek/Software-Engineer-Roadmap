@@ -9,6 +9,7 @@ package pl.jakubtworek.backend_engineering.stage_1.block_c.mvc;
 public record UserResponse(
         Long id,
         String username,
-        String email
+        String email,
+        long version
 ) {
 }

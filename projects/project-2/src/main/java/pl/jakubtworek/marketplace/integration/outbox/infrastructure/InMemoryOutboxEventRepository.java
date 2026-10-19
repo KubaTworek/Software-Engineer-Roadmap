@@ -105,6 +105,20 @@ public class InMemoryOutboxEventRepository implements OutboxEventRepository {
     }
 
     /**
+     * Synchronized jest tu istotą przykładu, nie rekomendacją dla klastra. Zapewnia
+     * atomowość „wybierz i oznacz” wyłącznie w jednym JVM; odpowiednikiem dla wielu
+     * instancji jest bazodanowe SKIP LOCKED w adapterze JDBC.
+     */
+    @Override
+    public synchronized List<OutboxEvent> claimNew(int limit) {
+        List<OutboxEvent> claimed = findByStatus(OutboxEventStatus.NEW, limit).stream()
+                .map(OutboxEvent::markProcessing)
+                .toList();
+        claimed.forEach(event -> events.put(event.id(), event));
+        return claimed;
+    }
+
+    /**
      * Oznacza event jako opublikowany.
      *
      * Jeśli event nie istnieje, metoda nic nie robi.

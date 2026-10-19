@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -49,6 +50,7 @@ public class IdempotencyService {
      * - deserializacji zapisanej odpowiedzi przy ponowionym requestcie.
      */
     private final ObjectMapper objectMapper;
+    private final IdempotencyClaimService claims;
 
     /**
      * Wykonuje operację z obsługą idempotencji.
@@ -67,7 +69,6 @@ public class IdempotencyService {
      *
      * Dzięki temu ponowienie identycznego requestu nie tworzy drugiego skutku ubocznego.
      */
-    @Transactional
     public <T> T execute(
             String key,
             AppUser user,
@@ -107,6 +108,7 @@ public class IdempotencyService {
          * bez konfliktu między sobą.
          */
         var existing = repository.findByKeyAndUserIdAndEndpoint(key, user.getId(), endpoint);
+        UUID claimId;
 
         if (existing.isPresent()) {
             var idem = existing.get();
@@ -138,48 +140,27 @@ public class IdempotencyService {
                 return read(idem.getResponseBody(), responseType);
             }
 
-            /*
-             * Jeżeli pierwszy request jeszcze się przetwarza, nie wykonujemy operacji drugi raz.
-             *
-             * Klient powinien ponowić request później z tym samym Idempotency-Key.
-             */
-            throw new ApiException(
-                    HttpStatus.CONFLICT,
-                    "Request with this Idempotency-Key is still processing"
-            );
+            if (idem.getStatus() == IdempotencyStatus.PROCESSING
+                    && idem.getLockedUntil() != null
+                    && idem.getLockedUntil().isAfter(Instant.now())) {
+                throw new ApiException(
+                        HttpStatus.CONFLICT,
+                        "Request with this Idempotency-Key is still processing"
+                );
+            }
+
+            // FAILED albo wygasły PROCESSING można przejąć. Blokada w claim service
+            // serializuje dwa równoległe recovery tego samego klucza.
+            claimId = claims.reclaim(idem.getId(), hash);
+        } else {
+            try {
+                claimId = claims.claimNew(key, user, endpoint, hash);
+            } catch (DataIntegrityViolationException race) {
+                // Inny request wygrał atomowy INSERT oparty o unikalny constraint.
+                // Rekurencyjne wejście odczyta jego stan i nigdy nie wykona operacji drugi raz.
+                return execute(key, user, endpoint, request, responseType, operation);
+            }
         }
-
-        /*
-         * Tworzymy nowy rekord idempotencji przed wykonaniem operacji biznesowej.
-         *
-         * saveAndFlush jest ważne, bo rekord powinien być zapisany natychmiast,
-         * zanim dojdzie do skutku ubocznego, np. utworzenia przejazdu.
-         */
-        var idem = IdempotencyKey.builder()
-                .id(UUID.randomUUID())
-                .key(key)
-                .user(user)
-                .endpoint(endpoint)
-                .requestHash(hash)
-                .status(IdempotencyStatus.PROCESSING)
-
-                /*
-                 * lockedUntil pozwala w przyszłości obsłużyć przypadek,
-                 * w którym proces padł podczas przetwarzania requestu.
-                 *
-                 * W tej wersji kodu pole jest zapisywane, ale nie jest jeszcze używane
-                 * do odzyskiwania zawieszonych operacji.
-                 */
-                .lockedUntil(Instant.now().plusSeconds(60))
-
-                /*
-                 * Klucz wygasa po 24 godzinach.
-                 * Po tym czasie można go wyczyścić jobem sprzątającym.
-                 */
-                .expiresAt(Instant.now().plusSeconds(24 * 3600))
-                .build();
-
-        repository.saveAndFlush(idem);
 
         try {
             /*
@@ -192,10 +173,7 @@ public class IdempotencyService {
              * Po sukcesie zapisujemy odpowiedź.
              * Kolejny identyczny request zwróci tę odpowiedź bez ponownego wykonania operation.get().
              */
-            idem.setStatus(IdempotencyStatus.COMPLETED);
-            idem.setHttpStatus(200);
-            idem.setResponseBody(write(response));
-            repository.save(idem);
+            claims.complete(claimId, write(response), 200);
 
             return response;
         } catch (RuntimeException ex) {
@@ -206,8 +184,7 @@ public class IdempotencyService {
              * z tym samym kluczem, bo przy kolejnym wywołaniu wpadnie w gałąź "still processing".
              * To warto dopracować.
              */
-            idem.setStatus(IdempotencyStatus.FAILED);
-            repository.save(idem);
+            claims.fail(claimId);
 
             throw ex;
         }

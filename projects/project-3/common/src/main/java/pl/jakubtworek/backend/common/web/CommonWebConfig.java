@@ -21,4 +21,12 @@ public class CommonWebConfig {
         registration.setOrder(2);
         return registration;
     }
+
+    @Bean
+    FilterRegistrationBean<DeadlineFilter> deadlineFilter() {
+        FilterRegistrationBean<DeadlineFilter> registration = new FilterRegistrationBean<>();
+        registration.setFilter(new DeadlineFilter());
+        registration.setOrder(0);
+        return registration;
+    }
 }

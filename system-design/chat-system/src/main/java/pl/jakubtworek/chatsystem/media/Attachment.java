@@ -31,8 +31,14 @@ public class Attachment {
     @Column(nullable = false, unique = true)
     private String storageKey;
 
-    @Column(name = "upload_token", nullable = false, unique = true)
+    @Column(name = "upload_token", unique = true)
     private String uploadToken;
+
+    @Column(name = "upload_expires_at", nullable = false)
+    private Instant uploadExpiresAt;
+
+    @Column(length = 64)
+    private String checksum;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
@@ -52,6 +58,7 @@ public class Attachment {
         this.sizeBytes = sizeBytes;
         this.storageKey = storageKey;
         this.uploadToken = uploadToken;
+        this.uploadExpiresAt = Instant.now().plusSeconds(900);
     }
 
     @PrePersist
@@ -59,10 +66,23 @@ public class Attachment {
         createdAt = Instant.now();
     }
 
-    public void markUploaded(long actualSizeBytes) {
+    public void markScanning(long actualSizeBytes) {
+        if (Instant.now().isAfter(uploadExpiresAt)) throw new IllegalStateException("Upload capability expired");
         this.sizeBytes = actualSizeBytes;
-        this.status = AttachmentStatus.UPLOADED;
+        this.status = AttachmentStatus.SCANNING;
         this.uploadedAt = Instant.now();
+        this.uploadToken = null;
+    }
+
+    public void markReady(String checksum) {
+        if (status != AttachmentStatus.SCANNING) throw new IllegalStateException("Attachment is not being scanned");
+        this.checksum = checksum;
+        this.status = AttachmentStatus.READY;
+    }
+
+    public void reject() {
+        this.status = AttachmentStatus.REJECTED;
+        this.uploadToken = null;
     }
 
     public void block() {
@@ -79,4 +99,6 @@ public class Attachment {
     public AttachmentStatus getStatus() { return status; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUploadedAt() { return uploadedAt; }
+    public Instant getUploadExpiresAt() { return uploadExpiresAt; }
+    public String getChecksum() { return checksum; }
 }

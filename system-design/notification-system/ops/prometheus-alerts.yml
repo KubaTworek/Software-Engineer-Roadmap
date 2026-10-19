@@ -1,0 +1,26 @@
+groups:
+  - name: notification-system
+    rules:
+      - alert: CriticalNotificationQueueAgeHigh
+        expr: notification_oldest_ready_job_age_seconds > 30
+        for: 2m
+        labels: { severity: critical }
+        annotations: { summary: "Oldest ready notification violates the queue-age SLO" }
+      - alert: NotificationOutboxBacklogGrowing
+        expr: deriv(notification_outbox_pending[10m]) > 0 and notification_outbox_pending > 100
+        for: 10m
+        labels: { severity: warning }
+        annotations: { summary: "Outbox backlog is growing" }
+      - alert: NotificationUnknownOutcomeDetected
+        expr: increase(notification_provider_unknown_total[5m]) > 0
+        labels: { severity: critical }
+        annotations: { summary: "Provider outcome requires reconciliation; do not retry blindly" }
+      - alert: NotificationDlqRateHigh
+        expr: increase(notification_jobs_failed_total[15m]) > 20
+        labels: { severity: warning }
+        annotations: { summary: "Notification DLQ growth is elevated" }
+      - alert: ProviderDeliveryRateDrop
+        expr: sum(rate(notification_jobs_delivered_total[15m])) / clamp_min(sum(rate(notification_jobs_sent_total[15m])), 1) < 0.9
+        for: 15m
+        labels: { severity: warning }
+        annotations: { summary: "Accepted messages are not being confirmed as delivered" }

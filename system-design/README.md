@@ -1,7 +1,88 @@
 # System Design — kompletne notatki do przygotowania
 
+<!-- reading-guide:start -->
+## Ścieżki czytania
+
+| Cel czytania | Punkt wejścia |
+| --- | --- |
+| Teoria i model problemu | [1. Requirements](#1-requirements) |
+| Implementacja i jej dowody | [Wykonywalne studia przypadku](#wykonywalne-studia-przypadku) |
+| Uruchomienie i eksperymenty | [Weryfikacja studiów przypadku](#weryfikacja-studiów-przypadku) |
+| Ograniczenia i scenariusze awarii | [45. Trade-offs](#45-trade-offs) |
+
+Wspólne mechanizmy i ich testy znajdziesz w [indeksie pojęć backend-engineering](../backend-engineering/README.md#globalny-indeks-pojęć). Tutaj śledź ich konsekwencje dla opisywanego systemu.
+Diagramy docelowe i warianty rozwoju czytaj razem z mapą implementacji; sam opis architektury nie oznacza, że wszystkie jej komponenty są uruchamiane w laboratorium.
+<!-- reading-guide:end -->
+
 > Cel dokumentu: zbudować praktyczną bazę do rozmów System Design na poziomie Software Engineer / Senior Software Engineer.  
 > Najważniejsza zasada: **nie projektujesz systemu przez dobieranie technologii, tylko przez rozwiązywanie konkretnych wymagań i świadome zarządzanie trade-offami.**
+
+## Wykonywalne studia przypadku
+
+Poniższe katalogi są niezależnymi systemami edukacyjnymi. Nie tworzą jednego
+produktu. Każdy z nich rozwija inny problem dominujący i powinien być czytany
+razem z własnym README, kodem oraz testami.
+
+| Studium | Najważniejsze pytanie projektowe |
+| --- | --- |
+| [Chat System](chat-system/README.md) | Jak zachować kolejność, trwałość i synchronizację wiadomości przy połączeniach realtime i klientach offline? |
+| [E-commerce](ecommerce/README.md) | Jak przeprowadzić checkout przez inventory, payment i order bez jednej transakcji obejmującej cały system? |
+| [File Storage](file-storage/README.md) | Jak rozdzielić metadane od blobów oraz bezpiecznie obsłużyć upload fragmentami, wersjonowanie i udostępnianie? |
+| [Metrics / Logging System](metrics-logging-system/README.md) | Jak przyjąć, przechować i przeszukiwać telemetrię bez utraty kontroli nad cardinality, retencją i tenantami? |
+| [News Feed](news-feed/README.md) | Kiedy wykonywać fan-out on write, kiedy fan-out on read i jak obsłużyć celebrity problem? |
+| [Notification System](notification-system/README.md) | Jak zapewnić wielokanałowe, deduplikowane dostarczenie respektujące preferencje i limity providerów? |
+| [Payment System](payment-system/README.md) | Jak chronić poprawność pieniędzy przy retry, duplikatach webhooków, refundach i reconciliation? |
+| [Rate Limiter](rate-limiter/README.md) | Jak podjąć atomową decyzję w małym budżecie latency i co zrobić podczas awarii counter store? |
+| [Ride Sharing](ride-sharing/README.md) | Jak połączyć ciągły strumień lokalizacji z geospatial matchingiem i maszyną stanów przejazdu? |
+| [Search Autocomplete](search-autocomplete/README.md) | Jak wygenerować i uszeregować bezpieczne sugestie w bardzo małym budżecie latency? |
+| [URL Shortener](url-shortener/README.md) | Jak wygenerować unikalny kod i utrzymać szybki redirect przy hot keys, nadużyciach i asynchronicznych statystykach? |
+| [Video Streaming](video-streaming/README.md) | Jak przeprowadzić materiał od uploadu przez transkodowanie i packaging do adaptacyjnego odtwarzania przez CDN? |
+
+Najlepsza kolejność pracy ze studium:
+
+1. ustal wymagania, skalę i najważniejszy niezmiennik;
+2. przejdź jeden krytyczny przepływ w kodzie;
+3. uruchom test dowodzący gwarancji lub pokazujący failure mode;
+4. wskaż source of truth, granicę spójności i zachowanie podczas awarii;
+5. dopiero potem porównuj technologie oraz warianty skalowania.
+
+Standard rozwijania kodu, komentarzy, README i testów opisuje
+[`AGENTS.md`](AGENTS.md).
+
+## Weryfikacja studiów przypadku
+
+Wszystkie samodzielne systemy używają Java 21, Spring Boot 3.5.14 i własnego
+Maven Wrappera. Dzięki temu rezultat nie zależy od wersji Mavena zainstalowanej
+lokalnie. Z katalogu wybranego systemu uruchom:
+
+```powershell
+# szybka weryfikacja bez lokalnego PostgreSQL, Redisa i pozostałych usług
+.\mvnw.cmd verify
+
+# kontrakty zależne od prawdziwej semantyki storage; profil uruchamia Docker
+.\mvnw.cmd -Pinfrastructure-tests verify
+```
+
+Profil infrastrukturalny istnieje w 11 systemach: Chat, E-commerce, File Storage,
+Metrics/Logging, News Feed, Notification, Payment, Rate Limiter, Ride Sharing,
+URL Shortener i Video Streaming. Search Autocomplete ma obecnie szybkie testy
+modelu i nie deklaruje profilu Testcontainers. Dokładne silniki oraz testowane
+gwarancje opisują README poszczególnych systemów.
+
+Kontrakty są wydzielone jako `*InfrastructureTest`, `*IT` albo osobny katalog
+źródeł testowych. Video Streaming uruchamia je przez Surefire, pozostałe projekty
+mogą używać Failsafe; dlatego CI zbiera oba rodzaje raportów. Zielony build po
+pominięciu kontenerów nie jest dowodem kontraktu infrastrukturalnego.
+
+Workflow [`system-design-ci.yml`](../.github/workflows/system-design-ci.yml)
+uruchamia niezależną macierz szybkich buildów dla wszystkich 12 systemów oraz
+osobną macierz kontraktów infrastrukturalnych. `fail-fast: false` pozwala
+zobaczyć stan całego kompendium, zamiast zatrzymywać przebieg na pierwszej awarii.
+
+Po buildzie CI sprawdza, czy każda klasa kontraktu infrastrukturalnego ma raport
+z wykonanymi testami, bez błędów i pominięć. Brak Dockera nie może więc dać
+fałszywego zielonego wyniku tego joba. Sam workflow jest definicją kontroli;
+potwierdzeniem wykonania są raporty konkretnego przebiegu.
 
 ---
 

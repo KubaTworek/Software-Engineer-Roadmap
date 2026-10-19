@@ -10,6 +10,7 @@ import org.springframework.data.geo.Point;
 import org.springframework.data.redis.connection.RedisGeoCommands;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.context.annotation.Profile;
 
 import java.time.Instant;
 import java.util.*;
@@ -26,8 +27,9 @@ import java.util.concurrent.TimeUnit;
  * bo lokalizacja zmienia się często i musi być odczytywana z niską latencją.
  */
 @Service
+@Profile("!distributed")
 @RequiredArgsConstructor
-public class LocationService {
+public class LocationService implements DriverLocationPort {
 
     /**
      * Redis GEO set zawierający tylko kierowców dostępnych dla matchingu.
@@ -100,6 +102,11 @@ public class LocationService {
         }
     }
 
+    @Override
+    public void update(Driver driver, LocationUpdate update) {
+        updateDriverLocation(driver, update.lat(), update.lng(), update.heading(), update.speed());
+    }
+
     /**
      * Usuwa kierowcę z live-location storage.
      *
@@ -112,6 +119,11 @@ public class LocationService {
     public void removeDriver(UUID driverId) {
         redisTemplate.opsForGeo().remove(GEO_KEY, driverId.toString());
         redisTemplate.delete(LOCATION_KEY_PREFIX + driverId);
+    }
+
+    @Override
+    public void remove(UUID driverId) {
+        removeDriver(driverId);
     }
 
     /**
@@ -149,6 +161,14 @@ public class LocationService {
         return results.getContent().stream()
                 .map(r -> UUID.fromString(Objects.requireNonNull(r.getContent().getName())))
                 .toList();
+    }
+
+    @Override
+    public List<UUID> nearby(String cityId, double lat, double lng, double radiusKm, int limit) {
+        // W profilu lokalnym istnieje jeden indeks GEO. Parametr cityId pozostaje
+        // częścią portu, aby kod domenowy nie zmieniał kontraktu po przejściu na
+        // partycjonowany Location Service.
+        return findNearbyAvailableDrivers(lat, lng, radiusKm, limit);
     }
 
     /**

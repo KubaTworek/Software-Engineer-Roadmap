@@ -17,6 +17,10 @@ public class EventPublisher {
         rabbitTemplate.convertAndSend(props.exchange(), props.transcodingRoutingKey(), event);
     }
 
+    public void publishTranscodingRetry(VideoEvents.TranscodingRequested event) {
+        rabbitTemplate.convertAndSend(props.exchange(), props.transcodingRoutingKey() + ".retry", event);
+    }
+
     public void publishTranscodingDlq(VideoEvents.TranscodingRequested event) {
         rabbitTemplate.convertAndSend(props.exchange(), props.transcodingDlqRoutingKey(), event);
     }

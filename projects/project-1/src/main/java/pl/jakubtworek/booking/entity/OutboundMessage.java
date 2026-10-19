@@ -169,8 +169,6 @@ public class OutboundMessage {
     }
 
     /**
-     * Gettery udostępniają stan encji do testów, debugowania i ewentualnych widoków.
-     *
      * Brak setterów jest celowy.
      * Komunikat wychodzący jest traktowany jako rekord zdarzenia technicznego.
      */

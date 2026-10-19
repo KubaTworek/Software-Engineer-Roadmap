@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.time.Instant;
+import pl.jakubtworek.backend.common.resilience.AdmissionController;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -44,6 +45,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(IllegalStateException.class)
     ResponseEntity<ApiError> serviceUnavailable(IllegalStateException exception, HttpServletRequest request) {
         return error(HttpStatus.SERVICE_UNAVAILABLE, exception.getMessage(), request, exception);
+    }
+
+    /** Load shedding jest kontrolowaną odmową przeciążonej zależności, nie błędem kodu. */
+    @ExceptionHandler(AdmissionController.LoadShedException.class)
+    ResponseEntity<ApiError> loadShed(AdmissionController.LoadShedException exception, HttpServletRequest request) {
+        return error(HttpStatus.SERVICE_UNAVAILABLE, "Downstream concurrency limit reached", request, exception);
     }
 
     @ExceptionHandler(Exception.class)

@@ -3,7 +3,7 @@ package pl.jakubtworek.marketplace.ordering.application;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import pl.jakubtworek.marketplace.ordering.domain.OrderId;
-import pl.jakubtworek.marketplace.payment.domain.PaymentReserved;
+import pl.jakubtworek.marketplace.integration.contracts.PaymentReservedIntegrationEvent;
 import pl.jakubtworek.marketplace.shared.events.DomainEventHandler;
 import pl.jakubtworek.marketplace.shared.events.EventPublisher;
 
@@ -24,7 +24,7 @@ import pl.jakubtworek.marketplace.shared.events.EventPublisher;
  * Dzięki temu Payment nie musi znać szczegółów procesu zamówienia.
  */
 @Component
-public class ConfirmPaymentOnPaymentReservedHandler implements DomainEventHandler<PaymentReserved> {
+public class ConfirmPaymentOnPaymentReservedHandler implements DomainEventHandler<PaymentReservedIntegrationEvent> {
 
     /**
      * Port repozytorium zamówień.
@@ -55,8 +55,8 @@ public class ConfirmPaymentOnPaymentReservedHandler implements DomainEventHandle
      * Informuje mechanizm dispatchowania, że ten handler obsługuje PaymentReserved.
      */
     @Override
-    public Class<PaymentReserved> eventType() {
-        return PaymentReserved.class;
+    public Class<PaymentReservedIntegrationEvent> eventType() {
+        return PaymentReservedIntegrationEvent.class;
     }
 
     /**
@@ -76,7 +76,7 @@ public class ConfirmPaymentOnPaymentReservedHandler implements DomainEventHandle
      */
     @Override
     @Transactional
-    public void handle(PaymentReserved event) {
+    public void handle(PaymentReservedIntegrationEvent event) {
         var order = repository.findById(OrderId.of(event.orderId()))
                 .orElseThrow();
 

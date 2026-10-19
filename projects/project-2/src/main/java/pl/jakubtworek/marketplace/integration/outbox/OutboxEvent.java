@@ -18,6 +18,11 @@ public record OutboxEvent(
         int retryCount,
         String lastError
 ) {
+    public OutboxEvent markProcessing() {
+        return new OutboxEvent(id, aggregateId, aggregateType, eventType, eventVersion, payload,
+                correlationId, causationId, OutboxEventStatus.PROCESSING, createdAt, publishedAt, retryCount, lastError);
+    }
+
     public OutboxEvent markPublished(Instant publishedAt) {
         return new OutboxEvent(id, aggregateId, aggregateType, eventType, eventVersion, payload,
                 correlationId, causationId, OutboxEventStatus.PUBLISHED, createdAt, publishedAt, retryCount, null);

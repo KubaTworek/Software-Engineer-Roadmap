@@ -8,6 +8,9 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.HexFormat;
 import java.util.Optional;
+import java.time.Duration;
+import java.time.Instant;
+import org.springframework.dao.DataIntegrityViolationException;
 
 /**
  * Serwis odpowiedzialny za idempotencję operacji HTTP.
@@ -40,119 +43,75 @@ public class IdempotencyService {
      * Dzięki temu kolejne identyczne requesty mogą dostać dokładnie tę samą odpowiedź.
      */
     private final IdempotencyRecordRepository repository;
+    private final IdempotencyClaimWriter claimWriter;
 
-    public IdempotencyService(IdempotencyRecordRepository repository) {
+    public IdempotencyService(IdempotencyRecordRepository repository, IdempotencyClaimWriter claimWriter) {
         this.repository = repository;
+        this.claimWriter = claimWriter;
     }
 
     /**
-     * Sprawdza, czy dla danego requestu istnieje już zapisany wynik.
-     *
-     * Parametry:
-     * - key: wartość nagłówka Idempotency-Key,
-     * - scope: zakres operacji, np. POST:/v1/payments,
-     * - requestBody: body requestu, z którego liczymy hash.
-     *
-     * Dlaczego potrzebujemy scope?
-     *
-     * Ten sam Idempotency-Key może teoretycznie zostać użyty w różnych endpointach.
-     * Scope rozdziela operacje, np.:
-     * - POST:/v1/payments,
-     * - POST:/v1/payments/{id}/refunds,
-     * - POST:/v1/payments/{id}/capture.
-     *
-     * Dzięki temu klucz jest unikalny w kontekście konkretnej operacji.
+     * Atomically reserves a command before any side effect. The database unique
+     * key, rather than a JVM lock, coordinates all application instances.
      */
-    @Transactional(readOnly = true)
-    public Optional<IdempotencyRecord> findReplay(
-            String key,
-            String scope,
-            String requestBody
-    ) {
-        /**
-         * Szukamy rekordu po złożonym kluczu:
-         * - Idempotency-Key,
-         * - scope.
-         *
-         * Jeżeli rekordu nie ma, oznacza to pierwszy request.
-         * Operacja może zostać wykonana normalnie.
-         */
-        Optional<IdempotencyRecord> existing = repository.findById(
-                new IdempotencyRecordId(key, scope)
-        );
-
-        if (existing.isEmpty()) {
-            return Optional.empty();
+    public IdempotencyClaim claim(String key, String scope, String requestBody) {
+        if (key == null || key.isBlank() || key.length() > 200) {
+            throw new IllegalArgumentException("Idempotency-Key must contain 1-200 characters");
         }
+        String requestHash = hash(requestBody);
+        Optional<IdempotencyRecord> existing = repository.findById(new IdempotencyRecordId(key, scope));
+        if (existing.isPresent()) return classify(existing.get(), requestHash);
 
-        /**
-         * Rekord istnieje, więc request jest powtórzeniem.
-         *
-         * Musimy jednak sprawdzić, czy payload jest identyczny.
-         * Ten sam Idempotency-Key nie może być użyty do innego requestu.
-         *
-         * Przykład błędnego użycia:
-         *
-         * Pierwszy request:
-         * {
-         *   "orderId": "ord_1",
-         *   "amount": 10000
-         * }
-         *
-         * Drugi request z tym samym Idempotency-Key:
-         * {
-         *   "orderId": "ord_1",
-         *   "amount": 20000
-         * }
-         *
-         * Taka sytuacja musi skończyć się konfliktem, bo system nie wie,
-         * czy klient chce powtórzyć poprzednią operację, czy wykonać nową.
-         */
-        if (!existing.get().getRequestHash().equals(hash(requestBody))) {
-            throw new IdempotencyConflictException();
+        try {
+            IdempotencyRecord created = new IdempotencyRecord(key, scope, requestHash,
+                    Instant.now().plus(Duration.ofMinutes(2)));
+            claimWriter.insert(created);
+            return new IdempotencyClaim(IdempotencyClaim.Outcome.ACQUIRED, created);
+        } catch (DataIntegrityViolationException raceLost) {
+            IdempotencyRecord winner = repository.findById(new IdempotencyRecordId(key, scope))
+                    .orElseThrow(() -> raceLost);
+            return classify(winner, requestHash);
         }
-
-        /**
-         * Hash requestu się zgadza.
-         *
-         * To znaczy, że klient ponowił dokładnie ten sam request.
-         * Controller powinien zwrócić zapisane wcześniej:
-         * - response body,
-         * - HTTP status.
-         *
-         * Nie wolno wykonywać operacji biznesowej drugi raz.
-         */
-        return existing;
     }
 
-    /**
-     * Zapisuje wynik pierwszego wykonania operacji.
-     *
-     * Ten zapis powinien nastąpić dopiero po udanym wykonaniu logiki biznesowej,
-     * np. po:
-     * - utworzeniu płatności,
-     * - zapisaniu paymentu,
-     * - uzyskaniu providerPaymentId od PSP,
-     * - przygotowaniu response body.
-     *
-     * Dzięki temu kolejne requesty z tym samym Idempotency-Key
-     * dostaną dokładnie tę samą odpowiedź.
-     */
+    private IdempotencyClaim classify(IdempotencyRecord record, String requestHash) {
+        if (!record.getRequestHash().equals(requestHash)) throw new IdempotencyConflictException();
+        if (record.getStatus() == IdempotencyStatus.COMPLETED || record.getStatus() == IdempotencyStatus.UNKNOWN) {
+            return new IdempotencyClaim(IdempotencyClaim.Outcome.REPLAY, record);
+        }
+        if (record.getStatus() == IdempotencyStatus.FAILED_RETRYABLE) {
+            reacquire(record);
+            return new IdempotencyClaim(IdempotencyClaim.Outcome.ACQUIRED, record);
+        }
+        return new IdempotencyClaim(IdempotencyClaim.Outcome.IN_PROGRESS, record);
+    }
+
     @Transactional
-    public void save(
-            String key,
-            String scope,
-            String requestBody,
-            String responseBody,
-            HttpStatus status
-    ) {
-        repository.save(new IdempotencyRecord(
-                key,
-                scope,
-                hash(requestBody),
-                responseBody,
-                status.value()
-        ));
+    protected void reacquire(IdempotencyRecord record) {
+        record.reacquire(Instant.now().plus(Duration.ofMinutes(2)));
+        repository.save(record);
+    }
+
+    @Transactional
+    public void complete(String key, String scope, String responseBody, HttpStatus status, String resourceId) {
+        IdempotencyRecord record = required(key, scope);
+        record.complete(responseBody, status.value(), resourceId);
+    }
+
+    @Transactional
+    public void unknown(String key, String scope, String responseBody, String resourceId) {
+        IdempotencyRecord record = required(key, scope);
+        record.markUnknown(responseBody, HttpStatus.SERVICE_UNAVAILABLE.value(), resourceId);
+    }
+
+    @Transactional
+    public void retryable(String key, String scope) {
+        required(key, scope).retryable();
+    }
+
+    private IdempotencyRecord required(String key, String scope) {
+        return repository.findById(new IdempotencyRecordId(key, scope))
+                .orElseThrow(() -> new IllegalStateException("Idempotency claim disappeared"));
     }
 
     /**

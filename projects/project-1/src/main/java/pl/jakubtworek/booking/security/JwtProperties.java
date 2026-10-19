@@ -1,22 +1,16 @@
 package pl.jakubtworek.booking.security;
 
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.validation.annotation.Validated;
 
 @ConfigurationProperties(prefix = "security.jwt")
+@Validated
 public record JwtProperties(
-        String secret,
-        long accessTokenSeconds,
-        long refreshTokenSeconds
+        @NotBlank @Size(min = 32) String secret,
+        @Min(1) long accessTokenSeconds,
+        @Min(1) long refreshTokenSeconds
 ) {
-    public JwtProperties {
-        if (secret == null || secret.isBlank()) {
-            secret = "dev-only-stage-7-secret-key-change-me-minimum-32-characters";
-        }
-        if (accessTokenSeconds <= 0) {
-            accessTokenSeconds = 900;
-        }
-        if (refreshTokenSeconds <= 0) {
-            refreshTokenSeconds = 604800;
-        }
-    }
 }

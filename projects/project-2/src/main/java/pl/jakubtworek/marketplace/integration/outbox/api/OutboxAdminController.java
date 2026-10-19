@@ -53,7 +53,7 @@ public class OutboxAdminController {
      * - może wymusić retry konkretnego eventu.
      *
      * To oznacza, że po fazie 4 główną ścieżką publikacji jest KafkaOutboxWorker,
-     * a nie lokalny OutboxWorker z fazy 3.
+     * a nie laboratoryjny lokalny OutboxWorker.
      */
     private final KafkaOutboxWorker worker;
 

@@ -1,12 +1,14 @@
 package pl.jakubtworek.backend_engineering.stage_1.block_c.aspect;
 
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 /**
  * Demonstrates AOP behavior during application startup.
  */
 @Component
+@Profile("demo")
 public class AopDemoRunner implements CommandLineRunner {
 
     private final PaymentService paymentService;

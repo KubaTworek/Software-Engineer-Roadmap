@@ -1,10 +1,7 @@
 package pl.jakubtworek.marketplace.integration.contracts;
 
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import pl.jakubtworek.marketplace.ordering.domain.OrderPlaced;
-import pl.jakubtworek.marketplace.shared.kernel.Money;
-
+import tools.jackson.databind.ObjectMapper;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -51,9 +48,9 @@ public class OrderPlacedContractMapper {
     private final ObjectMapper objectMapper;
 
     public OrderPlacedContractMapper(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper.copy()
-                .findAndRegisterModules()
-                .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        // Jackson 3 ObjectMapper jest konfigurowany niemutowalnie przez Spring Boot.
+        // Kontrakty V1/V2 dodatkowo deklarują ignoreUnknown na granicy schematu.
+        this.objectMapper = objectMapper;
     }
 
     /**
@@ -69,7 +66,7 @@ public class OrderPlacedContractMapper {
      * W flow z Kafką taki event powinien po retry trafić do DLQ, a nie zostać
      * przypadkowo przetworzony błędnie.
      */
-    public OrderPlaced toDomainEvent(String payload, int eventVersion) {
+    public OrderPlacedIntegrationEvent toDomainEvent(String payload, int eventVersion) {
         try {
             return switch (eventVersion) {
                 case 1 -> fromV1(objectMapper.readValue(payload, OrderPlacedV1.class));
@@ -110,7 +107,7 @@ public class OrderPlacedContractMapper {
      *
      * Metoda wykonuje też podstawową walidację wymaganych pól.
      */
-    private OrderPlaced fromV1(OrderPlacedV1 event) {
+    private OrderPlacedIntegrationEvent fromV1(OrderPlacedV1 event) {
         /*
          * Wspieramy dwa możliwe pola identyfikujące agregat:
          * - aggregateId,
@@ -139,21 +136,23 @@ public class OrderPlacedContractMapper {
          * ale trzeba mieć świadomość konsekwencji: niektóre handlery, np. inventory,
          * mogą potrzebować linii do rezerwacji stocku.
          */
-        List<OrderPlaced.Line> lines = event.lines() == null
+        List<OrderPlacedIntegrationEvent.Line> lines = event.lines() == null
                 ? List.of()
                 : event.lines().stream()
-                .map(line -> new OrderPlaced.Line(
+                .map(line -> new OrderPlacedIntegrationEvent.Line(
                         line.productId(),
                         line.quantity(),
-                        Money.of(line.unitPriceAmount(), line.currency())
+                        new OrderPlacedIntegrationEvent.MoneyValue(
+                                new BigDecimal(line.unitPriceAmount()), line.currency())
                 ))
                 .toList();
 
-        return new OrderPlaced(
+        return new OrderPlacedIntegrationEvent(
                 firstNonNull(event.eventId(), UUID.randomUUID()),
                 aggregateId,
                 event.customerId(),
-                Money.of(event.totalAmount(), event.currency()),
+                new OrderPlacedIntegrationEvent.MoneyValue(
+                        new BigDecimal(event.totalAmount()), event.currency()),
                 lines,
                 firstNonNull(event.occurredAt(), Instant.now()),
                 firstNonNull(event.correlationId(), UUID.randomUUID()),
@@ -171,7 +170,7 @@ public class OrderPlacedContractMapper {
      * To jest przykład ewolucji kontraktu bez zmuszania handlerów aplikacyjnych
      * do obsługi wielu kształtów payloadu.
      */
-    private OrderPlaced fromV2(OrderPlacedV2 event) {
+    private OrderPlacedIntegrationEvent fromV2(OrderPlacedV2 event) {
         UUID aggregateId = firstNonNull(event.aggregateId(), event.orderId());
 
         if (aggregateId == null) {
@@ -186,27 +185,23 @@ public class OrderPlacedContractMapper {
             );
         }
 
-        List<OrderPlaced.Line> lines = event.lines() == null
+        List<OrderPlacedIntegrationEvent.Line> lines = event.lines() == null
                 ? List.of()
                 : event.lines().stream()
-                .map(line -> new OrderPlaced.Line(
+                .map(line -> new OrderPlacedIntegrationEvent.Line(
                         line.productId(),
                         line.quantity(),
-                        Money.of(
-                                line.unitPrice().amount(),
-                                line.unitPrice().currency()
-                        )
+                        new OrderPlacedIntegrationEvent.MoneyValue(
+                                new BigDecimal(line.unitPrice().amount()), line.unitPrice().currency())
                 ))
                 .toList();
 
-        return new OrderPlaced(
+        return new OrderPlacedIntegrationEvent(
                 firstNonNull(event.eventId(), UUID.randomUUID()),
                 aggregateId,
                 event.customerId(),
-                Money.of(
-                        event.total().amount(),
-                        event.total().currency()
-                ),
+                new OrderPlacedIntegrationEvent.MoneyValue(
+                        new BigDecimal(event.total().amount()), event.total().currency()),
                 lines,
                 firstNonNull(event.occurredAt(), Instant.now()),
                 firstNonNull(event.correlationId(), UUID.randomUUID()),

@@ -5,6 +5,8 @@ public enum NotificationStatus {
     QUEUED,
     PROCESSING,
     SENT,
+    UNKNOWN,
+    PARTIALLY_DELIVERED,
     DELIVERED,
     BOUNCED,
     FAILED,

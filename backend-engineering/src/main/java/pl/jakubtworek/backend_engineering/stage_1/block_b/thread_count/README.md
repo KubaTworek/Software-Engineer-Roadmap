@@ -1,4 +1,20 @@
-# Case 14 — Thread count tuning: ile wątków ma sens
+# thread count
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** thread count.
+> - **Typowy błąd:** Zwiększanie puli mimo nasycenia CPU lub limitu połączeń.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=ExperimentConfigTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** brak jawnej roli w nazwach klas; intencję przykładu określają opis i test, nie sam brak prefiksu.
+> - **Granica:** Wynik eksperymentu opisuje tę maszynę i workload; nie jest uniwersalną liczbą produkcyjną.
+<!-- material-card:end -->
+
+## Case 14 — Thread count tuning: ile wątków ma sens
+
+
 
 ## Wprowadzenie
 
@@ -28,7 +44,7 @@ I właśnie dlatego:
 
 ---
 
-# Wątek nie oznacza równoległego wykonania
+## Wątek nie oznacza równoległego wykonania
 
 To podstawowa intuicja.
 
@@ -54,7 +70,7 @@ to:
 
 ---
 
-# CPU-bound workload
+## CPU-bound workload
 
 CPU-bound oznacza:
 - wątki aktywnie wykonują instrukcje CPU,
@@ -72,7 +88,7 @@ W takim workloadzie:
 
 ---
 
-# Dlaczego CPU-bound nie skaluje się w nieskończoność
+## Dlaczego CPU-bound nie skaluje się w nieskończoność
 
 Jeżeli masz:
 - 8 rdzeni CPU,
@@ -95,7 +111,7 @@ Zamiast tego pojawiają się:
 
 ---
 
-# Context switching
+## Context switching
 
 To jeden z głównych kosztów nadmiaru wątków.
 
@@ -114,7 +130,7 @@ Przy bardzo dużej liczbie runnable threads:
 
 ---
 
-# Cache locality i nadmiar wątków
+## Cache locality i nadmiar wątków
 
 Każdy wątek:
 - posiada własny working set danych,
@@ -132,7 +148,7 @@ To oznacza:
 
 ---
 
-# Wait-bound workload
+## Wait-bound workload
 
 Wait-bound oznacza:
 - wątki przez większość czasu czekają,
@@ -150,7 +166,7 @@ Tutaj sytuacja wygląda zupełnie inaczej.
 
 ---
 
-# Dlaczego więcej wątków pomaga przy waiting
+## Dlaczego więcej wątków pomaga przy waiting
 
 Jeżeli:
 - część wątków czeka,
@@ -169,7 +185,7 @@ To bardzo częsty przypadek:
 
 ---
 
-# Little’s Law i concurrency
+## Little’s Law i concurrency
 
 W praktyce:
 - liczba sensownych wątków
@@ -190,7 +206,7 @@ Wtedy:
 
 ---
 
-# Mixed workload — najczęstszy przypadek
+## Mixed workload — najczęstszy przypadek
 
 Większość systemów produkcyjnych:
 - nie jest ani czysto CPU-bound,
@@ -212,7 +228,7 @@ I właśnie dlatego:
 
 ---
 
-# Oversubscription
+## Oversubscription
 
 Oversubscription oznacza:
 - więcej aktywnych runnable threads niż CPU jest w stanie efektywnie obsłużyć.
@@ -230,7 +246,7 @@ To bardzo częsty problem:
 
 ---
 
-# Throughput collapse
+## Throughput collapse
 
 W pewnym momencie:
 - dodawanie kolejnych wątków
@@ -251,7 +267,7 @@ Powód:
 
 ---
 
-# Thread pools — dlaczego są konieczne
+## Thread pools — dlaczego są konieczne
 
 Tworzenie:
 - nieograniczonej liczby wątków
@@ -270,7 +286,7 @@ Ale:
 
 ---
 
-# Queueing
+## Queueing
 
 Zbyt mało wątków:
 - powoduje kolejki pracy,
@@ -284,7 +300,7 @@ Czyli:
 
 ---
 
-# Hyper-threading i logical cores
+## Hyper-threading i logical cores
 
 Nowoczesne CPU:
 - często pokazują więcej logical cores niż physical cores.
@@ -298,7 +314,7 @@ Dlatego:
 
 ---
 
-# Virtual threads — ważne rozróżnienie
+## Virtual threads — ważne rozróżnienie
 
 W nowoczesnej Javie pojawiają się:
 ## virtual threads
@@ -316,7 +332,7 @@ Nawet przy virtual threads:
 
 ---
 
-# Dlaczego eksperymenty są konieczne
+## Dlaczego eksperymenty są konieczne
 
 Nie istnieje uniwersalna formuła:
 
@@ -337,7 +353,7 @@ Dlatego:
 
 ---
 
-# Co obserwować podczas eksperymentów
+## Co obserwować podczas eksperymentów
 
 Najważniejsze metryki:
 - throughput,
@@ -355,7 +371,7 @@ To właśnie te dane pokazują:
 
 ---
 
-# Najczęstszy błąd tuningowy
+## Najczęstszy błąd tuningowy
 
 Najczęstszy błąd wygląda tak:
 
@@ -372,7 +388,7 @@ Wtedy:
 
 ---
 
-# Najważniejsza intuicja praktyczna
+## Najważniejsza intuicja praktyczna
 
 Najbardziej praktyczny wniosek brzmi:
 
@@ -385,7 +401,7 @@ I właśnie dlatego:
 
 ---
 
-# Najważniejsze wnioski
+## Najważniejsze wnioski
 
 Najbardziej użyteczny model mentalny wygląda tak:
 
@@ -399,3 +415,15 @@ Najbardziej użyteczny model mentalny wygląda tak:
 - tuning liczby wątków jest kompromisem między queueing i scheduling cost,
 - mixed workloads wymagają empirycznego strojenia,
 - poprawny tuning concurrency wymaga obserwacji throughput, latency i thread states.
+
+## Granica względem virtual threads
+
+To laboratorium mierzy wpływ workloadu i liczby runnable platform threads. Osobne
+[laboratorium virtual threads](../../block_a/virtual_threads/README.md) sprawdza
+poprawność dla blocking I/O, pinning, przerwanie, `ThreadLocal`, `Semaphore` i
+ograniczony downstream. Virtual threads zmieniają koszt oczekiwania, ale nie
+zwiększają liczby rdzeni ani pojemności bazy danych.
+
+Testy jednostkowe nie porównują czasów wykonania, ponieważ scheduler i obciążenie
+maszyny uczyniłyby wynik niestabilnym. Pomiar należy wykonywać eksperymentem z
+jawnym warmupem, liczbą zadań i obserwacją throughput, latency oraz stanów wątków.

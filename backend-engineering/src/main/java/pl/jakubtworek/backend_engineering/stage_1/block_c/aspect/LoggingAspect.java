@@ -16,17 +16,10 @@ import org.springframework.stereotype.Component;
 public class LoggingAspect {
 
     /**
-     * Pointcut expression:
-     *
-     * execution(* demo.aop.service.*.*(..))
-     *
-     * Means:
-     * - any return type,
-     * - any method,
-     * - any arguments,
-     * - inside demo.aop.service package.
+     * The pointcut selects Spring {@code @Service} beans. Using an annotation
+     * boundary keeps the example valid after moving classes between packages.
      */
-    @Before("execution(* demo.aop.service.*.*(..))")
+    @Before("@within(org.springframework.stereotype.Service)")
     public void logBefore(JoinPoint joinPoint) {
 
         System.out.println(
@@ -39,7 +32,7 @@ public class LoggingAspect {
      * Executes after successful method execution.
      */
     @AfterReturning(
-            pointcut = "execution(* demo.aop.service.*.*(..))",
+            pointcut = "@within(org.springframework.stereotype.Service)",
             returning = "result"
     )
     public void logAfterReturning(
@@ -58,7 +51,7 @@ public class LoggingAspect {
      * Executes when exception is thrown.
      */
     @AfterThrowing(
-            pointcut = "execution(* demo.aop.service.*.*(..))",
+            pointcut = "@within(org.springframework.stereotype.Service)",
             throwing = "exception"
     )
     public void logAfterThrowing(
@@ -77,7 +70,7 @@ public class LoggingAspect {
      * Executes after method completion
      * regardless of success or failure.
      */
-    @After("execution(* demo.aop.service.*.*(..))")
+    @After("@within(org.springframework.stereotype.Service)")
     public void logAfter(JoinPoint joinPoint) {
 
         System.out.println(

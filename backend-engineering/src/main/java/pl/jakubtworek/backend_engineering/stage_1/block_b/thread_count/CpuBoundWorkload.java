@@ -5,6 +5,9 @@ public final class CpuBoundWorkload implements Workload {
     private final int iterations;
 
     public CpuBoundWorkload(int iterations) {
+        if (iterations < 0) {
+            throw new IllegalArgumentException("iterations must not be negative");
+        }
         this.iterations = iterations;
     }
 

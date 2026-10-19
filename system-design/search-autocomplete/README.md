@@ -1,5 +1,83 @@
 # Search Autocomplete — System Design
 
+<!-- reading-guide:start -->
+## Ścieżki czytania
+
+| Cel czytania | Punkt wejścia |
+| --- | --- |
+| Teoria i model problemu | [12. Candidate generation vs ranking](#12-candidate-generation-vs-ranking) |
+| Implementacja i jej dowody | [Jak pracować z laboratorium](#jak-pracować-z-laboratorium) |
+| Uruchomienie i eksperymenty | [Jak pracować z laboratorium](#jak-pracować-z-laboratorium) |
+| Ograniczenia i scenariusze awarii | [26. Failure modes](#26-failure-modes) |
+
+Wspólne mechanizmy i ich testy znajdziesz w [indeksie pojęć backend-engineering](../../backend-engineering/README.md#globalny-indeks-pojęć). Tutaj śledź ich konsekwencje dla opisywanego systemu.
+Diagramy docelowe i warianty rozwoju czytaj razem z mapą implementacji; sam opis architektury nie oznacza, że wszystkie jej komponenty są uruchamiane w laboratorium.
+<!-- reading-guide:end -->
+
+## Zacznij tutaj
+
+| Pytanie | Odpowiedź |
+| --- | --- |
+| Najważniejszy niezmiennik | Podpowiedź musi spełniać politykę bezpieczeństwa i prywatności przed zwróceniem, niezależnie od źródła kandydata. |
+| Krytyczny przepływ | Walidacja → normalizacja → abuse gate → cache kandydatów → snapshot/delta/fuzzy → deduplikacja → ranking → końcowy filtr policy/PII. |
+| Rekomendowany test | `.\mvnw.cmd -Dtest=AutocompleteServiceTest,RealtimeDeltaIndexTest,AutocompleteHttpSecurityTest test`. |
+| Świadome ograniczenia | Indeks, delta, feedback i historia są lokalnymi modelami jednej instancji; laboratorium nie udaje rozproszonego storage ani produkcyjnego rankera ML. |
+
+## Jak pracować z laboratorium
+
+To repozytorium łączy dwie warstwy. README opisuje docelowy system dużej skali,
+a kod wykonuje najważniejsze gwarancje na małym, deterministycznym modelu. Nazwy
+Redis, OpenSearch, Kafka czy object storage w diagramach oznaczają możliwe granice
+produkcyjne — nie zależności wymagane do uruchomienia przykładu.
+
+```powershell
+# pełna, szybka weryfikacja
+.\mvnw.cmd --batch-mode --no-transfer-progress verify
+
+# krótki benchmark lookupu; wynik służy do porównań, nie jest stałym SLA
+.\mvnw.cmd --batch-mode --no-transfer-progress -Pjmh-smoke -Dtest=JmhSmokeTest test
+
+# aplikacja lokalna
+.\mvnw.cmd spring-boot:run
+
+# albo obraz uruchamiany jako użytkownik bez uprawnień roota
+docker compose up --build
+```
+
+Publiczny serving path to `GET /api/v1/autocomplete`. Endpointy statystyk,
+aktywacji i rollbacku indeksu oraz operatorski control plane wymagają roli
+`OPERATOR`. Domyślne dane Basic Auth (`operator` / `change-me`) służą wyłącznie
+lokalnemu laboratorium; przy innym środowisku ustaw `AUTOCOMPLETE_OPERATOR_PASSWORD`
+i `AUTOCOMPLETE_PRIVACY_HMAC_KEY`.
+
+Test obciążeniowy znajduje się w `performance/k6/autocomplete-load.js` i używa
+modelu otwartego (arrival rate), aby nie ukrywać przeciążenia przez coordinated
+omission klienta. Uruchamiaj go po starcie aplikacji:
+
+```powershell
+k6 run performance/k6/autocomplete-load.js
+```
+
+### Mapa implementacji
+
+| Problem / gwarancja | Implementacja | Test dowodzący | Granica produkcyjna |
+| --- | --- | --- | --- |
+| Prefiks nie skanuje całego korpusu | `SuggestionTrieIndex` | `AutocompleteServiceTest#shortPrefixUsesTrieWithoutFuzzyScan` | FST lub shardy indeksu dla bardzo dużego korpusu |
+| Świeże dane nie cofają się po spóźnionym evencie | `RealtimeDeltaIndex` z sequence, TTL i limitem | `RealtimeDeltaIndexTest` | współdzielony changelog/KV i globalny porządek per klucz |
+| Cache nie omija nowej polityki | wersja policy w kluczu i finalny filtr | `AutocompleteServiceTest#cacheCannotBypassNewSafetyPolicy` | rozgłoszenie wersji/inwalidacja między replikami |
+| Snapshot i delta nie duplikują sugestii | merge po kanonicznym kluczu, delta wygrywa | `AutocompleteServiceTest#deltaOverridesSnapshotWithoutDuplicate` | jawna reguła konfliktu zgodna z domeną |
+| Literówka ma ograniczony koszt | bounded Levenshtein jako fallback bez trafień prefiksowych | `AutocompleteServiceTest#usesBoundedFuzzyFallback` | FST fuzzy automaton, BK-tree lub search engine |
+| Dane telemetryczne nie przechowują surowych identyfikatorów | HMAC i redakcja PII | `QueryPrivacyServiceTest` | rotacja kluczy, retencja, dostęp i audyt |
+| Feedback po retry nie nalicza się podwójnie | idempotencja po `eventId` | `FeedbackStoreTest` | trwały unikalny klucz i atomowy ingest |
+| Control plane nie jest publiczny | Spring Security, rola `OPERATOR` | `AutocompleteHttpSecurityTest` | IdP/gateway, mTLS, audyt i least privilege |
+| Ranking da się oceniać niezależnie od latency | RR i NDCG@K | `RankingQualityEvaluatorTest` | oznaczony zbiór offline i eksperyment online |
+
+Nie ma tu profilu Testcontainers, ponieważ kanoniczna implementacja nie zależy
+od zewnętrznej bazy ani brokera. Dodanie kontenera tylko dla pozoru osłabiłoby
+lekcję. Gdy lokalny delta index, feedback lub cache zostanie zastąpiony Redisem,
+OpenSearch albo Kafka, test kontraktu tej konkretnej infrastruktury powinien trafić
+do osobnego profilu `infrastructure-tests`.
+
 ## 1. Cel systemu
 
 System ma podpowiadać użytkownikowi zapytania lub wyniki podczas wpisywania tekstu w polu wyszukiwania.
@@ -97,7 +175,7 @@ indexes.
 ### 5.1 Publiczne API
 
 ```http
-GET /v1/autocomplete?q=iph&limit=10&locale=en-US&country=US
+GET /api/v1/autocomplete?q=iph&limit=10&locale=en-US&country=US&sessionId=s-123
 ```
 
 Przykładowa odpowiedź:
@@ -134,7 +212,7 @@ Przykładowa odpowiedź:
 | `limit`      | liczba sugestii                          |
 | `locale`     | język użytkownika                        |
 | `country`    | kraj                                     |
-| `user_id`    | opcjonalnie, zwykle z auth tokena        |
+| tożsamość    | wyłącznie z warstwy uwierzytelnienia, nigdy z zaufanego parametru klienta |
 | `session_id` | do personalizacji krótkoterminowej       |
 | `device`     | web, iOS, Android                        |
 | `context`    | np. kategoria, strona, workspace         |
@@ -1133,19 +1211,25 @@ rate limit logged-in: 20 req/sec/user
 ```text
 1. User types "iph"
 2. Client waits 100 ms debounce
-3. Client sends GET /autocomplete?q=iph
-4. API Gateway validates request
-5. Autocomplete Service normalizes "iph"
-6. Service checks L1 cache
-7. If miss, checks Redis
-8. If miss, queries Suggestion Index
-9. Service fetches lightweight user features
-10. Service merges global + personalized + trending candidates
-11. Ranking computes final score
-12. Safety filter removes blocked suggestions
-13. Response is returned
-14. Logs are emitted asynchronously
+3. Client sends GET /api/v1/autocomplete?q=iph
+4. Gateway/controller validates rozmiar i limit, a tożsamość bierze z auth
+5. Service normalizes "iph" and records only sanitized telemetry
+6. Abuse gate may reject before expensive work starts
+7. Service checks a shared-candidate L1 cache keyed by index/delta/policy versions
+8. On miss it reads the immutable snapshot and realtime delta overlay
+9. Only when prefix lookup is empty, bounded fuzzy retrieval is attempted
+10. Candidates are deduplicated, locale-filtered and policy-filtered
+11. Ranking adds lightweight user/session/context signals
+12. Final policy gate runs again, including on every cache-hit path
+13. Response and diagnostic headers are returned
+14. Every branch records latency and outcome metrics
 ```
+
+Kolejność jest częścią gwarancji. Abuse gate musi być przed kosztownym retrieval,
+fuzzy nie może uruchamiać pełnego skanu dla każdego keystroke’u, a filtr policy
+nie może być wyłącznie przed cache. Cache przechowuje wspólnych kandydatów, nie
+gotową odpowiedź per użytkownik — ogranicza to cardinality i ryzyko przecieku
+personalizacji między użytkownikami.
 
 ---
 

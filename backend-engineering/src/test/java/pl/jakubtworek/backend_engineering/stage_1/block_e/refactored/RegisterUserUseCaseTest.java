@@ -68,4 +68,40 @@ class RegisterUserUseCaseTest {
 
         verifyNoInteractions(userRepository, emailService);
     }
+
+    @Test
+    void shouldRejectNullInput() {
+        RegisterUserUseCase useCase =
+                new RegisterUserUseCase(userRepository, emailService, fixedClock);
+
+        assertThrows(ValidationException.class, () -> useCase.handle(null));
+
+        verifyNoInteractions(userRepository, emailService);
+    }
+
+    @Test
+    void shouldRejectInvalidEmail() {
+        RegisterUserUseCase useCase =
+                new RegisterUserUseCase(userRepository, emailService, fixedClock);
+
+        assertThrows(
+                ValidationException.class,
+                () -> useCase.handle(new RegisterUserInput("alice", "invalid-email")));
+
+        verifyNoInteractions(userRepository, emailService);
+    }
+
+    @Test
+    void shouldNotSendEmailWhenPersistenceFails() {
+        when(userRepository.existsByEmail("alice@example.com")).thenReturn(false);
+        when(userRepository.save(any(User.class))).thenThrow(new RuntimeException("database unavailable"));
+        RegisterUserUseCase useCase =
+                new RegisterUserUseCase(userRepository, emailService, fixedClock);
+
+        assertThrows(
+                RuntimeException.class,
+                () -> useCase.handle(new RegisterUserInput("alice", "alice@example.com")));
+
+        verifyNoInteractions(emailService);
+    }
 }

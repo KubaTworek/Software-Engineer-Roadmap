@@ -6,14 +6,19 @@ import org.openjdk.jmh.annotations.Fork;
 import org.openjdk.jmh.annotations.Measurement;
 import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
+import org.openjdk.jmh.annotations.Param;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
+import pl.jakubtworek.backend_engineering.stage_1.block_b.benchmarking.BenchmarkDimension;
+import pl.jakubtworek.backend_engineering.stage_1.block_b.benchmarking.Measures;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 
+@Measures(BenchmarkDimension.ALLOCATION)
 @BenchmarkMode(Mode.Throughput)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 @Warmup(iterations = 5, time = 1)
@@ -22,7 +27,8 @@ import java.util.stream.IntStream;
 @State(Scope.Thread)
 public class StreamAllocationBenchmark {
 
-    private static final int SIZE = 100_000;
+    @Param({"1000", "100000"})
+    int size;
 
     private List<Integer> boxedList;
 
@@ -30,7 +36,7 @@ public class StreamAllocationBenchmark {
     public void setup() {
         // The source data is prepared once.
         // The benchmark should measure processing cost, not setup cost.
-        boxedList = IntStream.range(0, SIZE)
+        boxedList = IntStream.range(0, size)
                 .boxed()
                 .toList();
     }
@@ -46,18 +52,17 @@ public class StreamAllocationBenchmark {
     }
 
     @Benchmark
-    public int manualLoopNoResultAllocation() {
-        // This version does equivalent numeric work without creating a result collection.
-        // It is not semantically identical to collectToList(), but shows how avoiding materialization
-        // can reduce allocation pressure in hot paths.
-        int sum = 0;
+    public List<Integer> manualLoopCollectToList() {
+        // Both methods materialize the same result. The GC profiler can therefore
+        // compare implementation overhead instead of comparing different contracts.
+        List<Integer> result = new ArrayList<>((boxedList.size() + 2) / 3);
 
         for (Integer value : boxedList) {
             if (value % 3 == 0) {
-                sum += value * 2;
+                result.add(value * 2);
             }
         }
 
-        return sum;
+        return result;
     }
 }

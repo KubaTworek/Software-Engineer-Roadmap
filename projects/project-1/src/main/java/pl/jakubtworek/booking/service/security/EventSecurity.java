@@ -16,6 +16,13 @@ public class EventSecurity {
         this.eventRepository = eventRepository;
     }
 
+    public boolean canCreate(Authentication authentication) {
+        var principal = AuthenticationAccess.principal(authentication);
+        return principal != null
+                && principal.organizationId() != null
+                && (principal.role() == UserRole.EVENT_MANAGER || principal.role() == UserRole.ORG_ADMIN);
+    }
+
     @Transactional(readOnly = true)
     public boolean canManage(Authentication authentication, UUID eventId) {
         var principal = AuthenticationAccess.principal(authentication);

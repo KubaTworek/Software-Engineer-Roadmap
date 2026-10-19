@@ -1,4 +1,3 @@
-// src/test/java/com/example/registration/integration/RegisterUserIntegrationTest.java
 package pl.jakubtworek.backend_engineering.stage_1.block_e.refactored;
 
 import org.junit.jupiter.api.BeforeEach;

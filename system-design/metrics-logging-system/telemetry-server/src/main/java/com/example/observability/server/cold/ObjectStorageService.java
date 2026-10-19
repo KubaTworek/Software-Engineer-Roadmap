@@ -69,9 +69,10 @@ public class ObjectStorageService {
              * Potem startsWith(root) chroni przed path traversal,
              * np. objectKey = ../../etc/passwd.
              */
-            Path path = root.resolve(objectKey).normalize();
+            Path normalizedRoot = root.toAbsolutePath().normalize();
+            Path path = normalizedRoot.resolve(objectKey).normalize();
 
-            if (!path.startsWith(root)) {
+            if (!path.startsWith(normalizedRoot)) {
                 throw new IllegalArgumentException("invalid object key");
             }
 
@@ -91,9 +92,10 @@ public class ObjectStorageService {
              * - manifest eksportu,
              * - blokadę przed przypadkowym nadpisaniem.
              */
+            Path temporary = Files.createTempFile(path.getParent(), ".export-", ".tmp");
             try (GZIPOutputStream gzip = new GZIPOutputStream(
                     Files.newOutputStream(
-                            path,
+                            temporary,
                             StandardOpenOption.CREATE,
                             StandardOpenOption.TRUNCATE_EXISTING
                     )
@@ -103,6 +105,28 @@ public class ObjectStorageService {
                     gzip.write('\n');
                 }
             }
+            // Czytelnik nigdy nie zobaczy częściowo zapisanego gzipa.
+            try {
+                Files.move(temporary, path, StandardCopyOption.ATOMIC_MOVE,
+                        StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException ignored) {
+                Files.move(temporary, path, StandardCopyOption.REPLACE_EXISTING);
+            }
+
+            // Manifest pozwala restore jobowi wykryć obiekt ucięty lub podmieniony.
+            // Jest publikowany dopiero po kompletnym obiekcie danych.
+            String checksum;
+            try {
+                checksum = java.util.HexFormat.of().formatHex(java.security.MessageDigest
+                        .getInstance("SHA-256").digest(Files.readAllBytes(path)));
+            } catch (java.security.NoSuchAlgorithmException impossible) {
+                throw new IllegalStateException(impossible);
+            }
+            Path manifest = path.resolveSibling(path.getFileName() + ".manifest.json");
+            String metadata = "{\"object\":\"" + objectKey.replace("\"", "")
+                    + "\",\"rows\":" + lines.size() + ",\"sha256\":\"" + checksum + "\"}";
+            Files.writeString(manifest, metadata, StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
 
             /*
              * Zwracamy logiczne URI, nie lokalną ścieżkę filesystemu.
@@ -151,11 +175,12 @@ public class ObjectStorageService {
              * Tak samo jak przy zapisie, normalize + startsWith(root)
              * chroni przed wyjściem poza katalog object storage.
              */
-            Path base = root
+            Path normalizedRoot = root.toAbsolutePath().normalize();
+            Path base = normalizedRoot
                     .resolve(prefix == null ? "" : prefix)
                     .normalize();
 
-            if (!base.startsWith(root) || !Files.exists(base)) {
+            if (!base.startsWith(normalizedRoot) || !Files.exists(base)) {
                 return List.of();
             }
 
@@ -172,7 +197,7 @@ public class ObjectStorageService {
                         .map(p -> {
                             try {
                                 return new ObjectInfo(
-                                        "object://" + root.relativize(p).toString(),
+                                        "object://" + normalizedRoot.relativize(p).toString(),
                                         Files.size(p),
                                         Files.getLastModifiedTime(p).toInstant()
                                 );
@@ -185,6 +210,17 @@ public class ObjectStorageService {
 
         } catch (IOException e) {
             throw new IllegalStateException(e);
+        }
+    }
+
+    public byte[] read(String objectKey) {
+        try {
+            Path normalizedRoot = root.toAbsolutePath().normalize();
+            Path path = normalizedRoot.resolve(objectKey).normalize();
+            if (!path.startsWith(normalizedRoot)) throw new IllegalArgumentException("invalid object key");
+            return Files.readAllBytes(path);
+        } catch (IOException exception) {
+            throw new IllegalStateException("object storage read failed", exception);
         }
     }
 

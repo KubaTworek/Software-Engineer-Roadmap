@@ -1,6 +1,22 @@
-# Replikacja, stale reads i sharding — szczegółowe podsumowanie
+# scale
 
-# Wprowadzenie
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** scale.
+> - **Typowy błąd:** Przeniesienie odczytu na opóźnioną replikę mimo wymogu read-your-writes.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** brak jawnej roli w nazwach klas; intencję przykładu określają opis i test, nie sam brak prefiksu.
+> - **Granica:** Model i H2 sprawdzają logikę; blokady, plan zapytania i zachowanie silnika potwierdza dopiero odpowiedni profil infrastrukturalny.
+<!-- material-card:end -->
+
+## Replikacja, stale reads i sharding — szczegółowe podsumowanie
+
+
+
+## Wprowadzenie
 
 W nowoczesnych systemach backendowych pojedyncza baza danych bardzo szybko staje się ograniczeniem skalowalności. Gdy rośnie:
 - liczba użytkowników,
@@ -31,7 +47,7 @@ To bardzo ważne, ponieważ wiele problemów pojawia się dopiero produkcyjnie, 
 
 ---
 
-# Replikacja — podstawowy model
+## Replikacja — podstawowy model
 
 Najczęściej spotykany model produkcyjny wygląda następująco:
 
@@ -58,7 +74,7 @@ To pozwala:
 
 ---
 
-# Replikacja asynchroniczna
+## Replikacja asynchroniczna
 
 Najczęściej używana jest:
 ```text
@@ -73,7 +89,7 @@ To bardzo ważne.
 
 ---
 
-# Problem stale reads
+## Problem stale reads
 
 Jeżeli aplikacja:
 1. wykonuje INSERT na leaderze,
@@ -94,7 +110,7 @@ stale read
 
 ---
 
-# Read-after-write consistency
+## Read-after-write consistency
 
 W systemach rozproszonych bardzo ważnym konceptem jest:
 
@@ -111,7 +127,7 @@ Przy asynchronicznej replikacji:
 
 ---
 
-# Typowy problem produkcyjny
+## Typowy problem produkcyjny
 
 Przykład:
 1. użytkownik zmienia profil,
@@ -129,7 +145,7 @@ To bardzo częsty problem:
 
 ---
 
-# Dlaczego repliki istnieją mimo tego problemu
+## Dlaczego repliki istnieją mimo tego problemu
 
 Ponieważ:
 - większość ruchu to odczyty,
@@ -150,7 +166,7 @@ słabsza consistency
 
 ---
 
-# Sticky Sessions
+## Sticky Sessions
 
 Jednym z najczęstszych rozwiązań jest:
 
@@ -168,7 +184,7 @@ To pozwala:
 
 ---
 
-# Read Routing
+## Read Routing
 
 W praktyce aplikacje bardzo często:
 - świadomie wybierają źródło odczytu.
@@ -181,7 +197,7 @@ To ważny aspekt architektury backendowej.
 
 ---
 
-# Synchronous Replication
+## Synchronous Replication
 
 Alternatywą jest:
 ```text
@@ -199,7 +215,7 @@ Wtedy:
 
 ---
 
-# Zalety synchronous replication
+## Zalety synchronous replication
 
 Zapewnia:
 - silniejszą consistency,
@@ -208,7 +224,7 @@ Zapewnia:
 
 ---
 
-# Koszt synchronous replication
+## Koszt synchronous replication
 
 Cena jest jednak bardzo wysoka:
 - większy latency,
@@ -225,7 +241,7 @@ Dlatego synchronous replication:
 
 ---
 
-# Version-based consistency
+## Version-based consistency
 
 Innym podejściem jest:
 ```text
@@ -254,7 +270,7 @@ to:
 
 ---
 
-# Consistency jako kontrakt
+## Consistency jako kontrakt
 
 To bardzo ważna zasada systemów rozproszonych:
 
@@ -268,7 +284,7 @@ Trzeba jasno określić:
 
 ---
 
-# Eventual Consistency
+## Eventual Consistency
 
 Wiele systemów działa w modelu:
 ```text
@@ -287,7 +303,7 @@ To bardzo popularny model:
 
 ---
 
-# Sharding — skalowanie przez podział danych
+## Sharding — skalowanie przez podział danych
 
 Replikacja pomaga głównie skalować:
 ```text
@@ -305,7 +321,7 @@ shardingu
 
 ---
 
-# Czym jest sharding
+## Czym jest sharding
 
 Sharding oznacza:
 - podział danych pomiędzy wiele niezależnych instancji,
@@ -318,7 +334,7 @@ To pozwala:
 
 ---
 
-# Najważniejszy problem shardingu
+## Najważniejszy problem shardingu
 
 Kluczowym problemem jest:
 ```text
@@ -332,7 +348,7 @@ To jedna z najważniejszych decyzji architektonicznych całego systemu.
 
 ---
 
-# Zły shard key = hotspot
+## Zły shard key = hotspot
 
 Najgorszy możliwy scenariusz:
 ```text
@@ -351,7 +367,7 @@ czyli shard:
 
 ---
 
-# Antywzorzec — timestamp jako shard key
+## Antywzorzec — timestamp jako shard key
 
 Bardzo częsty błąd:
 
@@ -366,7 +382,7 @@ auto_increment ID
 
 ---
 
-# Dlaczego to jest złe
+## Dlaczego to jest złe
 
 Nowe rekordy:
 - zawsze trafiają do „ostatniego” shardu.
@@ -386,7 +402,7 @@ Starsze shardy:
 
 ---
 
-# Skutek hotspotu
+## Skutek hotspotu
 
 Jeden shard:
 - ma 90–100% write traffic,
@@ -401,7 +417,7 @@ To całkowicie niszczy sens shardingu.
 
 ---
 
-# Hash-based sharding
+## Hash-based sharding
 
 Najczęstsze rozwiązanie:
 ```text
@@ -421,7 +437,7 @@ Dzięki temu:
 
 ---
 
-# Dlaczego hash działa lepiej
+## Dlaczego hash działa lepiej
 
 Hash:
 - losowo rozprowadza rekordy,
@@ -435,7 +451,7 @@ To bardzo ważne dla:
 
 ---
 
-# Compound Shard Keys
+## Compound Shard Keys
 
 Często stosuje się:
 ```text
@@ -455,7 +471,7 @@ To pozwala:
 
 ---
 
-# Hot Tenant Problem
+## Hot Tenant Problem
 
 Nawet hash sharding nie rozwiązuje wszystkiego.
 
@@ -472,7 +488,7 @@ hot tenant problem
 
 ---
 
-# Dedicated Shards
+## Dedicated Shards
 
 Często rozwiązaniem jest:
 ```text
@@ -489,7 +505,7 @@ To bardzo częsty wzorzec:
 
 ---
 
-# Monitoring shardów
+## Monitoring shardów
 
 Sharding wymaga bardzo dobrego monitoringu.
 
@@ -505,7 +521,7 @@ Bez tego hotspoty często są niewidoczne aż do momentu awarii.
 
 ---
 
-# Sharding nie jest darmowy
+## Sharding nie jest darmowy
 
 Bardzo ważna zasada:
 
@@ -514,7 +530,7 @@ Bardzo ważna zasada:
 
 ---
 
-# Problemy shardingu
+## Problemy shardingu
 
 Sharding utrudnia:
 - JOIN-y,
@@ -534,7 +550,7 @@ Pojawia się:
 
 ---
 
-# Distributed Transactions
+## Distributed Transactions
 
 Jednym z najtrudniejszych problemów są:
 ```text
@@ -552,7 +568,7 @@ To dlatego wiele systemów:
 
 ---
 
-# Re-sharding
+## Re-sharding
 
 Kolejny bardzo trudny problem:
 ```text
@@ -568,7 +584,7 @@ To jedna z najtrudniejszych operacji operacyjnych w dużych systemach.
 
 ---
 
-# Najważniejsza praktyczna zasada
+## Najważniejsza praktyczna zasada
 
 Replikacja i sharding to nie tylko:
 ```text
@@ -584,7 +600,7 @@ To przede wszystkim:
 
 ---
 
-# Finalna zasada
+## Finalna zasada
 
 Najważniejszy wniosek brzmi:
 

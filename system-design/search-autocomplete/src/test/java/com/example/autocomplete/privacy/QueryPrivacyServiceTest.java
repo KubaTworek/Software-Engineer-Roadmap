@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class QueryPrivacyServiceTest {
-    private final QueryPrivacyService service = new QueryPrivacyService();
+    private final QueryPrivacyService service = new QueryPrivacyService("test-privacy-key-123456789");
 
     @Test
     void shouldRedactEmailPhoneAndLongNumbers() {
@@ -15,6 +15,7 @@ class QueryPrivacyServiceTest {
 
     @Test
     void shouldHashUserId() {
-        assertThat(service.hashUserId("u1")).hasSize(16);
+        assertThat(service.hashUserId("u1")).hasSize(24);
+        assertThat(service.hashUserId("u1")).isNotEqualTo(new QueryPrivacyService("different-test-key-1234").hashUserId("u1"));
     }
 }

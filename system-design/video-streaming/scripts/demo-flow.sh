@@ -3,6 +3,8 @@ set -euo pipefail
 
 BASE_URL=${BASE_URL:-http://localhost:8080}
 SAMPLE_FILE=${SAMPLE_FILE:-sample.mp4}
+ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
+ADMIN_PASSWORD=${ADMIN_PASSWORD:-change-this-demo-password}
 
 if ! command -v jq >/dev/null; then
   echo "jq is required"
@@ -17,7 +19,7 @@ fi
 
 TOKEN=$(curl -s -X POST "$BASE_URL/api/auth/login" \
   -H 'Content-Type: application/json' \
-  -d '{"email":"admin@example.com","password":"admin1234"}' | jq -r .accessToken)
+  -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}" | jq -r .accessToken)
 
 VIDEO_ID=$(curl -s -X POST "$BASE_URL/api/videos" \
   -H "Authorization: Bearer $TOKEN" \

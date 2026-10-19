@@ -35,7 +35,7 @@ public final class ConnectionPoolMetricsBinder {
         Gauge.builder(
                         MetricNames.DB_CLIENT_CONNECTION_PENDING_REQUESTS,
                         pendingRequestsSupplier,
-                        Supplier::get
+                        supplier -> supplier.get().doubleValue()
                 )
                 .description("Current number of pending database connection acquisition requests.")
                 .tag(MetricLabels.SERVICE, serviceName)

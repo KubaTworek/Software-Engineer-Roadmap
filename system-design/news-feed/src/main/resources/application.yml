@@ -17,6 +17,8 @@ spring:
 
   data:
     redis:
+      repositories:
+        enabled: false
       host: localhost
       port: 6379
       timeout: 2s
@@ -29,6 +31,8 @@ spring:
       enable-auto-commit: false
       properties:
         spring.json.trusted.packages: "com.example.newsfeed.events"
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
     listener:
       ack-mode: manual
       concurrency: 3
@@ -37,6 +41,8 @@ spring:
       retries: 5
       properties:
         enable.idempotence: true
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
 
   jpa:
     open-in-view: false
@@ -57,7 +63,7 @@ management:
         include: health,info,metrics,prometheus,threaddump,loggers
   endpoint:
     health:
-      show-details: always
+      show-details: when_authorized
   tracing:
     sampling:
       probability: 1.0

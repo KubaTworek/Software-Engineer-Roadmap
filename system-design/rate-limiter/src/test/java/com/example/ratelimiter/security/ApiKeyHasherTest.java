@@ -1,6 +1,7 @@
 package com.example.ratelimiter.security;
 
 import org.junit.jupiter.api.Test;
+import com.example.ratelimiter.config.RateLimiterProperties;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -8,10 +9,10 @@ class ApiKeyHasherTest {
 
     @Test
     void shouldHashApiKeyUsingSha256() {
-        ApiKeyHasher hasher = new ApiKeyHasher();
+        ApiKeyHasher hasher = hasher();
 
-        String first = hasher.sha256("secret-api-key");
-        String second = hasher.sha256("secret-api-key");
+        String first = hasher.hmacSha256("secret-api-key");
+        String second = hasher.hmacSha256("secret-api-key");
 
         assertThat(first).isEqualTo(second);
         assertThat(first).hasSize(64);
@@ -20,9 +21,15 @@ class ApiKeyHasherTest {
 
     @Test
     void shouldReturnNullForBlankApiKey() {
-        ApiKeyHasher hasher = new ApiKeyHasher();
+        ApiKeyHasher hasher = hasher();
 
-        assertThat(hasher.sha256(null)).isNull();
-        assertThat(hasher.sha256("   ")).isNull();
+        assertThat(hasher.hmacSha256(null)).isNull();
+        assertThat(hasher.hmacSha256("   ")).isNull();
+    }
+
+    private ApiKeyHasher hasher() {
+        RateLimiterProperties properties = new RateLimiterProperties();
+        properties.getSecurity().setIdentityHmacSecret("test-secret");
+        return new ApiKeyHasher(properties);
     }
 }

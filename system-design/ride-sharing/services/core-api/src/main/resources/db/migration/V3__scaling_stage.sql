@@ -1,4 +1,6 @@
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS shard_key VARCHAR(64);
+-- Miasto jest kluczem routingu i musi istnieć przed utworzeniem indeksu city/status/time.
+ALTER TABLE rides ADD COLUMN IF NOT EXISTS city_id VARCHAR(64);
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS risk_score INT DEFAULT 0;
 ALTER TABLE rides ADD COLUMN IF NOT EXISTS pricing_snapshot JSONB;
 

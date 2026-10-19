@@ -87,17 +87,43 @@ spring:
       # - rate limiting.
       host: localhost
       port: 6379
+      repositories:
+        # Projekt używa RedisTemplate przez jawne adaptery cache, a nie
+        # repozytoria Spring Data Redis. Wyłączenie skanowania zapobiega próbie
+        # klasyfikowania repozytoriów JPA jako repozytoriów key-value.
+        enabled: false
 
     mongodb:
-      # MongoDB używane jako dokumentowy read model.
-      #
-      # PostgreSQL nadal jest źródłem prawdy.
-      # MongoDB przechowuje denormalizowany widok pod szybki odczyt/search.
-      uri: mongodb://localhost:27017/booking_capacity_read_model
+      repositories:
+        # Read model korzysta z MongoTemplate. Brak MongoRepository jest
+        # świadomą granicą, dlatego nie skanujemy pakietu repozytoriów JPA.
+        type: none
+
+  # Od Spring Boot 4 właściwości klienta MongoDB nie należą już do
+  # `spring.data.mongodb`. Prefiks `spring.mongodb` opisuje połączenie, a
+  # `spring.data` pozostaje miejscem konfiguracji repozytoriów Spring Data.
+  mongodb:
+    # MongoDB używane jako dokumentowy read model.
+    #
+    # PostgreSQL nadal jest źródłem prawdy.
+    # MongoDB przechowuje denormalizowany widok pod szybki odczyt/search.
+    uri: mongodb://localhost:27017/booking_capacity_read_model
+    representation:
+      # MongoDB nie powinno zgadywać binarnej reprezentacji UUID. STANDARD
+      # zapisuje je jako BSON subtype 4 i zapewnia zgodny odczyt między klientami.
+      uuid: standard
 
 server:
   # Port HTTP aplikacji.
   port: 8080
+
+booking:
+  reservation:
+    # Rezerwacja blokuje pojemność tylko przez ograniczony czas.
+    hold-duration: PT15M
+    # Scheduler blokuje i przetwarza małe paczki, żeby nie tworzyć długiej transakcji.
+    expiration-batch-size: 100
+    expiration-poll-interval: PT30S
 
 logging:
   level:
@@ -112,9 +138,11 @@ security:
   jwt:
     # Sekret JWT używany do podpisywania tokenów.
     #
-    # Ten konkretny sekret jest developerski.
-    # Produkcyjnie nie powinien być trzymany w repozytorium.
-    secret: dev-only-stage-7-secret-key-change-me-minimum-32-characters
+    # Wartość pochodzi ze środowiska i nie jest przechowywana w repozytorium.
+    # Brak wartości domyślnej jest celowy: aplikacja ma zakończyć start, jeśli
+    # operator zapomniał dostarczyć sekret. Cichy fallback na sekret z repozytorium
+    # sprawiałby, że wszystkie instalacje podpisywałyby tokeny tym samym kluczem.
+    secret: ${JWT_SECRET}
 
     # Czas życia access tokenu w sekundach.
     #

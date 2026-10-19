@@ -5,23 +5,26 @@ import jakarta.persistence.*;
 /**
  * Entity representing order belonging to user.
  */
-@Entity
-@Table(name = "orders")
+@Entity(name = "JpaExampleOrder")
+@Table(
+        name = "jpa_orders",
+        indexes = @Index(name = "idx_jpa_orders_user_id", columnList = "user_id")
+)
 public class Order {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "product_name", nullable = false, length = 200)
     private String productName;
 
     /**
-     * Default fetch type for @ManyToOne is EAGER.
-     *
-     * User is loaded automatically with order.
+     * ManyToOne defaults to EAGER, so the lab overrides it explicitly. Fetch
+     * plans should follow a use case, not an annotation default.
      */
-    @ManyToOne(fetch = FetchType.EAGER)
-    @JoinColumn(name = "user_id")
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
     protected Order() {
@@ -29,6 +32,12 @@ public class Order {
     }
 
     public Order(String productName, User user) {
+        if (productName == null || productName.isBlank()) {
+            throw new IllegalArgumentException("productName must not be blank");
+        }
+        if (user == null) {
+            throw new IllegalArgumentException("user must not be null");
+        }
         this.productName = productName;
         this.user = user;
     }

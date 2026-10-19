@@ -11,6 +11,7 @@ public record PostResponse(
         List<String> topics,
         PostStatsResponse stats,
         PostViewerStateResponse viewerState,
+        PostVisibility visibility,
         Instant createdAt,
         Instant updatedAt
 ) {
@@ -26,6 +27,7 @@ public record PostResponse(
                 post.getTopics(),
                 new PostStatsResponse(likeCount, commentCount),
                 new PostViewerStateResponse(likedByMe),
+                post.getVisibility(),
                 post.getCreatedAt(),
                 post.getUpdatedAt()
         );

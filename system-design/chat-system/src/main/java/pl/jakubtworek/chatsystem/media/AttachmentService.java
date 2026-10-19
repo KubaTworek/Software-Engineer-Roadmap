@@ -1,6 +1,5 @@
 package pl.jakubtworek.chatsystem.media;
 
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pl.jakubtworek.chatsystem.common.BadRequestException;
@@ -8,10 +7,9 @@ import pl.jakubtworek.chatsystem.common.ForbiddenException;
 import pl.jakubtworek.chatsystem.common.NotFoundException;
 import pl.jakubtworek.chatsystem.user.AppUser;
 import pl.jakubtworek.chatsystem.user.UserRepository;
+import pl.jakubtworek.chatsystem.message.MessageRepository;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.List;
@@ -20,14 +18,14 @@ import java.util.UUID;
 /**
  * Serwis odpowiedzialny za obsługę załączników.
  *
- * W tej implementacji pliki są zapisywane lokalnie na dysku,
- * ale API jest zaprojektowane podobnie do pre-signed URL flow.
+ * Adapter może zapisywać lokalnie albo w MinIO. Metadane i ACL pozostają w SQL,
+ * natomiast duży payload jest poza bazą oraz poza wiadomością.
  *
  * Typowy flow:
  * 1. Klient wywołuje createUpload() z metadanymi pliku.
  * 2. Backend tworzy Attachment w bazie i generuje uploadToken.
  * 3. Klient wysyła bajty pliku przez uploadContent().
- * 4. Attachment przechodzi w status UPLOADED.
+ * 4. Request kończy się w SCANNING, a niezależny worker ustawia READY albo REJECTED.
  * 5. Klient wysyła wiadomość z attachmentIds.
  * 6. MessageService sprawdza, czy attachmenty należą do nadawcy i są gotowe.
  *
@@ -48,16 +46,16 @@ public class AttachmentService {
     /**
      * Dozwolone typy plików.
      *
-     * image/ pozwala na image/png, image/jpeg itd.
-     * text/ pozwala na text/plain itd.
-     * application/pdf pozwala na PDF.
+     * Laboratorium obsługuje PNG, JPEG, PDF oraz tekst. Lista jest zgodna z
+     * wykonywalnym sprawdzeniem sygnatur; nie reklamujemy typu, którego skaner
+     * zawsze musiałby odrzucić.
      *
      * To jest podstawowy allowlist.
      * Produkcyjnie warto dodatkowo weryfikować realny typ pliku po zawartości,
      * a nie ufać wyłącznie mimeType z requestu.
      */
-    private static final List<String> ALLOWED_MIME_PREFIXES =
-            List.of("image/", "text/", "application/pdf");
+    private static final List<String> ALLOWED_MIME_TYPES =
+            List.of("image/png", "image/jpeg", "application/pdf");
 
     /**
      * Repozytorium metadanych załączników.
@@ -82,7 +80,8 @@ public class AttachmentService {
      * W produkcji ten element powinien być zastąpiony object storage,
      * np. S3, MinIO, GCS albo Azure Blob.
      */
-    private final Path storageDir;
+    private final ObjectStorage storage;
+    private final MessageRepository messages;
 
     /**
      * Generator bezpiecznych tokenów uploadu.
@@ -95,11 +94,13 @@ public class AttachmentService {
     public AttachmentService(
             AttachmentRepository attachmentRepository,
             UserRepository userRepository,
-            @Value("${app.media.local-dir:./data/uploads}") String storageDir
+            MessageRepository messages,
+            ObjectStorage storage
     ) {
         this.attachmentRepository = attachmentRepository;
         this.userRepository = userRepository;
-        this.storageDir = Path.of(storageDir);
+        this.messages = messages;
+        this.storage = storage;
     }
 
     /**
@@ -211,26 +212,16 @@ public class AttachmentService {
              * jako pełna ochrona przed path traversal.
              * Tu storageKey jest generowany przez backend, więc ryzyko jest ograniczone.
              */
-            Path target = storageDir
-                    .resolve(attachment.getStorageKey())
-                    .normalize();
-
-            /*
-             * Tworzymy katalog użytkownika, jeśli jeszcze nie istnieje.
-             */
-            Files.createDirectories(target.getParent());
-
-            /*
-             * Zapisujemy plik na lokalnym dysku.
-             */
-            Files.write(target, content);
+            storage.putQuarantine(attachment.getStorageKey(), content, attachment.getMimeType());
 
             /*
              * Aktualizujemy status attachmentu i realny rozmiar po uploadzie.
              */
-            attachment.markUploaded(content.length);
+            attachment.markScanning(content.length);
             attachmentRepository.save(attachment);
 
+            // Zwracamy SCANNING: antywirus i weryfikacja sygnatury są osobnym,
+            // retryowalnym etapem, a nie częścią latency requestu uploadu.
             return toResponse(attachment);
         } catch (IOException ex) {
             /*
@@ -262,7 +253,7 @@ public class AttachmentService {
         /*
          * Nie pobieramy pliku, który nie został jeszcze poprawnie uploadowany.
          */
-        if (attachment.getStatus() != AttachmentStatus.UPLOADED) {
+        if (attachment.getStatus() != AttachmentStatus.READY) {
             throw new BadRequestException("Attachment is not available for download");
         }
 
@@ -273,7 +264,8 @@ public class AttachmentService {
          * Produkcyjnie trzeba tu dodać sprawdzenie,
          * czy attachment został użyty w wiadomości dostępnej dla currentUserId.
          */
-        if (!attachment.getOwner().getId().equals(currentUserId)) {
+        if (!attachment.getOwner().getId().equals(currentUserId)
+                && !messages.isAttachmentVisibleTo(attachmentId, currentUserId)) {
             throw new ForbiddenException("You cannot download this attachment directly");
         }
 
@@ -281,9 +273,7 @@ public class AttachmentService {
             /*
              * Odczytujemy bajty z lokalnego storage.
              */
-            return Files.readAllBytes(
-                    storageDir.resolve(attachment.getStorageKey()).normalize()
-            );
+            return storage.readClean(attachment.getStorageKey());
         } catch (IOException ex) {
             /*
              * Metadane attachmentu istnieją, ale pliku nie ma na dysku.
@@ -355,7 +345,7 @@ public class AttachmentService {
              * Nie pozwalamy wysłać wiadomości z attachmentem,
              * który istnieje tylko jako metadata bez pliku.
              */
-            if (attachment.getStatus() != AttachmentStatus.UPLOADED) {
+            if (attachment.getStatus() != AttachmentStatus.READY) {
                 throw new BadRequestException("Attachment must be uploaded before it can be sent");
             }
         }
@@ -383,8 +373,7 @@ public class AttachmentService {
          * Uwaga: mimeType pochodzi od klienta, więc nie można mu w pełni ufać.
          * To jest szybka walidacja, nie pełne skanowanie pliku.
          */
-        boolean allowed = ALLOWED_MIME_PREFIXES.stream()
-                .anyMatch(prefix -> mimeType.startsWith(prefix) || mimeType.equals(prefix));
+        boolean allowed = mimeType.startsWith("text/") || ALLOWED_MIME_TYPES.contains(mimeType);
 
         if (!allowed) {
             throw new BadRequestException("Unsupported file type");
@@ -406,17 +395,16 @@ public class AttachmentService {
     /**
      * Buduje odpowiedź AttachmentResponse.
      *
-     * uploadUrl zawiera endpoint i uploadToken potrzebne do przesłania pliku.
+     * uploadUrl zawiera endpoint, a jednorazowy uploadToken jest osobnym polem
+     * i powinien trafić do nagłówka X-Upload-Token, nie do URL/logów.
      *
      * downloadUrl jest zwracany dopiero wtedy,
-     * gdy plik ma status UPLOADED.
+     * gdy plik ma status READY.
      */
     private AttachmentResponse toResponse(Attachment attachment) {
-        String uploadUrl =
-                "/api/attachments/" + attachment.getId()
-                        + "/content?uploadToken=" + attachment.getUploadToken();
+        String uploadUrl = "/api/attachments/" + attachment.getId() + "/content";
 
-        String downloadUrl = attachment.getStatus() == AttachmentStatus.UPLOADED
+        String downloadUrl = attachment.getStatus() == AttachmentStatus.READY
                 ? "/api/attachments/" + attachment.getId() + "/content"
                 : null;
 

@@ -137,7 +137,8 @@ public interface CapacityPoolRepository extends JpaRepository<CapacityPool, UUID
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """
             UPDATE capacity_pools
-               SET available_capacity = available_capacity - 1
+               SET available_capacity = available_capacity - 1,
+                   version = version + 1
              WHERE event_id = :eventId
                AND available_capacity > 0
             """, nativeQuery = true)
@@ -168,7 +169,8 @@ public interface CapacityPoolRepository extends JpaRepository<CapacityPool, UUID
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """
             UPDATE capacity_pools
-               SET available_capacity = available_capacity + 1
+               SET available_capacity = available_capacity + 1,
+                   version = version + 1
              WHERE event_id = :eventId
                AND available_capacity < total_capacity
             """, nativeQuery = true)

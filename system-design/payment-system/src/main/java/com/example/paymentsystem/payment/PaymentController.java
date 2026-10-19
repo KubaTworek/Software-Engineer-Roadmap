@@ -3,6 +3,9 @@ package com.example.paymentsystem.payment;
 import com.example.paymentsystem.idempotency.IdempotencyRecord;
 import com.example.paymentsystem.idempotency.IdempotencyService;
 import com.example.paymentsystem.refund.Refund;
+import com.example.paymentsystem.idempotency.IdempotencyClaim;
+import com.example.paymentsystem.idempotency.IdempotencyInProgressException;
+import com.example.paymentsystem.psp.ProviderOutcomeUnknownException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -10,6 +13,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
+import java.security.Principal;
+import org.springframework.security.core.Authentication;
+import com.example.paymentsystem.security.MerchantAccessPolicy;
 
 /**
  * REST controller odpowiedzialny za główne operacje na płatnościach.
@@ -35,6 +41,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/v1/payments")
 public class PaymentController {
+    private static final String CREATE_SCOPE = "POST:/v1/payments";
 
     /**
      * Główny serwis domenowy płatności.
@@ -70,15 +77,18 @@ public class PaymentController {
      * którą klient dostał przy pierwszym poprawnym requestcie.
      */
     private final ObjectMapper objectMapper;
+    private final MerchantAccessPolicy merchantAccess;
 
     public PaymentController(
             PaymentService paymentService,
             IdempotencyService idempotencyService,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            MerchantAccessPolicy merchantAccess
     ) {
         this.paymentService = paymentService;
         this.idempotencyService = idempotencyService;
         this.objectMapper = objectMapper;
+        this.merchantAccess = merchantAccess;
     }
 
     /**
@@ -112,8 +122,10 @@ public class PaymentController {
     @PostMapping
     public ResponseEntity<String> create(
             @RequestHeader("Idempotency-Key") String key,
+            Authentication authentication,
             @Valid @RequestBody CreatePaymentRequest request
     ) throws Exception {
+        merchantAccess.requireAccess(authentication, request.merchantId());
 
         /**
          * Budujemy kanoniczną reprezentację requestu.
@@ -135,11 +147,7 @@ public class PaymentController {
          * Jeżeli key był użyty z innym body, IdempotencyService powinien
          * zgłosić konflikt.
          */
-        var replay = idempotencyService.findReplay(
-                key,
-                "POST:/v1/payments",
-                canonical
-        );
+        IdempotencyClaim claim = idempotencyService.claim(key, CREATE_SCOPE, canonical);
 
         /**
          * Jeżeli znaleźliśmy replay, nie wykonujemy ponownie PaymentService.
@@ -148,12 +156,15 @@ public class PaymentController {
          * ponowiony request nie tworzy nowej płatności,
          * tylko dostaje dokładnie tę samą odpowiedź co wcześniej.
          */
-        if (replay.isPresent()) {
-            IdempotencyRecord record = replay.get();
+        if (claim.outcome() == IdempotencyClaim.Outcome.REPLAY) {
+            IdempotencyRecord record = claim.record();
 
             return ResponseEntity
                     .status(record.getHttpStatus())
                     .body(record.getResponseBody());
+        }
+        if (claim.outcome() == IdempotencyClaim.Outcome.IN_PROGRESS) {
+            throw new IdempotencyInProgressException();
         }
 
         /**
@@ -167,7 +178,18 @@ public class PaymentController {
          * - wywołanie mockowego providera,
          * - zapis providerPaymentId i checkoutUrl.
          */
-        PaymentResponse response = paymentService.create(request, key);
+        PaymentResponse response;
+        try {
+            response = paymentService.create(request, key);
+        } catch (ProviderOutcomeUnknownException unknown) {
+            String uncertainBody = objectMapper.writeValueAsString(new UnknownPaymentResponse(
+                    unknown.getPaymentId(), "UNKNOWN", unknown.getMessage()));
+            idempotencyService.unknown(key, CREATE_SCOPE, uncertainBody, unknown.getPaymentId().toString());
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(uncertainBody);
+        } catch (RuntimeException retryableFailure) {
+            idempotencyService.retryable(key, CREATE_SCOPE);
+            throw retryableFailure;
+        }
 
         /**
          * Serializujemy odpowiedź do JSON.
@@ -187,17 +209,15 @@ public class PaymentController {
          * - body odpowiedzi,
          * - status HTTP.
          */
-        idempotencyService.save(
-                key,
-                "POST:/v1/payments",
-                canonical,
-                body,
-                HttpStatus.CREATED
-        );
+        idempotencyService.complete(key, CREATE_SCOPE, body, HttpStatus.CREATED,
+                response.paymentId().toString());
 
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(body);
+    }
+
+    private record UnknownPaymentResponse(UUID paymentId, String status, String detail) {
     }
 
     /**
@@ -213,8 +233,10 @@ public class PaymentController {
      * @return aktualny stan płatności
      */
     @GetMapping("/{paymentId}")
-    public PaymentResponse get(@PathVariable UUID paymentId) {
-        return paymentService.get(paymentId);
+    public PaymentResponse get(@PathVariable UUID paymentId, Authentication authentication) {
+        PaymentResponse response = paymentService.get(paymentId);
+        merchantAccess.requireAccess(authentication, response.merchantId());
+        return response;
     }
 
     /**
@@ -269,6 +291,8 @@ public class PaymentController {
      *
      * Request zawiera amount, więc system może obsłużyć partial capture,
      * czyli pobranie tylko części wcześniej autoryzowanej kwoty.
+     * Nagłówek Idempotency-Key identyfikuje pojedynczy capture; kolejne
+     * częściowe pobranie musi otrzymać inny klucz.
      *
      * @param paymentId ID płatności
      * @param request kwota do pobrania
@@ -277,9 +301,10 @@ public class PaymentController {
     @PostMapping("/{paymentId}/capture")
     public PaymentResponse capture(
             @PathVariable UUID paymentId,
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
             @Valid @RequestBody CapturePaymentRequest request
     ) {
-        return paymentService.capture(paymentId, request.amount());
+        return paymentService.capture(paymentId, request.amount(), idempotencyKey);
     }
 
     /**
@@ -307,7 +332,7 @@ public class PaymentController {
      * Refund oznacza zwrot środków do klienta po tym,
      * jak płatność została już pobrana.
      *
-     * Ten endpoint przyjmuje opcjonalny Idempotency-Key.
+     * Ten endpoint wymaga Idempotency-Key.
      * W produkcyjnym systemie refund również powinien być idempotentny,
      * ponieważ podwójne wykonanie refundu mogłoby zwrócić klientowi
      * pieniądze dwa razy.
@@ -321,16 +346,18 @@ public class PaymentController {
      * - jakie księgowania trzeba wykonać w ledgerze.
      *
      * @param paymentId ID płatności, dla której robimy refund
-     * @param key opcjonalny idempotency key dla refundu
+     * @param key wymagany idempotency key dla refundu
      * @param request dane refundu, głównie kwota
      * @return utworzony refund
      */
     @PostMapping("/{paymentId}/refunds")
     public Refund refund(
             @PathVariable UUID paymentId,
-            @RequestHeader(value = "Idempotency-Key", required = false) String key,
+            @RequestHeader("Idempotency-Key") String key,
+            @RequestHeader(value = "X-Approval-Id", required = false) UUID approvalId,
+            Principal principal,
             @Valid @RequestBody RefundPaymentRequest request
     ) {
-        return paymentService.refund(paymentId, request, key);
+        return paymentService.refund(paymentId, request, key, principal.getName(), approvalId);
     }
 }

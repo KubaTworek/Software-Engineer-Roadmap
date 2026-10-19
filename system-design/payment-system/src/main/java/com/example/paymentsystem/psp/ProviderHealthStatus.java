@@ -1,3 +1,3 @@
 package com.example.paymentsystem.psp;
 
-public enum ProviderHealthStatus {CLOSED, OPEN}
+public enum ProviderHealthStatus {CLOSED, OPEN, HALF_OPEN}

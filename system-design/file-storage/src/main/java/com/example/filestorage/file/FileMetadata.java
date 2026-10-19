@@ -28,7 +28,7 @@ public class FileMetadata {
     @Column(name = "size_bytes", nullable = false)
     private long sizeBytes;
 
-    @Column(name = "object_key", nullable = false, unique = true)
+    @Column(name = "object_key", nullable = false)
     private String objectKey;
 
     @Column(nullable = false)
@@ -52,6 +52,10 @@ public class FileMetadata {
 
     @Column(name = "deleted_at")
     private Instant deletedAt;
+
+    @Version
+    @Column(name = "row_version", nullable = false)
+    private long rowVersion;
 
     protected FileMetadata() {}
 
@@ -99,12 +103,44 @@ public class FileMetadata {
 
     public void restoreVersion(UUID versionId, int versionNumber, String contentType, long sizeBytes, String objectKey, String sha256) {
         replaceContent(versionId, versionNumber, contentType, sizeBytes, objectKey, sha256);
+        // Historyczna wersja byla juz zaakceptowana przez pipeline w momencie
+        // pierwotnej publikacji. Restore nie powinien pozostawic pliku w stanie
+        // REJECTED/QUARANTINED odziedziczonym po nowszej, wadliwej wersji.
+        this.status = FileStatus.ACTIVE;
     }
 
     public void softDelete() {
         this.status = FileStatus.DELETED;
         this.deletedAt = Instant.now();
         this.updatedAt = this.deletedAt;
+    }
+
+    public void quarantine() {
+        status = FileStatus.QUARANTINED;
+        updatedAt = Instant.now();
+    }
+
+    public void markAvailable() {
+        if (status != FileStatus.QUARANTINED) {
+            throw new IllegalStateException("Only a quarantined file can become available");
+        }
+        status = FileStatus.ACTIVE;
+        updatedAt = Instant.now();
+    }
+
+    public void reject() {
+        status = FileStatus.REJECTED;
+        updatedAt = Instant.now();
+    }
+
+    /** Przepina logiczny plik na kanoniczny, identyczny blob po deduplikacji. */
+    public void useCanonicalBlob(String objectKey) {
+        this.objectKey = objectKey;
+        this.updatedAt = Instant.now();
+    }
+
+    public boolean isDownloadable() {
+        return status == FileStatus.ACTIVE && deletedAt == null;
     }
 
     public void restore(UUID parentFolderId) {
@@ -129,4 +165,5 @@ public class FileMetadata {
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
     public Instant getDeletedAt() { return deletedAt; }
+    public long getRowVersion() { return rowVersion; }
 }

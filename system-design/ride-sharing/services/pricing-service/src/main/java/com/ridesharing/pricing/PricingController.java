@@ -34,12 +34,6 @@ public class PricingController {
      */
     private final PricingService pricingService;
 
-    /**
-     * Konstruktor wstrzykujący PricingService.
-     *
-     * Controller nie tworzy serwisu samodzielnie.
-     * Korzysta ze standardowego dependency injection Springa.
-     */
     public PricingController(PricingService pricingService) {
         this.pricingService = pricingService;
     }
@@ -50,14 +44,14 @@ public class PricingController {
      * Endpoint:
      * POST /api/v1/pricing/estimate
      *
-     * Request powinien zawierać dane potrzebne do wyceny, np.:
+     * Request zawiera dane potrzebne do wyceny:
      * - cityId,
      * - vehicleType,
      * - distanceKm,
      * - durationMinutes,
      * - aktualny popyt,
-     * - liczbę dostępnych kierowców,
-     * - ewentualny surge.
+     * - liczbę dostępnych kierowców.
+     * Surge oblicza PricingService z popytu i podaży; klient nie podaje mnożnika.
      *
      * @Valid uruchamia walidację pól z PriceEstimateRequest.
      *

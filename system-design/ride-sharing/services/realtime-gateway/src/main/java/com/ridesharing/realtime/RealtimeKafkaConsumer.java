@@ -53,17 +53,15 @@ public class RealtimeKafkaConsumer {
      */
     @KafkaListener(
             topics = "ride.events",
-            groupId = "realtime-gateway"
+            groupId = "realtime-gateway-${app.realtime.node-id}"
     )
     public void rideEvent(Map<String, Object> event) {
         /*
          * aggregateId powinien być standardowym identyfikatorem agregatu w event envelope.
          * Fallback do rideId pomaga obsłużyć starszy/prostszy format eventów.
          */
-        Object rideId = event.getOrDefault(
-                "aggregateId",
-                event.get("rideId")
-        );
+        Map<String, Object> payload = payload(event);
+        Object rideId = event.getOrDefault("aggregateId", payload.get("rideId"));
 
         /*
          * Bez rideId nie da się poprawnie zbudować destination WebSocket,
@@ -72,7 +70,7 @@ public class RealtimeKafkaConsumer {
         if (rideId != null) {
             fanout.publishRideEvent(
                     rideId.toString(),
-                    event
+                    payload
             );
         }
     }
@@ -96,20 +94,27 @@ public class RealtimeKafkaConsumer {
      */
     @KafkaListener(
             topics = "driver.location.updated",
-            groupId = "realtime-gateway"
+            groupId = "realtime-gateway-${app.realtime.node-id}"
     )
     public void locationEvent(Map<String, Object> event) {
         /*
          * cityId jest wymagane do routingu po mieście.
          * Bez niego nie wiemy, na który kanał realtime wysłać lokalizację.
          */
-        Object cityId = event.get("cityId");
+        Map<String, Object> payload = payload(event);
+        Object cityId = payload.get("cityId");
 
         if (cityId != null) {
             fanout.publishCityLocationEvent(
                     cityId.toString(),
-                    event
+                    payload
             );
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> payload(Map<String, Object> envelope) {
+        Object payload = envelope.get("payload");
+        return payload instanceof Map<?, ?> map ? (Map<String, Object>) map : envelope;
     }
 }

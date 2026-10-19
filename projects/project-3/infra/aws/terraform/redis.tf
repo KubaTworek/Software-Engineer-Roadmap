@@ -9,9 +9,9 @@ resource "aws_elasticache_replication_group" "redis" {
   engine                     = "redis"
   engine_version             = "7.1"
   node_type                  = var.redis_node_type
-  num_cache_clusters         = 1
-  automatic_failover_enabled = false
-  multi_az_enabled           = false
+  num_cache_clusters         = var.enable_high_availability ? 2 : 1
+  automatic_failover_enabled = var.enable_high_availability
+  multi_az_enabled           = var.enable_high_availability
   subnet_group_name          = aws_elasticache_subnet_group.redis.name
   security_group_ids         = [aws_security_group.redis.id]
   port                       = 6379

@@ -2,6 +2,8 @@ package pl.jakubtworek.backend_engineering.stage_3.block_b.tracing;
 
 import io.opentelemetry.api.trace.Span;
 
+import java.util.Objects;
+
 /**
  * Example wrapper around a Redis client.
  *
@@ -14,22 +16,31 @@ public final class TracedRedisClient {
     private final RedisGateway redisGateway;
 
     public TracedRedisClient(CheckoutSpanFactory spanFactory, RedisGateway redisGateway) {
-        this.spanFactory = spanFactory;
-        this.redisGateway = redisGateway;
+        this.spanFactory = Objects.requireNonNull(spanFactory, "spanFactory must not be null");
+        this.redisGateway = Objects.requireNonNull(redisGateway, "redisGateway must not be null");
     }
 
     public String getOrderFromCache(String cacheKey) {
         try (SpanScope spanScope = spanFactory.startRedisGetSpan("0")) {
-            String value = redisGateway.get(cacheKey);
+            try {
+                String value = redisGateway.get(requireNonBlank(cacheKey, "cacheKey"));
 
-            Span span = spanScope.span();
-            span.setAttribute(TracingAttributes.CACHE_HIT, value != null);
+                Span span = spanScope.span();
+                span.setAttribute(TracingAttributes.CACHE_HIT, value != null);
 
-            return value;
-        } catch (RuntimeException exception) {
-            SpanErrorHandler.recordException(Span.current(), exception);
-            throw exception;
+                return value;
+            } catch (RuntimeException exception) {
+                SpanErrorHandler.recordException(spanScope.span(), exception);
+                throw exception;
+            }
         }
+    }
+
+    private static String requireNonBlank(String value, String fieldName) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(fieldName + " must not be blank");
+        }
+        return value;
     }
 
     /**

@@ -2,165 +2,115 @@ package com.example.autocomplete.index;
 
 import com.example.autocomplete.model.Suggestion;
 import com.example.autocomplete.model.SuggestionMetrics;
+import com.example.autocomplete.policy.SafetyPolicyFilter;
+import com.example.autocomplete.service.CanonicalKeyGenerator;
 import com.example.autocomplete.service.TextNormalizer;
 import org.springframework.stereotype.Component;
 
-import java.util.*;
-import java.util.concurrent.CopyOnWriteArrayList;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Comparator;
+import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Realtime delta index.
- *
- * To jest dodatkowy, mały indeks dla świeżych sugestii.
- *
- * Główny indeks autocomplete jest zwykle budowany batchowo:
- * - co kilka minut,
- * - co godzinę,
- * - raz dziennie,
- * zależnie od skali i wymagań.
- *
- * Problem:
- * nowe trendy albo pilne sugestie nie powinny czekać na pełny rebuild indeksu.
- *
- * Rozwiązanie:
- * trzymamy mały "delta index", który zawiera świeże sugestie
- * i jest odpytywany razem z głównym indeksem.
- *
- * Flow w aplikacji:
- *
- * AutocompleteService:
- * 1. pobiera kandydatów z aktywnego głównego indeksu,
- * 2. dobiera kandydatów z RealtimeDeltaIndex,
- * 3. łączy wyniki,
- * 4. przepuszcza je przez safety filter,
- * 5. rankinguje finalnie.
+ * Ograniczona, wersjonowana nakładka near-real-time na batchowy snapshot.
+ * Sequence chroni przed reorderem, TTL przed wiecznym życiem trendu, a policy
+ * przy ingestion ogranicza czas obecności szkodliwych danych w serving path.
+ * Finalna bramka policy w AutocompleteService nadal pozostaje obowiązkowa.
  */
 @Component
 public class RealtimeDeltaIndex {
+    private static final int MAX_ENTRIES = 10_000;
+    private static final Duration DEFAULT_TTL = Duration.ofMinutes(10);
 
-    /**
-     * Normalizer zapewnia spójne porównywanie tekstu.
-     *
-     * Dzięki temu query:
-     * - "AI-Laptop"
-     * - "ai laptop"
-     * - "  ai   laptop "
-     *
-     * może zostać sprowadzone do tej samej postaci.
-     */
     private final TextNormalizer normalizer;
+    private final CanonicalKeyGenerator keyGenerator;
+    private final SafetyPolicyFilter policy;
+    private final Clock clock;
+    private final ConcurrentHashMap<String, DeltaEntry> entries = new ConcurrentHashMap<>();
+    private final AtomicLong version = new AtomicLong();
+    private final AtomicLong generatedSequence = new AtomicLong();
 
-    /**
-     * Lista świeżych sugestii.
-     *
-     * CopyOnWriteArrayList jest thread-safe dla scenariusza:
-     * - dużo odczytów,
-     * - mało zapisów.
-     *
-     * To pasuje do delta indexu, bo autocomplete wykonuje bardzo dużo odczytów,
-     * a nowe trendy/sugestie są dodawane relatywnie rzadziej.
-     *
-     * Uwaga:
-     * CopyOnWriteArrayList nie nadaje się do bardzo częstych zapisów,
-     * bo każdy zapis kopiuje wewnętrzną tablicę.
-     */
-    private final List<Suggestion> deltaSuggestions = new CopyOnWriteArrayList<>();
-
-    public RealtimeDeltaIndex(TextNormalizer normalizer) {
+    public RealtimeDeltaIndex(TextNormalizer normalizer, CanonicalKeyGenerator keyGenerator,
+                              SafetyPolicyFilter policy, Clock clock) {
         this.normalizer = normalizer;
-
-        /*
-         * Przykładowa świeża sugestia dodana do delta indexu przy starcie.
-         *
-         * W produkcji takie sugestie pochodziłyby np. z:
-         * - Kafka/Flink,
-         * - streamingu trendów,
-         * - panelu administracyjnego,
-         * - realtime ingestion pipeline.
-         */
-        deltaSuggestions.add(new Suggestion(
-                "delta-ai-laptop",
-                "AI Laptop Deals",
-                "trending",
-                new SuggestionMetrics(
-                        300,  // popularity
-                        .35,  // CTR
-                        .18,  // conversion rate
-                        .95,  // freshness/trending score
-                        .85   // quality score
-                ),
+        this.keyGenerator = keyGenerator;
+        this.policy = policy;
+        this.clock = clock;
+        add(new Suggestion(
+                "delta-ai-laptop", "AI Laptop Deals", "trending",
+                new SuggestionMetrics(300, .35, .18, .95, .85),
                 List.of("ai laptop", "laptop ai"),
-                Set.of("electronics"),
-                Set.of("en-US"),
-                Set.of("US"),
-                false
-        ));
+                java.util.Set.of("electronics"), java.util.Set.of("en-US"),
+                java.util.Set.of("US"), false
+        ), generatedSequence.incrementAndGet(), DEFAULT_TTL);
     }
 
-    /**
-     * Zwraca kandydatów z delta indexu dla danego query.
-     *
-     * Ta metoda nie robi finalnego rankingu.
-     * Jej zadanie to tylko candidate generation dla świeżych sugestii.
-     *
-     * Finalne sortowanie wykonuje później SuggestionRanker.
-     */
+    public boolean add(Suggestion suggestion, long sequence, Duration ttl) {
+        if (suggestion == null || ttl == null || ttl.isNegative() || ttl.isZero()) return false;
+        if (!policy.evaluate(suggestion).allowed()) return false;
+        String key = keyGenerator.canonicalKey(suggestion.displayText());
+        Instant expiresAt = clock.instant().plus(ttl);
+        final boolean[] accepted = {false};
+        entries.compute(key, (ignored, current) -> {
+            if (current != null && sequence <= current.sequence()) return current;
+            accepted[0] = true;
+            return new DeltaEntry(suggestion, sequence, expiresAt);
+        });
+        if (accepted[0]) {
+            version.incrementAndGet();
+            evictIfOversized();
+        }
+        return accepted[0];
+    }
+
+    public boolean add(Suggestion suggestion) {
+        return add(suggestion, generatedSequence.incrementAndGet(), DEFAULT_TTL);
+    }
+
     public List<Suggestion> candidates(String rawQuery, int limit) {
-
-        /*
-         * Normalizujemy query, żeby porównywać tekst w spójnej formie.
-         */
-        String q = normalizer.normalize(rawQuery);
-
-        /*
-         * Szukamy sugestii, których:
-         * - displayText zaczyna się od query,
-         * - albo któryś alias zaczyna się od query.
-         *
-         * Przykład:
-         * query = "ai"
-         *
-         * match:
-         * - "AI Laptop Deals"
-         * - alias "ai laptop"
-         */
-        return deltaSuggestions.stream()
-                .filter(s ->
-                        normalizer.normalize(s.displayText()).startsWith(q)
-                                || s.aliases()
-                                .stream()
-                                .anyMatch(a -> normalizer.normalize(a).startsWith(q))
-                )
-                .limit(limit)
+        purgeExpired();
+        String query = normalizer.normalize(rawQuery);
+        return entries.values().stream()
+                .map(DeltaEntry::suggestion)
+                .filter(s -> normalizer.normalize(s.displayText()).startsWith(query)
+                        || s.aliases().stream().anyMatch(alias -> normalizer.normalize(alias).startsWith(query)))
+                .sorted(Comparator.comparingInt(Suggestion::popularity).reversed()
+                        .thenComparing(Suggestion::displayText))
+                .limit(Math.max(0, limit))
                 .toList();
     }
 
-    /**
-     * Dodaje nową świeżą sugestię do delta indexu.
-     *
-     * W produkcyjnym systemie ta metoda mogłaby być wywoływana przez:
-     * - consumer eventów,
-     * - endpoint adminowy,
-     * - pipeline trendów,
-     * - moduł realtime ingestion.
-     *
-     * Dzięki temu nowa sugestia może zacząć działać bez przebudowy
-     * głównego indeksu autocomplete.
-     */
-    public void add(Suggestion suggestion) {
-        deltaSuggestions.add(suggestion);
+    public int size() {
+        purgeExpired();
+        return entries.size();
     }
 
-    /**
-     * Zwraca liczbę sugestii w delta indexie.
-     *
-     * Przydatne do:
-     * - debugowania,
-     * - metryk,
-     * - health checków,
-     * - sprawdzania, czy delta index nie rośnie bez kontroli.
-     */
-    public int size() {
-        return deltaSuggestions.size();
+    public long version() {
+        return version.get();
     }
+
+    private void purgeExpired() {
+        Instant now = clock.instant();
+        int before = entries.size();
+        entries.entrySet().removeIf(entry -> !entry.getValue().expiresAt().isAfter(now));
+        if (entries.size() != before) version.incrementAndGet();
+    }
+
+    private void evictIfOversized() {
+        int excess = entries.size() - MAX_ENTRIES;
+        if (excess <= 0) return;
+        entries.entrySet().stream()
+                .sorted(Comparator.comparing(entry -> entry.getValue().expiresAt()))
+                .limit(excess)
+                .map(java.util.Map.Entry::getKey)
+                .toList()
+                .forEach(entries::remove);
+        version.incrementAndGet();
+    }
+
+    private record DeltaEntry(Suggestion suggestion, long sequence, Instant expiresAt) {}
 }

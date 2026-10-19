@@ -101,6 +101,30 @@ public class DynamoDbFeedStorage implements FeedStorage {
         );
     }
 
+    @Override
+    public void removeAuthorFromUserFeed(UUID userId, UUID authorId) {
+        QueryConditional partition = QueryConditional.keyEqualTo(
+                Key.builder().partitionValue(userId.toString()).build());
+        for (Page<DynamoDbFeedInboxRecord> page : table.query(r -> r.queryConditional(partition))) {
+            page.items().stream()
+                    .filter(item -> authorId.toString().equals(item.getAuthorId()))
+                    .forEach(item -> table.deleteItem(Key.builder()
+                            .partitionValue(item.getUserId())
+                            .sortValue(item.getCreatedAtPostId())
+                            .build()));
+        }
+    }
+
+    @Override
+    public void clearUserFeed(UUID userId) {
+        QueryConditional partition = QueryConditional.keyEqualTo(
+                Key.builder().partitionValue(userId.toString()).build());
+        for (Page<DynamoDbFeedInboxRecord> page : table.query(r -> r.queryConditional(partition))) {
+            page.items().forEach(item -> table.deleteItem(Key.builder()
+                    .partitionValue(item.getUserId()).sortValue(item.getCreatedAtPostId()).build()));
+        }
+    }
+
     /**
      * Pobiera ID postów z feed inbox użytkownika.
      *

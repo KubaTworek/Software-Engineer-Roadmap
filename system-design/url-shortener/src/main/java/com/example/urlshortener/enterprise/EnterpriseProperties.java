@@ -1,6 +1,8 @@
 package com.example.urlshortener.enterprise;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "app.enterprise")
@@ -8,6 +10,7 @@ public class EnterpriseProperties {
     private boolean enabled = true;
     private String apiKeyHeader = "X-Api-Key";
     private String apiKeyHashSalt = "change-me-enterprise-salt";
+    private List<String> previousApiKeyHashSalts = new ArrayList<>();
     private int bulkMaxSize = 100;
     private int defaultRateLimitPerMinute = 1000;
     private Duration idempotencyTtl = Duration.ofHours(24);
@@ -18,6 +21,10 @@ public class EnterpriseProperties {
     public void setApiKeyHeader(String apiKeyHeader) { this.apiKeyHeader = apiKeyHeader; }
     public String getApiKeyHashSalt() { return apiKeyHashSalt; }
     public void setApiKeyHashSalt(String apiKeyHashSalt) { this.apiKeyHashSalt = apiKeyHashSalt; }
+    public List<String> getPreviousApiKeyHashSalts() { return List.copyOf(previousApiKeyHashSalts); }
+    public void setPreviousApiKeyHashSalts(List<String> values) {
+        previousApiKeyHashSalts = values == null ? new ArrayList<>() : new ArrayList<>(values);
+    }
     public int getBulkMaxSize() { return bulkMaxSize; }
     public void setBulkMaxSize(int bulkMaxSize) { this.bulkMaxSize = bulkMaxSize; }
     public int getDefaultRateLimitPerMinute() { return defaultRateLimitPerMinute; }

@@ -1,5 +1,7 @@
 package pl.jakubtworek.backend_engineering.stage_1.block_b.thread_count;
 
+import java.util.Set;
+
 public record ExperimentConfig(
         String mode,
         int threadCount,
@@ -7,6 +9,26 @@ public record ExperimentConfig(
         int cpuIterations,
         int waitMillis
 ) {
+
+    private static final Set<String> SUPPORTED_MODES = Set.of("cpu", "wait", "mixed");
+
+    public ExperimentConfig {
+        if (!SUPPORTED_MODES.contains(mode)) {
+            throw new IllegalArgumentException("Unsupported mode: " + mode);
+        }
+        if (threadCount <= 0) {
+            throw new IllegalArgumentException("threadCount must be greater than zero");
+        }
+        if (durationSeconds <= 0) {
+            throw new IllegalArgumentException("durationSeconds must be greater than zero");
+        }
+        if (cpuIterations < 0) {
+            throw new IllegalArgumentException("cpuIterations must not be negative");
+        }
+        if (waitMillis < 0) {
+            throw new IllegalArgumentException("waitMillis must not be negative");
+        }
+    }
 
     public static ExperimentConfig fromArgs(String[] args) {
         // Defaults are intentionally simple.
@@ -36,6 +58,8 @@ public record ExperimentConfig(
                 cpuIterations = Integer.parseInt(arg.substring("--cpuIterations=".length()));
             } else if (arg.startsWith("--waitMillis=")) {
                 waitMillis = Integer.parseInt(arg.substring("--waitMillis=".length()));
+            } else {
+                throw new IllegalArgumentException("Unsupported argument: " + arg);
             }
         }
 

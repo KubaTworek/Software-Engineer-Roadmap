@@ -33,18 +33,20 @@
 --   POST /api/payments  -> cost 5
 --   POST /api/exports   -> cost 50
 --
--- ARGV[4] now millis
--- Aktualny czas w milisekundach, przekazany z aplikacji.
---
--- ARGV[5] ttl seconds
+-- ARGV[4] ttl seconds
 -- TTL dla klucza bucketu.
 -- Dzięki temu nieaktywne buckety znikają z Redisa.
 local key = KEYS[1]
 local capacity = tonumber(ARGV[1])
 local refill_per_second = tonumber(ARGV[2])
 local cost = tonumber(ARGV[3])
-local now = tonumber(ARGV[4])
-local ttl = tonumber(ARGV[5])
+local ttl = tonumber(ARGV[4])
+
+-- Redis jest wspólnym arbitrem stanu, dlatego jest też źródłem czasu.
+-- Czas z JVM kilku instancji mógłby różnić się przez clock skew i sztucznie
+-- przyspieszać lub zatrzymywać refill tego samego bucketu.
+local redis_time = redis.call('TIME')
+local now = tonumber(redis_time[1]) * 1000 + math.floor(tonumber(redis_time[2]) / 1000)
 
 -- Odczytujemy aktualny stan bucketu.
 --

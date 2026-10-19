@@ -19,6 +19,8 @@ services:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -67,7 +69,7 @@ services:
       retries: 30
 
   nginx-rtmp:
-    image: alfg/nginx-rtmp:latest
+    image: alfg/nginx-rtmp:v1.6.0
     ports:
       - "1935:1935"
       - "8088:80"
@@ -78,7 +80,9 @@ services:
       retries: 10
 
   minio:
-    image: minio/minio:latest
+    build:
+      context: ./docker
+      dockerfile: minio.Dockerfile
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: minioadmin
@@ -90,17 +94,18 @@ services:
       - minio_data:/data
 
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v2.54.1
     ports:
       - "9090:9090"
     volumes:
       - ./ops/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./ops/video-alerts.yml:/etc/prometheus/video-alerts.yml:ro
     depends_on:
       - api
       - worker
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:11.2.0
     ports:
       - "3000:3000"
     environment:
@@ -122,8 +127,8 @@ services:
       RABBITMQ_USERNAME: video
       RABBITMQ_PASSWORD: video
       OPENSEARCH_ENDPOINT: http://opensearch:9200
-      S3_ENDPOINT: http://host.docker.internal:9000
-      S3_PUBLIC_ENDPOINT: http://host.docker.internal:9000
+      S3_ENDPOINT: http://minio:9000
+      S3_PUBLIC_ENDPOINT: http://localhost:9000
       S3_ACCESS_KEY: minioadmin
       S3_SECRET_KEY: minioadmin
       S3_BUCKET: video-streaming
@@ -131,6 +136,9 @@ services:
       PERSONALIZATION_ENABLED: "true"
       PERSONALIZATION_RECOMPUTE_INTERVAL_MS: 600000
       JWT_SECRET: dev-secret-dev-secret-dev-secret-dev-secret-dev-secret
+      SIGNED_COOKIE_SECRET: dev-signed-cookie-secret-dev-signed-cookie-secret
+      DEMO_ADMIN_ENABLED: "true"
+      DEMO_ADMIN_PASSWORD: ${DEMO_ADMIN_PASSWORD:-change-this-demo-password}
       FFMPEG_PATH: ffmpeg
       TRANSCODING_WORKER_ENABLED: "false"
       LIVE_WORKER_ENABLED: "false"

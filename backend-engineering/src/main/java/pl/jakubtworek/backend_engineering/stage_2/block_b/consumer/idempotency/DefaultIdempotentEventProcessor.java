@@ -45,10 +45,14 @@ public class DefaultIdempotentEventProcessor<T extends ConsumedEvent>
             processedEventRepository.removeProcessedMarker(event.metadata().eventId());
             return ProcessingResult.RETRYABLE_FAILURE;
         } catch (NonRetryableProcessingException exception) {
+            processedEventRepository.removeProcessedMarker(event.metadata().eventId());
             return ProcessingResult.NON_RETRYABLE_FAILURE;
         } catch (RuntimeException exception) {
             processedEventRepository.removeProcessedMarker(event.metadata().eventId());
-            return ProcessingResult.RETRYABLE_FAILURE;
+            // Unknown programming and contract errors must not be retried by
+            // default. Infrastructure adapters should translate only known
+            // transient failures to RetryableProcessingException.
+            return ProcessingResult.NON_RETRYABLE_FAILURE;
         }
     }
 }

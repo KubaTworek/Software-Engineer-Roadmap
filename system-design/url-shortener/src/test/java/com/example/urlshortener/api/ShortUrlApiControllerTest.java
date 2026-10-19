@@ -6,11 +6,14 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 import org.junit.jupiter.api.Test;
+import org.mockito.Answers;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
@@ -18,6 +21,11 @@ import org.springframework.test.web.servlet.MvcResult;
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 class ShortUrlApiControllerTest {
+
+    // Szybki test HTTP weryfikuje kontrakt i fallback do source of truth.
+    // Semantyka prawdziwego Redisa należy do profilu infrastrukturalnego.
+    @MockitoBean(answers = Answers.RETURNS_DEEP_STUBS)
+    StringRedisTemplate redisTemplate;
 
     @Autowired
     MockMvc mockMvc;
@@ -93,5 +101,39 @@ class ShortUrlApiControllerTest {
     void returnsNotFoundForUnknownShortCode() throws Exception {
         mockMvc.perform(get("/unknown123"))
             .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void replaysTheSameResponseForTheSameIdempotencyKey() throws Exception {
+        String payload = "{\"longUrl\":\"https://example.com/idempotent\"}";
+        MvcResult first = mockMvc.perform(post("/api/v1/urls")
+                .header("Idempotency-Key", "create-42")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payload))
+            .andExpect(status().isCreated())
+            .andReturn();
+
+        mockMvc.perform(post("/api/v1/urls")
+                .header("Idempotency-Key", "create-42")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payload))
+            .andExpect(status().isCreated())
+            .andExpect(content().json(first.getResponse().getContentAsString()));
+    }
+
+    @Test
+    void rejectsReusingIdempotencyKeyForDifferentCommand() throws Exception {
+        mockMvc.perform(post("/api/v1/urls")
+                .header("Idempotency-Key", "create-43")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"longUrl\":\"https://example.com/first\"}"))
+            .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/v1/urls")
+                .header("Idempotency-Key", "create-43")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"longUrl\":\"https://example.com/second\"}"))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.error").value("IDEMPOTENCY_CONFLICT"));
     }
 }

@@ -66,6 +66,16 @@ public class Order extends AggregateRoot {
     private boolean stockReserved;
 
     /**
+     * Wersja agregatu używana przez optimistic locking.
+     *
+     * Wartość {@code -1} oznacza obiekt jeszcze niezapisany. Repozytorium nadaje
+     * wersję {@code 0} przy INSERT, a każdy skuteczny UPDATE zwiększa ją o jeden.
+     * Dzięki temu dwa handlery, które odczytały tę samą wersję Order, nie mogą
+     * bezgłośnie nadpisać sobie flag paymentReserved i stockReserved.
+     */
+    private long version;
+
+    /**
      * Prywatny konstruktor wymusza tworzenie agregatu przez metody fabrykujące.
      *
      * Konstruktor pilnuje podstawowego invariantu:
@@ -77,7 +87,8 @@ public class Order extends AggregateRoot {
             List<OrderLine> lines,
             OrderStatus status,
             boolean paymentReserved,
-            boolean stockReserved
+            boolean stockReserved,
+            long version
     ) {
         if (lines == null || lines.isEmpty()) {
             throw new IllegalArgumentException("order must have at least one line");
@@ -89,6 +100,7 @@ public class Order extends AggregateRoot {
         this.status = status;
         this.paymentReserved = paymentReserved;
         this.stockReserved = stockReserved;
+        this.version = version;
     }
 
     /**
@@ -113,7 +125,8 @@ public class Order extends AggregateRoot {
                 lines,
                 OrderStatus.PENDING,
                 false,
-                false
+                false,
+                -1L
         );
 
         order.registerEvent(OrderPlaced.now(order, correlationId, null));
@@ -134,7 +147,8 @@ public class Order extends AggregateRoot {
             List<OrderLine> lines,
             OrderStatus status,
             boolean paymentReserved,
-            boolean stockReserved
+            boolean stockReserved,
+            long version
     ) {
         return new Order(
                 id,
@@ -142,8 +156,21 @@ public class Order extends AggregateRoot {
                 lines,
                 status,
                 paymentReserved,
-                stockReserved
+                stockReserved,
+                version
         );
+    }
+
+    /**
+     * Aktualizuje techniczną wersję dopiero po skutecznym zapisie. Metoda jest
+     * publiczna wyłącznie dla adapterów repozytorium; nie reprezentuje komendy
+     * biznesowej i nie generuje zdarzenia domenowego.
+     */
+    public void markPersisted(long persistedVersion) {
+        if (persistedVersion < 0) {
+            throw new IllegalArgumentException("persisted version cannot be negative");
+        }
+        this.version = persistedVersion;
     }
 
     /**
@@ -309,5 +336,9 @@ public class Order extends AggregateRoot {
      */
     public boolean stockReserved() {
         return stockReserved;
+    }
+
+    public long version() {
+        return version;
     }
 }

@@ -85,15 +85,17 @@ public class Customer {
      * Taka walidacja powinna być w DTO wejściowym albo osobnej regule domenowej.
      */
     public Customer(String fullName, String email) {
+        this(fullName, email, Instant.now());
+    }
+
+    public Customer(String fullName, String email, Instant createdAt) {
         this.id = UUID.randomUUID();
         this.fullName = fullName;
         this.email = email;
-        this.createdAt = Instant.now();
+        this.createdAt = createdAt;
     }
 
     /**
-     * Gettery udostępniają dane do mapowania DTO, zapytań i testów.
-     *
      * Brak setterów jest celowy. Jeśli w przyszłości klient będzie mógł zmienić
      * email lub nazwisko, lepiej dodać jawne metody domenowe, np.:
      *

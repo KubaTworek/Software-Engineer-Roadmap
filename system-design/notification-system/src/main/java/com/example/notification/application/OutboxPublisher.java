@@ -6,9 +6,11 @@ import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Map;
 import java.util.UUID;
+import java.time.Clock;
 
 /**
  * Komponent publikujący zdarzenia z outboxa.
@@ -40,6 +42,7 @@ public class OutboxPublisher {
     private final Ports.OutboxRepository outboxRepository;
     private final Ports.NotificationRepository notificationRepository;
     private final Ports.NotificationJobRepository jobRepository;
+    private final Ports.TemplateRepository templateRepository;
     private final Ports.NotificationQueue queue;
     private final AuditService auditService;
 
@@ -50,6 +53,8 @@ public class OutboxPublisher {
      * Później NotificationWorker używa jej przy retry.
      */
     private final int maxAttempts;
+    private final int outboxMaxAttempts;
+    private final Clock clock;
 
     /**
      * Metryka liczby poprawnie opublikowanych eventów outboxa.
@@ -64,17 +69,23 @@ public class OutboxPublisher {
             Ports.OutboxRepository outboxRepository,
             Ports.NotificationRepository notificationRepository,
             Ports.NotificationJobRepository jobRepository,
+            Ports.TemplateRepository templateRepository,
             Ports.NotificationQueue queue,
             AuditService auditService,
             MeterRegistry meterRegistry,
-            @Value("${notification.retry.max-attempts:3}") int maxAttempts
+            Clock clock,
+            @Value("${notification.retry.max-attempts:3}") int maxAttempts,
+            @Value("${notification.outbox.max-attempts:8}") int outboxMaxAttempts
     ) {
         this.outboxRepository = outboxRepository;
         this.notificationRepository = notificationRepository;
         this.jobRepository = jobRepository;
+        this.templateRepository = templateRepository;
         this.queue = queue;
         this.auditService = auditService;
         this.maxAttempts = maxAttempts;
+        this.outboxMaxAttempts = outboxMaxAttempts;
+        this.clock = clock;
 
         /*
          * Licznik opublikowanych eventów outboxa.
@@ -98,6 +109,7 @@ public class OutboxPublisher {
      * Limit chroni aplikację przed zbyt długim pojedynczym przebiegiem schedulera.
      */
     @Scheduled(fixedDelayString = "${notification.outbox.fixed-delay-ms:700}")
+    @Transactional
     public void publishPending() {
         /*
          * Pobieramy paczkę eventów oczekujących na publikację.
@@ -133,7 +145,7 @@ public class OutboxPublisher {
                  *
                  * Dzięki temu publisher nie będzie go przetwarzał ponownie.
                  */
-                event.markPublished();
+                event.markPublished(clock.instant());
                 outboxRepository.save(event);
 
                 /*
@@ -167,7 +179,7 @@ public class OutboxPublisher {
                  * - osobny status DEAD,
                  * - możliwość ręcznego replay.
                  */
-                event.markFailed(ex.getMessage());
+                event.markFailed(ex.getMessage(), clock.instant(), outboxMaxAttempts);
                 outboxRepository.save(event);
             }
         }
@@ -242,6 +254,9 @@ public class OutboxPublisher {
          * - łatwiej monitorować i debugować.
          */
         for (Channel channel : n.getSelectedChannels()) {
+            NotificationTemplate pinnedTemplate = templateRepository
+                    .findActiveByTypeAndChannel(n.getTenantId(), n.getNotificationType(), channel)
+                    .orElseThrow(() -> new IllegalStateException("Active template not found for " + channel));
             NotificationJob job = new NotificationJob(
                     UUID.randomUUID(),
                     n.getId(),
@@ -252,7 +267,10 @@ public class OutboxPublisher {
                     n.getContactPoint(),
                     n.getPayload(),
                     maxAttempts,
-                    n.getExpiresAt()
+                    n.getExpiresAt(),
+                    n.getScheduledAt(),
+                    pinnedTemplate.getId(),
+                    pinnedTemplate.getVersion()
             );
 
             /*
@@ -260,7 +278,7 @@ public class OutboxPublisher {
              *
              * Worker później pobierze job z repozytorium po ID.
              */
-            jobRepository.save(job);
+            NotificationJob persisted = jobRepository.saveIfAbsent(job);
 
             /*
              * Wrzucamy ID joba do kolejki.
@@ -268,7 +286,9 @@ public class OutboxPublisher {
              * Kolejka przechowuje tylko ID,
              * a pełne dane joba są w jobRepository.
              */
-            queue.enqueue(job.getId());
+            if (persisted.getId().equals(job.getId())) {
+                queue.enqueue(job.getId());
+            }
 
             /*
              * Audytujemy zakolejkowanie joba.
@@ -293,7 +313,9 @@ public class OutboxPublisher {
          * - joby zostały utworzone,
          * - system będzie próbował je przetworzyć asynchronicznie.
          */
-        n.markQueued();
+        if (n.getStatus() == NotificationStatus.CREATED) {
+            n.markQueued();
+        }
         notificationRepository.save(n);
     }
 

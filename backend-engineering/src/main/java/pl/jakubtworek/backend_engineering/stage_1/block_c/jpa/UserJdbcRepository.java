@@ -30,7 +30,7 @@ public class UserJdbcRepository {
     public List<String> findUsernames() {
 
         return jdbcTemplate.query(
-                "SELECT first_name FROM users",
+                "SELECT first_name FROM jpa_users ORDER BY last_name, id",
                 (rs, rowNum) -> rs.getString("first_name")
         );
     }

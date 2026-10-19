@@ -4,7 +4,7 @@ import com.example.videostreaming.auth.User;
 import com.example.videostreaming.catalog.Video;
 import org.springframework.stereotype.Service;
 
-import java.time.Instant;
+import java.time.Clock;
 import java.util.UUID;
 
 /**
@@ -30,9 +30,11 @@ public class EntitlementService {
      * w danym momencie.
      */
     private final UserSubscriptionRepository subscriptions;
+    private final Clock clock;
 
-    public EntitlementService(UserSubscriptionRepository subscriptions) {
+    public EntitlementService(UserSubscriptionRepository subscriptions, Clock clock) {
         this.subscriptions = subscriptions;
+        this.clock = clock;
     }
 
     /**
@@ -48,7 +50,7 @@ public class EntitlementService {
      * @return aktualny plan użytkownika
      */
     public SubscriptionPlanCode currentPlan(UUID userId) {
-        return subscriptions.findBestActiveForUser(userId, Instant.now())
+        return subscriptions.findBestActiveForUser(userId, clock.instant())
                 .map(UserSubscription::getPlanCode)
                 .orElse(SubscriptionPlanCode.FREE);
     }

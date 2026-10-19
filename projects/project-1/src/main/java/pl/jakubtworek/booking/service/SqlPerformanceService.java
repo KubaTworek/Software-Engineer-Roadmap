@@ -191,7 +191,11 @@ public class SqlPerformanceService {
     @Transactional(readOnly = true)
     public KeysetReservationPageResponse customerReservationsKeyset(UUID customerId,
                                                                     Instant afterCreatedAt,
+                                                                    UUID afterId,
                                                                     int size) {
+        if ((afterCreatedAt == null) != (afterId == null)) {
+            throw new IllegalArgumentException("Keyset cursor requires both afterCreatedAt and afterId");
+        }
         int requested = limit(size);
 
         /*
@@ -203,6 +207,7 @@ public class SqlPerformanceService {
         List<ReservationListItemResponse> fetched = reservationRepository.findCustomerReservationsKeyset(
                 customerId,
                 afterCreatedAt,
+                afterId,
                 PageRequest.of(0, requested + 1)
         );
 

@@ -12,6 +12,9 @@ public class AlertRule {
     private String operator = ">";
     private double threshold;
     private int windowSeconds = 300;
+    private int forSeconds = 0;
+    private String noDataPolicy = "keep_last_state";
+    private List<String> inhibitedByRuleIds = new ArrayList<>();
     private String severity = "warning";
     private List<AlertRoute> routes = new ArrayList<>();
     private boolean enabled = true;
@@ -87,6 +90,14 @@ public class AlertRule {
     public void setWindowSeconds(int windowSeconds) {
         this.windowSeconds = windowSeconds;
     }
+
+    public int getForSeconds() { return forSeconds; }
+
+    public void setForSeconds(int forSeconds) { this.forSeconds = Math.max(0, forSeconds); }
+    public String getNoDataPolicy() { return noDataPolicy; }
+    public void setNoDataPolicy(String noDataPolicy) { this.noDataPolicy = noDataPolicy; }
+    public List<String> getInhibitedByRuleIds() { return inhibitedByRuleIds; }
+    public void setInhibitedByRuleIds(List<String> ids) { this.inhibitedByRuleIds = ids == null ? List.of() : ids; }
 
     public String getSeverity() {
         return severity;

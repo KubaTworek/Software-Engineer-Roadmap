@@ -1,4 +1,20 @@
-# Case 13 — ArrayList vs LinkedList: cache locality wygrywa
+# array vs linked
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** array vs linked.
+> - **Typowy błąd:** Wybór listy tylko z tabeli Big-O z pominięciem lokalności pamięci.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=CollectionBenchmarkCorrectnessTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** brak jawnej roli w nazwach klas; intencję przykładu określają opis i test, nie sam brak prefiksu.
+> - **Granica:** Wynik eksperymentu opisuje tę maszynę i workload; nie jest uniwersalną liczbą produkcyjną.
+<!-- material-card:end -->
+
+## Case 13 — ArrayList vs LinkedList: cache locality wygrywa
+
+
 
 ## Wprowadzenie
 
@@ -32,7 +48,7 @@ I właśnie to pokazuje ten case.
 
 ---
 
-# Problem nie dotyczy „API kolekcji”
+## Problem nie dotyczy „API kolekcji”
 
 To bardzo ważne.
 
@@ -52,7 +68,7 @@ Czyli o:
 
 ---
 
-# ArrayList — pamięć ciągła
+## ArrayList — pamięć ciągła
 
 `ArrayList` przechowuje dane w:
 ## ciągłej tablicy referencji.
@@ -71,7 +87,7 @@ To ogromna przewaga nowoczesnych struktur tablicowych.
 
 ---
 
-# LinkedList — rozproszone nody
+## LinkedList — rozproszone nody
 
 `LinkedList` działa zupełnie inaczej.
 
@@ -92,7 +108,7 @@ I właśnie tutaj zaczyna się problem.
 
 ---
 
-# Pointer chasing
+## Pointer chasing
 
 Iteracja po `LinkedList` wygląda logicznie jak:
 
@@ -112,7 +128,7 @@ I jest bardzo kosztowne dla CPU.
 
 ---
 
-# Cache locality — prawdziwy bohater tego case’u
+## Cache locality — prawdziwy bohater tego case’u
 
 Nowoczesne CPU są projektowane pod:
 - przewidywalny dostęp do pamięci,
@@ -132,7 +148,7 @@ I właśnie dlatego:
 
 ---
 
-# Cache miss — prawdziwy koszt
+## Cache miss — prawdziwy koszt
 
 Największym kosztem nowoczesnych systemów często nie są:
 - instrukcje CPU,
@@ -152,7 +168,7 @@ Cache miss:
 
 ---
 
-# Dlaczego iteracja jest tak ważna
+## Dlaczego iteracja jest tak ważna
 
 W praktyce większość workloadów:
 - dużo częściej iteruje,
@@ -168,7 +184,7 @@ Ponieważ:
 
 ---
 
-# Złożoność asymptotyczna vs realny hardware
+## Złożoność asymptotyczna vs realny hardware
 
 To bardzo ważna intuicja.
 
@@ -186,7 +202,7 @@ Dlatego:
 
 ---
 
-# Dlaczego `LinkedList.get(i)` jest katastrofalne
+## Dlaczego `LinkedList.get(i)` jest katastrofalne
 
 `ArrayList.get(i)`:
 - to bezpośredni dostęp do tablicy,
@@ -209,7 +225,7 @@ W praktyce:
 
 ---
 
-# Allocation pressure
+## Allocation pressure
 
 `LinkedList` ma jeszcze jeden problem:
 ## ogromną liczbę małych obiektów.
@@ -230,7 +246,7 @@ To oznacza:
 
 ---
 
-# Object overhead
+## Object overhead
 
 Node `LinkedList`:
 - to nie tylko wartość.
@@ -252,7 +268,7 @@ To pogarsza:
 
 ---
 
-# Branch prediction
+## Branch prediction
 
 `ArrayList`:
 - ma bardzo przewidywalny wzorzec dostępu do pamięci.
@@ -269,7 +285,7 @@ To utrudnia:
 
 ---
 
-# Dlaczego insert w środku nie zawsze ratuje LinkedList
+## Dlaczego insert w środku nie zawsze ratuje LinkedList
 
 Teoretycznie:
 - insertion po znalezieniu noda jest `O(1)`.
@@ -286,7 +302,7 @@ W praktyce:
 
 ---
 
-# CPU kocha pamięć ciągłą
+## CPU kocha pamięć ciągłą
 
 To jedna z najważniejszych intuicji performance engineering.
 
@@ -306,7 +322,7 @@ bardzo często wygrywają z:
 
 ---
 
-# Primitive arrays — jeszcze lepsza locality
+## Primitive arrays — jeszcze lepsza locality
 
 `ArrayList<Integer>` nadal:
 - przechowuje referencje do boxed Integer.
@@ -330,7 +346,7 @@ To zwykle:
 
 ---
 
-# Dlaczego JMH jest tutaj konieczny
+## Dlaczego JMH jest tutaj konieczny
 
 Ten case:
 - jest bardzo zależny od hardware,
@@ -353,7 +369,7 @@ który:
 
 ---
 
-# Najczęstszy błąd interpretacyjny
+## Najczęstszy błąd interpretacyjny
 
 Najczęstszy błąd wygląda tak:
 
@@ -367,7 +383,7 @@ Współczesna wydajność:
 
 ---
 
-# Najważniejsza intuicja praktyczna
+## Najważniejsza intuicja praktyczna
 
 Najbardziej praktyczny wniosek brzmi:
 
@@ -379,7 +395,7 @@ I właśnie dlatego:
 
 ---
 
-# Najważniejsze wnioski
+## Najważniejsze wnioski
 
 Najbardziej użyteczny model mentalny wygląda tak:
 
@@ -393,3 +409,15 @@ Najbardziej użyteczny model mentalny wygląda tak:
 - nowoczesne CPU są zoptymalizowane pod sekwencyjny dostęp do pamięci,
 - struktury contiguous memory często wygrywają mimo gorszego Big-O,
 - primitive arrays oferują jeszcze lepszą locality niż `ArrayList<Integer>`.
+
+## Allocation rate to nie retained size
+
+Benchmark z `-prof gc` mierzy bajty zaalokowane na operację tworzenia kolekcji, a
+nie pamięć zachowaną na heapie po GC:
+
+```powershell
+java -jar target\benchmarks.jar '.*CollectionAllocationBenchmark.*' -prof gc
+```
+
+`gc.alloc.rate.norm` należy więc opisywać jako allocation cost. Do retained size
+potrzebny jest heap dump albo narzędzie analizujące layout obiektów, np. JOL.

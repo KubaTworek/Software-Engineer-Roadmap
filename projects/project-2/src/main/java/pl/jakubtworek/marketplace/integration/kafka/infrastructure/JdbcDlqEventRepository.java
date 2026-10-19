@@ -1,6 +1,6 @@
 package pl.jakubtworek.marketplace.integration.kafka.infrastructure;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -37,7 +37,7 @@ public class JdbcDlqEventRepository implements DlqEventRepository {
             ObjectMapper objectMapper
     ) {
         this.jdbcTemplate = jdbcTemplate;
-        this.objectMapper = objectMapper.copy().findAndRegisterModules();
+        this.objectMapper = objectMapper;
     }
 
     /**

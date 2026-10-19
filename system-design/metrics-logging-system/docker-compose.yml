@@ -1,4 +1,20 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: telemetry_metadata
+      POSTGRES_USER: telemetry
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-telemetry-local}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U telemetry -d telemetry_metadata"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
   clickhouse:
     image: clickhouse/clickhouse-server:24.8
     container_name: telemetry-clickhouse
@@ -45,6 +61,8 @@ services:
       dockerfile: telemetry-server/Dockerfile
     container_name: telemetry-server
     depends_on:
+      postgres:
+        condition: service_healthy
       kafka:
         condition: service_healthy
       clickhouse:
@@ -57,6 +75,9 @@ services:
       CLICKHOUSE_URL: jdbc:clickhouse://clickhouse:8123/observability
       CLICKHOUSE_USER: default
       CLICKHOUSE_PASSWORD: ""
+      TELEMETRY_METADATA_URL: jdbc:postgresql://postgres:5432/telemetry_metadata
+      TELEMETRY_METADATA_USERNAME: telemetry
+      TELEMETRY_METADATA_PASSWORD: ${POSTGRES_PASSWORD:-telemetry-local}
       TELEMETRY_RETENTION_DAYS: 30
       TELEMETRY_OBJECT_STORAGE_ROOT: /data/object-storage
       TELEMETRY_DEMO_ADMIN_KEY: demo-admin-key
@@ -84,4 +105,5 @@ services:
 
 volumes:
   clickhouse_data:
+  postgres_data:
   object_storage:

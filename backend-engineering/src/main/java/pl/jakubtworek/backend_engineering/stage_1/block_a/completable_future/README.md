@@ -1,8 +1,38 @@
-CompletableFuture w Javie -- notatka techniczna
-==============================================
+# completable future
 
-Wprowadzenie
-------------
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** completable future.
+> - **Typowy błąd:** Blokowanie common pool i gubienie wyjątku w łańcuchu async.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=CompletableFutureTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** brak jawnej roli w nazwach klas; intencję przykładu określają opis i test, nie sam brak prefiksu.
+> - **Granica:** Test kontroluje wybrany przeplot w JVM; pojedyncze uruchomienie nie dowodzi wszystkich zachowań dopuszczonych przez JMM ani wydajności pod obciążeniem.
+<!-- material-card:end -->
+
+## CompletableFuture w Javie
+
+
+
+## Mapa przykładu
+
+`UserAggregationService` pokazuje trzy różne rodzaje kompozycji:
+
+- `fetchAllAsync` — fan-out/fan-in przez `allOf`,
+- `fetchWithThenCombineAsync` — łączenie niezależnych wyników bez niejawnych rzutowań,
+- `fetchOrdersForExistingUserAsync` — zależność sekwencyjna przez `thenCompose`,
+- `fetchWithTimeoutFallbackAsync` — fallback po przekroczeniu czasu,
+- `fetchWithErrorHandlingAsync` — zamiana błędu downstreamu na kontrolowany rezultat.
+
+Publiczne metody zwracają `CompletableFuture`; serwis nie wywołuje wewnętrznie `join()`. Test lub warstwa brzegowa jawnie wybiera moment blokowania. Executor i timeout można wstrzyknąć, dzięki czemu testy są szybkie i deterministyczne.
+
+```shell
+mvn --batch-mode --no-transfer-progress -Dtest=CompletableFutureTest test
+```
+
+## Wprowadzenie
 
 Współczesne aplikacje backendowe bardzo często wykonują wiele operacji równolegle: pobierają dane z różnych serwisów, komunikują się z bazami danych, wywołują zewnętrzne API lub przetwarzają dane w wielu etapach. W takich sytuacjach kluczowe jest unikanie blokowania wątków i efektywne zarządzanie współbieżnością.
 

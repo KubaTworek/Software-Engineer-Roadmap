@@ -2,8 +2,10 @@ package com.example.ratelimiter.core;
 
 import com.example.ratelimiter.config.RateLimiterProperties;
 import com.example.ratelimiter.quota.QuotaService;
-import com.example.ratelimiter.usage.UsageEventPublisher;
+import com.example.ratelimiter.usage.UsageEventSink;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.observation.Observation;
+import io.micrometer.observation.ObservationRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -82,9 +84,9 @@ public class RateLimiterEngine {
      * Publikuje usage event po każdej decyzji rate limitera.
      *
      * W Etapie 6 takie eventy mogą trafiać np. do Kafki
-     * i służyć do analityki, audytu, dashboardów albo billingów.
+     * i służyć do analityki oraz dashboardów. Nie zastępują trwałego ledgera.
      */
-    private final UsageEventPublisher usageEventPublisher;
+    private final UsageEventSink usageEventPublisher;
 
     /**
      * Obsługuje długoterminowe wykorzystanie quota.
@@ -110,15 +112,17 @@ public class RateLimiterEngine {
      * - inne metryki techniczne.
      */
     private final MeterRegistry meterRegistry;
+    private final ObservationRegistry observations;
 
     public RateLimiterEngine(
             RuleMatcher ruleMatcher,
             RedisTokenBucketLimiter redisLimiter,
             LocalFallbackLimiter localFallbackLimiter,
             RateLimiterProperties properties,
-            UsageEventPublisher usageEventPublisher,
+            UsageEventSink usageEventPublisher,
             QuotaService quotaService,
-            MeterRegistry meterRegistry
+            MeterRegistry meterRegistry,
+            ObservationRegistry observations
     ) {
         this.ruleMatcher = ruleMatcher;
         this.redisLimiter = redisLimiter;
@@ -127,6 +131,7 @@ public class RateLimiterEngine {
         this.usageEventPublisher = usageEventPublisher;
         this.quotaService = quotaService;
         this.meterRegistry = meterRegistry;
+        this.observations = observations;
     }
 
     /**
@@ -147,6 +152,21 @@ public class RateLimiterEngine {
      * Jeśli chociaż jedna reguła odmówi, cały request powinien być odrzucony.
      */
     public RateLimitDecision check(RequestContext ctx) {
+        Observation observation = Observation.start("rate-limiter.decision", observations)
+                .lowCardinalityKeyValue("http.method", ctx.method());
+        try {
+            RateLimitDecision decision = checkObserved(ctx);
+            observation.lowCardinalityKeyValue("decision", decision.allowed() ? "allowed" : "denied");
+            return decision;
+        } catch (RuntimeException exception) {
+            observation.error(exception);
+            throw exception;
+        } finally {
+            observation.stop();
+        }
+    }
+
+    private RateLimitDecision checkObserved(RequestContext ctx) {
         /*
          * Najpierw znajdujemy wszystkie reguły pasujące do requestu.
          *
@@ -156,7 +176,7 @@ public class RateLimiterEngine {
          * - userowe,
          * - endpointowe,
          * - planowe,
-         * - override'y.
+         * - dodatkowe budżety user/tenant.
          */
         List<RateLimiterProperties.Rule> rules = ruleMatcher.match(ctx);
 
@@ -233,11 +253,21 @@ public class RateLimiterEngine {
              * - koszt najwyższej reguły,
              * - czy sumę kosztów reguł.
              */
-            long totalCost = rules.stream()
+            // Quota opisuje koszt operacji, nie liczbę polityk, które ją
+            // chronią. Sumowanie global/user/tenant zawyżałoby usage.
+            long operationCost = rules.stream()
+                    .filter(rule -> rule.getType() == RateLimiterProperties.RuleType.ENDPOINT)
                     .mapToLong(RateLimiterProperties.Rule::getCost)
-                    .sum();
-
-            quotaService.recordAcceptedUsage(ctx, Math.max(1, totalCost));
+                    .max()
+                    .orElse(1);
+            try {
+                quotaService.recordAcceptedUsage(ctx, operationCost);
+            } catch (RuntimeException quotaFailure) {
+                // Quota jest telemetrią online, a nie autorytatywnym ledgerem.
+                // Jej awaria po pozytywnej decyzji nie może zmienić wyniku requestu.
+                meterRegistry.counter("rate_limiter.quota.errors").increment();
+                log.warn("quota_recording_failed tenant={} error={}", ctx.tenantId(), quotaFailure.toString());
+            }
         }
 
         /*
@@ -277,7 +307,7 @@ public class RateLimiterEngine {
              * Dzięki temu limit per user/tenant/API key działa globalnie,
              * a nie tylko lokalnie na jednej instancji.
              */
-            return redisLimiter.consume(rule, ctx);
+            return applyEnforcement(rule, redisLimiter.consume(rule, ctx));
 
         } catch (Exception ex) {
             /*
@@ -288,7 +318,7 @@ public class RateLimiterEngine {
              */
             meterRegistry.counter(
                     "rate_limiter.redis.errors",
-                    "rule", rule.getId()
+                    "rule.type", rule.getType().name().toLowerCase()
             ).increment();
 
             /*
@@ -309,6 +339,11 @@ public class RateLimiterEngine {
                     ex.toString()
             );
 
+            meterRegistry.counter(
+                    "rate_limiter.fallback",
+                    "strategy", strategy.name().toLowerCase()
+            ).increment();
+
             /*
              * Zachowanie systemu przy awarii Redisa.
              *
@@ -327,7 +362,7 @@ public class RateLimiterEngine {
              * - zachowujemy częściową ochronę,
              * - ale tracimy globalną spójność między instancjami.
              */
-            return switch (strategy) {
+            RuleDecision fallbackDecision = switch (strategy) {
                 case FAIL_OPEN -> new RuleDecision(
                         rule.getId(),
                         true,
@@ -348,12 +383,22 @@ public class RateLimiterEngine {
                         "REDIS_UNAVAILABLE"
                 );
 
-                case LOCAL_FALLBACK -> localFallbackLimiter.consume(
-                        rule,
-                        ctx,
-                        "REDIS_UNAVAILABLE"
-                );
+                case LOCAL_FALLBACK -> properties.getLocalFallback().isEnabled()
+                        ? localFallbackLimiter.consume(rule, ctx, "REDIS_UNAVAILABLE")
+                        : new RuleDecision(rule.getId(), false, rule.getCapacity(), 0, 30,
+                                "fail-closed", "LOCAL_FALLBACK_DISABLED");
             };
+            return applyEnforcement(rule, fallbackDecision);
         }
+    }
+
+    private RuleDecision applyEnforcement(RateLimiterProperties.Rule rule, RuleDecision decision) {
+        if (decision.allowed()
+                || rule.getEnforcementMode() != RateLimiterProperties.EnforcementMode.MONITOR) {
+            return decision;
+        }
+        meterRegistry.counter("rate_limiter.shadow", "result", "would-deny").increment();
+        return new RuleDecision(decision.ruleId(), true, decision.limit(), decision.remaining(),
+                decision.retryAfterSeconds(), decision.source(), "SHADOW_WOULD_DENY");
     }
 }

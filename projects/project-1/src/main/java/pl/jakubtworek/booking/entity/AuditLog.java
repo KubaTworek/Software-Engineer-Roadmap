@@ -111,8 +111,6 @@ public class AuditLog {
     }
 
     /**
-     * Gettery udostępniają dane do odczytu, mapowania DTO i testów.
-     *
      * Brak setterów jest celowy:
      * wpis audytowy po utworzeniu powinien być traktowany jako niemutowalny rekord.
      */

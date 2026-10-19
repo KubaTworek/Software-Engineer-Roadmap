@@ -1,7 +1,7 @@
 package pl.jakubtworek.backend.notification.config;
 
 import org.springframework.amqp.core.*;
-import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
+import org.springframework.amqp.support.converter.JacksonJsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -50,6 +50,8 @@ public class RabbitConfig {
      * Nazwa sugeruje konkretny use case: powiadomienia po opłaceniu zamówienia.
      */
     public static final String NOTIFICATIONS_QUEUE = "notifications.order-paid";
+    public static final String NOTIFICATIONS_DLQ = "notifications.order-paid.dlq";
+    public static final String DEAD_LETTER_EXCHANGE = "notifications.dlx";
 
     /**
      * Tworzy durable TopicExchange.
@@ -92,7 +94,20 @@ public class RabbitConfig {
     Queue notificationsQueue() {
         return QueueBuilder
                 .durable(NOTIFICATIONS_QUEUE)
+                .deadLetterExchange(DEAD_LETTER_EXCHANGE)
+                .deadLetterRoutingKey(NOTIFICATIONS_DLQ)
                 .build();
+    }
+
+    /**
+     * Poison message nie może blokować głównej kolejki w nieskończoność. DLQ zachowuje
+     * wiadomość i nagłówki x-death, dzięki czemu operator może zdiagnozować przyczynę,
+     * poprawić konsumenta i wykonać kontrolowany replay.
+     */
+    @Bean DirectExchange deadLetterExchange() { return new DirectExchange(DEAD_LETTER_EXCHANGE, true, false); }
+    @Bean Queue notificationsDeadLetterQueue() { return QueueBuilder.durable(NOTIFICATIONS_DLQ).build(); }
+    @Bean Binding deadLetterBinding(Queue notificationsDeadLetterQueue, DirectExchange deadLetterExchange) {
+        return BindingBuilder.bind(notificationsDeadLetterQueue).to(deadLetterExchange).with(NOTIFICATIONS_DLQ);
     }
 
     /**
@@ -114,7 +129,7 @@ public class RabbitConfig {
     /**
      * Konwerter wiadomości RabbitMQ <-> Java object.
      *
-     * Jackson2JsonMessageConverter pozwala automatycznie serializować i deserializować
+     * JacksonJsonMessageConverter pozwala automatycznie serializować i deserializować
      * eventy jako JSON.
      *
      * Dzięki temu listener może przyjmować np. OrderPaidEvent jako obiekt Java,
@@ -122,6 +137,6 @@ public class RabbitConfig {
      */
     @Bean
     MessageConverter jsonMessageConverter() {
-        return new Jackson2JsonMessageConverter();
+        return new JacksonJsonMessageConverter();
     }
 }

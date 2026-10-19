@@ -1,15 +1,19 @@
-package pl.jakubtworek.backend_engineering.stage_3.block_c.src.main.java.pl.jakubtworek.cloudarchitecture.service;
+package pl.jakubtworek.cloudarchitecture.service;
 
 import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
- * Abstraction for publishing messages to Google Cloud Pub/Sub.
+ * Local publishing adapter used by the laboratory.
  *
- * In a real implementation this class would use the Google Cloud Pub/Sub SDK.
- * Keeping it behind a service abstraction makes local testing easier.
+ * It logs the event instead of contacting GCP, so the module remains runnable
+ * without cloud credentials. Replace it with a Google Cloud Pub/Sub adapter
+ * behind the same method boundary for deployment exercises.
  */
 @Service
 public class PubSubPublisher {
+    private static final Logger LOGGER = LoggerFactory.getLogger(PubSubPublisher.class);
     /**
      * Publishes an order-created event.
      *
@@ -17,7 +21,11 @@ public class PubSubPublisher {
      * messages more than once.
      */
     public void publishOrderCreated(Long orderId) {
-        // Production example: create a PubsubMessage and publish it with the Pub/Sub SDK.
-        System.out.println("{"severity":"INFO","event":"ORDER_CREATED","orderId":" + orderId + "}");
+        // Intentional local adapter: deployment code replaces this class with a
+        // Pub/Sub SDK adapter while preserving the application-facing contract.
+        if (orderId == null || orderId <= 0) {
+            throw new IllegalArgumentException("orderId must be positive");
+        }
+        LOGGER.info("event=ORDER_CREATED orderId={}", orderId);
     }
 }

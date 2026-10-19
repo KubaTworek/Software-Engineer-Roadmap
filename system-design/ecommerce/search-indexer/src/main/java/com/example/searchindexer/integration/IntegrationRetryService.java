@@ -25,7 +25,16 @@ public class IntegrationRetryService {
                 retries.increment();
                 log.warn("Retrying integration={} attempt={}", name, context.getRetryCount() + 1);
             }
-            return callable.call();
+            try {
+                return callable.call();
+            } catch (Exception exception) {
+                /*
+                 * RetryTemplate ponawia wyjątki runtime. Owinięcie checked exception
+                 * zachowuje przyczynę awarii, a jednocześnie wyznacza jasną granicę:
+                 * klient tej klasy nie musi przenosić szczegółów transportu w sygnaturze.
+                 */
+                throw new IntegrationCallException(name, exception);
+            }
         });
     }
 
@@ -39,5 +48,11 @@ public class IntegrationRetryService {
     @FunctionalInterface
     public interface RetryableRunnable {
         void run() throws Exception;
+    }
+
+    private static final class IntegrationCallException extends RuntimeException {
+        private IntegrationCallException(String integrationName, Exception cause) {
+            super("Integration call failed: " + integrationName, cause);
+        }
     }
 }

@@ -1,8 +1,9 @@
 package pl.jakubtworek.marketplace.integration.kafka;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import pl.jakubtworek.marketplace.integration.outbox.OutboxEventMapper;
 import pl.jakubtworek.marketplace.shared.events.ApplicationEventBus;
+import pl.jakubtworek.marketplace.shared.events.EventPublisher;
 import pl.jakubtworek.marketplace.shared.kernel.DomainEvent;
 import pl.jakubtworek.marketplace.shared.observability.InMemoryFlowTraceRepository;
 import pl.jakubtworek.marketplace.shared.observability.MarketplaceMetrics;
@@ -13,7 +14,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * Konsument wiadomości kafkowych używany w testach oraz w architekturze fazy 4/6.
+ * Konsument wiadomości kafkowych używany w laboratorium niezawodnego messagingu.
  *
  * Ta klasa symuluje logikę prawdziwego konsumenta Kafki:
  * - pobiera rekordy z brokera,
@@ -68,7 +69,7 @@ public class KafkaConsumerWorker {
      * Po deserializacji wiadomości kafkowej do DomainEvent, event jest przekazywany
      * do handlerów wewnątrz modularnego monolitu.
      */
-    private final ApplicationEventBus eventBus;
+    private final EventPublisher eventBus;
 
     /**
      * Repozytorium processed_events.
@@ -117,6 +118,12 @@ public class KafkaConsumerWorker {
     private final ObservabilityService observability;
 
     /**
+     * Obejmuje jedną lokalną transakcją efekt handlera, jego outbox oraz marker
+     * processed_events. Commit offsetu celowo pozostaje poza tą granicą.
+     */
+    private final ConsumerUnitOfWork unitOfWork;
+
+    /**
      * Konstruktor pomocniczy.
      *
      * Tworzy domyślne observability oparte o implementacje in-memory.
@@ -127,7 +134,7 @@ public class KafkaConsumerWorker {
             String topic,
             String consumerGroup,
             KafkaMessageBroker broker,
-            ApplicationEventBus eventBus,
+            EventPublisher eventBus,
             ProcessedEventRepository processedEvents,
             DlqEventRepository dlqRepository,
             ObjectMapper objectMapper,
@@ -146,7 +153,8 @@ public class KafkaConsumerWorker {
                 new ObservabilityService(
                         new InMemoryFlowTraceRepository(),
                         new MarketplaceMetrics()
-                )
+                ),
+                ConsumerUnitOfWork.direct()
         );
     }
 
@@ -161,12 +169,30 @@ public class KafkaConsumerWorker {
             String topic,
             String consumerGroup,
             KafkaMessageBroker broker,
-            ApplicationEventBus eventBus,
+            EventPublisher eventBus,
             ProcessedEventRepository processedEvents,
             DlqEventRepository dlqRepository,
             ObjectMapper objectMapper,
             RetryPolicy retryPolicy,
             ObservabilityService observability
+    ) {
+        this(consumerName, topic, consumerGroup, broker, eventBus, processedEvents,
+                dlqRepository, objectMapper, retryPolicy, observability,
+                ConsumerUnitOfWork.direct());
+    }
+
+    public KafkaConsumerWorker(
+            String consumerName,
+            String topic,
+            String consumerGroup,
+            KafkaMessageBroker broker,
+            EventPublisher eventBus,
+            ProcessedEventRepository processedEvents,
+            DlqEventRepository dlqRepository,
+            ObjectMapper objectMapper,
+            RetryPolicy retryPolicy,
+            ObservabilityService observability,
+            ConsumerUnitOfWork unitOfWork
     ) {
         this.consumerName = consumerName;
         this.topic = topic;
@@ -178,6 +204,7 @@ public class KafkaConsumerWorker {
         this.outboxEventMapper = new OutboxEventMapper(objectMapper);
         this.retryPolicy = retryPolicy;
         this.observability = observability;
+        this.unitOfWork = unitOfWork;
     }
 
     /**
@@ -217,29 +244,23 @@ public class KafkaConsumerWorker {
      * ponowne wykonanie efektu ubocznego.
      */
     public void simulateCrashAfterSuccessfulProcessingBeforeCommit(KafkaRecord record) {
-        if (processedEvents.exists(record.envelope().eventId(), consumerName)) {
-            throw new IllegalStateException("event was already processed before crash simulation");
-        }
+        unitOfWork.execute(() -> {
+            if (processedEvents.exists(record.envelope().eventId(), consumerName)) {
+                throw new IllegalStateException("event was already processed before crash simulation");
+            }
 
-        observability.eventReceived(record, consumerName);
+            observability.eventReceived(record, consumerName);
+            DomainEvent event = outboxEventMapper.toDomainEvent(
+                    envelopeMapper.toOutboxEvent(record.envelope())
+            );
+            eventBus.publish(event);
+            processedEvents.save(ProcessedEvent.processed(record.envelope().eventId(), consumerName));
+            observability.eventProcessed(event, consumerName, record.topic(), 0);
+            return null;
+        });
 
-        DomainEvent event = outboxEventMapper.toDomainEvent(
-                envelopeMapper.toOutboxEvent(record.envelope())
-        );
-
-        eventBus.publish(event);
-
-        processedEvents.save(
-                ProcessedEvent.processed(record.envelope().eventId(), consumerName)
-        );
-
-        observability.eventProcessed(
-                event,
-                consumerName,
-                record.topic(),
-                0
-        );
-
+        // Lokalna transakcja jest już zatwierdzona, ale Kafka nie otrzymała commitu.
+        // Redelivery jest zatem oczekiwane i ma zostać zatrzymane przez marker.
         throw new SimulatedConsumerCrashException("simulated crash before offset commit");
     }
 
@@ -257,23 +278,19 @@ public class KafkaConsumerWorker {
      * - po przekroczeniu limitu zapisujemy event do DLQ i commitujemy offset.
      */
     public void processRecord(KafkaRecord record) {
+        processRecord(record, () -> broker.commit(
+                record.topic(), consumerGroup, record.partition(), record.offset()));
+    }
+
+    /**
+     * Wariant dla kontenera {@code @KafkaListener}. Commit jest przekazany jako
+     * callback, więc ten sam rdzeń semantyki może zatwierdzić offset przez
+     * Acknowledgment należący do aktywnego konsumenta, zamiast otwierać drugi klient.
+     */
+    public void processRecord(KafkaRecord record, Runnable commitOffset) {
         UUID eventId = record.envelope().eventId();
 
         observability.eventReceived(record, consumerName);
-
-        /*
-         * Idempotencja konsumenta.
-         *
-         * Jeśli event był już przetworzony przez tego konsumenta, nie wolno drugi raz
-         * wykonywać efektów ubocznych. Commitujemy offset, bo rekord można uznać
-         * za bezpiecznie obsłużony.
-         */
-        if (processedEvents.exists(eventId, consumerName)) {
-            broker.commit(record.topic(), consumerGroup, record.offset());
-            observability.duplicateSkipped(record, consumerName);
-            recordLag();
-            return;
-        }
 
         int attempts = 0;
 
@@ -283,49 +300,57 @@ public class KafkaConsumerWorker {
             Instant startedAt = Instant.now();
 
             try {
-                /*
-                 * Odtwarzamy DomainEvent z kafkowego envelope.
-                 */
-                DomainEvent event = outboxEventMapper.toDomainEvent(
-                        envelopeMapper.toOutboxEvent(record.envelope())
-                );
+                ProcessingResult result = unitOfWork.execute(() -> {
+                    /*
+                     * Sprawdzenie duplikatu musi znajdować się wewnątrz tej samej
+                     * transakcji co efekt. Sam schemat "exists, efekt, insert" nadal
+                     * wymaga unikalnego klucza w DB; przy równoległym duplikacie jeden
+                     * zapis markera wygra, a drugi przebieg musi zostać wycofany.
+                     */
+                    if (processedEvents.exists(eventId, consumerName)) {
+                        return ProcessingResult.duplicateResult();
+                    }
+
+                    DomainEvent event = outboxEventMapper.toDomainEvent(
+                            envelopeMapper.toOutboxEvent(record.envelope())
+                    );
+                    eventBus.publish(event);
+                    processedEvents.save(ProcessedEvent.processed(eventId, consumerName));
+                    return ProcessingResult.processed(event);
+                });
 
                 /*
-                 * Uruchamiamy lokalne handlery domenowe/aplikacyjne.
+                 * Kafka nie uczestniczy w lokalnej transakcji. Commit następuje po
+                 * jej sukcesie. Awaria w tym miejscu powoduje redelivery, ale nie
+                 * ponowne wykonanie efektu, ponieważ marker został zatwierdzony.
                  */
-                eventBus.publish(event);
+                commitOffset.run();
 
-                /*
-                 * Zapisujemy informację, że ten konkretny consumer przetworzył event.
-                 *
-                 * Ten zapis powinien być trwały, bo to on chroni przed duplikatami
-                 * po awarii przed commitem offsetu.
-                 */
-                processedEvents.save(
-                        ProcessedEvent.processed(eventId, consumerName)
-                );
-
-                /*
-                 * Commit offsetu dopiero po skutecznym przetworzeniu i zapisie
-                 * processed_events.
-                 */
-                broker.commit(record.topic(), consumerGroup, record.offset());
-
-                observability.eventProcessed(
-                        event,
-                        consumerName,
-                        record.topic(),
-                        Duration.between(startedAt, Instant.now()).toMillis()
-                );
+                if (result.duplicate()) {
+                    observability.duplicateSkipped(record, consumerName);
+                } else {
+                    observability.eventProcessed(
+                            result.event(),
+                            consumerName,
+                            record.topic(),
+                            Duration.between(startedAt, Instant.now()).toMillis()
+                    );
+                }
 
                 recordLag();
 
                 return;
             } catch (Exception e) {
-                /*
-                 * Rejestrujemy próbę retry w observability.
-                 */
-                observability.retryScheduled(record, consumerName, attempts, e);
+                if (retryPolicy.shouldRetry(e, attempts)) {
+                    /*
+                     * Wyliczone opóźnienie powinno stać się timestampem wiadomości
+                     * w retry topicu. Ten synchroniczny worker go nie przesypia,
+                     * ponieważ blokowanie partycji podczas backoffu jest antywzorcem.
+                     */
+                    retryPolicy.delayFor(attempts, eventId);
+                    observability.retryScheduled(record, consumerName, attempts, e);
+                    continue;
+                }
 
                 /*
                  * Po przekroczeniu limitu prób zapisujemy event do DLQ.
@@ -333,8 +358,7 @@ public class KafkaConsumerWorker {
                  * Następnie commitujemy offset, żeby ten sam wadliwy event nie blokował
                  * całej partycji w nieskończoność.
                  */
-                if (attempts >= retryPolicy.maxAttempts()) {
-                    DlqEvent dlqEvent = DlqEvent.newEvent(
+                DlqEvent dlqEvent = DlqEvent.newEvent(
                             record.topic(),
                             consumerGroup,
                             record.offset(),
@@ -347,12 +371,11 @@ public class KafkaConsumerWorker {
 
                     observability.sentToDlq(dlqEvent);
 
-                    broker.commit(record.topic(), consumerGroup, record.offset());
+                    commitOffset.run();
 
                     recordLag();
 
-                    return;
-                }
+                return;
             }
         }
     }
@@ -365,10 +388,7 @@ public class KafkaConsumerWorker {
      * Jeśli wynik byłby ujemny, zwracamy 0, bo lag nie powinien być ujemny.
      */
     public long currentLag() {
-        long endOffset = broker.endOffset(topic);
-        long committedOffset = broker.committedOffset(topic, consumerGroup);
-
-        return Math.max(0, endOffset - committedOffset);
+        return broker.lag(topic, consumerGroup);
     }
 
     /**
@@ -376,5 +396,15 @@ public class KafkaConsumerWorker {
      */
     private void recordLag() {
         observability.lag(topic, consumerGroup, currentLag());
+    }
+
+    private record ProcessingResult(DomainEvent event, boolean duplicate) {
+        private static ProcessingResult processed(DomainEvent event) {
+            return new ProcessingResult(event, false);
+        }
+
+        private static ProcessingResult duplicateResult() {
+            return new ProcessingResult(null, true);
+        }
     }
 }

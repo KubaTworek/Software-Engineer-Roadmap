@@ -3,6 +3,7 @@ package pl.jakubtworek.booking.entity;
 import jakarta.persistence.*;
 
 import java.time.Instant;
+import java.time.Duration;
 import java.util.UUID;
 
 /**
@@ -124,6 +125,20 @@ public class Reservation {
     private Instant cancelledAt;
 
     /**
+     * Granica ważności blokady pojemności. Czas wygaśnięcia jest zapisywany razem
+     * z rezerwacją, dzięki czemu restart aplikacji nie resetuje odliczania.
+     */
+    @Column(nullable = false)
+    private Instant expiresAt;
+
+    /**
+     * Chroni przejścia statusu wykonywane przez konkurencyjne transakcje, np.
+     * {@code confirm} kontra {@code cancel} albo {@code expire}.
+     */
+    @Version
+    private long version;
+
+    /**
      * Konstruktor bezargumentowy wymagany przez JPA.
      *
      * Jest protected, żeby kod aplikacyjny nie tworzył pustych, niepoprawnych
@@ -149,12 +164,23 @@ public class Reservation {
      * więc jest to akceptowalne, ale warto być świadomym zależności.
      */
     public Reservation(Event event, Customer customer) {
+        this(event, customer, Instant.now(), Duration.ofMinutes(15));
+    }
+
+    public Reservation(Event event, Customer customer, Instant now, Duration holdDuration) {
+        if (event == null || customer == null || now == null || holdDuration == null) {
+            throw new IllegalArgumentException("event, customer, now and holdDuration are required");
+        }
+        if (holdDuration.isZero() || holdDuration.isNegative()) {
+            throw new IllegalArgumentException("holdDuration must be positive");
+        }
         this.id = UUID.randomUUID();
         this.event = event;
         this.organization = event.getOrganization();
         this.customer = customer;
         this.status = ReservationStatus.PENDING;
-        this.createdAt = Instant.now();
+        this.createdAt = now;
+        this.expiresAt = now.plus(holdDuration);
     }
 
     /**
@@ -168,12 +194,20 @@ public class Reservation {
      * już potwierdzonej albo po timeoutcie płatności.
      */
     public void confirm() {
+        confirm(Instant.now());
+    }
+
+    public void confirm(Instant now) {
         if (status != ReservationStatus.PENDING) {
             throw new IllegalStateException("Only pending reservation can be confirmed");
         }
 
+        if (!expiresAt.isAfter(now)) {
+            throw new IllegalStateException("Expired reservation cannot be confirmed");
+        }
+
         this.status = ReservationStatus.CONFIRMED;
-        this.confirmedAt = Instant.now();
+        this.confirmedAt = now;
     }
 
     /**
@@ -188,11 +222,36 @@ public class Reservation {
      * co anulowanie przez użytkownika lub system.
      */
     public void markPaymentTimeout() {
+        markPaymentTimeout(Instant.now());
+    }
+
+    public void markPaymentTimeout(Instant now) {
         if (status != ReservationStatus.PENDING) {
             throw new IllegalStateException("Only pending reservation can be marked as payment timeout");
         }
+        if (!expiresAt.isAfter(now)) {
+            throw new IllegalStateException("Expired reservation cannot be marked as payment timeout");
+        }
 
         this.status = ReservationStatus.PAYMENT_TIMEOUT;
+    }
+
+    /**
+     * Wygasza stan, który nadal blokuje miejsce. Operacja jest idempotentna:
+     * ponowne wykonanie nie może drugi raz zwolnić pojemności.
+     */
+    public boolean expire(Instant now) {
+        if (status == ReservationStatus.EXPIRED) {
+            return false;
+        }
+        if (status != ReservationStatus.PENDING && status != ReservationStatus.PAYMENT_TIMEOUT) {
+            return false;
+        }
+        if (expiresAt.isAfter(now)) {
+            return false;
+        }
+        status = ReservationStatus.EXPIRED;
+        return true;
     }
 
     /**
@@ -217,7 +276,11 @@ public class Reservation {
      * - status REFUNDED.
      */
     public boolean cancel() {
-        if (status == ReservationStatus.CANCELLED) {
+        return cancel(Instant.now());
+    }
+
+    public boolean cancel(Instant now) {
+        if (status == ReservationStatus.CANCELLED || status == ReservationStatus.EXPIRED) {
             return false;
         }
 
@@ -226,14 +289,12 @@ public class Reservation {
         }
 
         this.status = ReservationStatus.CANCELLED;
-        this.cancelledAt = Instant.now();
+        this.cancelledAt = now;
 
         return true;
     }
 
     /**
-     * Gettery udostępniają stan encji do mapowania DTO, zapytań i testów.
-     *
      * Brak setterów jest świadomy:
      * status rezerwacji powinien zmieniać się przez metody domenowe:
      *
@@ -274,5 +335,13 @@ public class Reservation {
 
     public Instant getCancelledAt() {
         return cancelledAt;
+    }
+
+    public Instant getExpiresAt() {
+        return expiresAt;
+    }
+
+    public long getVersion() {
+        return version;
     }
 }

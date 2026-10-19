@@ -1,1724 +1,768 @@
 # System Design — E-commerce Platform
 
-## 1. Cel dokumentu
+<!-- reading-guide:start -->
+## Ścieżki czytania
 
-Ten dokument opisuje kompleksowy projekt architektury systemu e-commerce. Obejmuje wymagania funkcjonalne i niefunkcjonalne, architekturę wysokiego poziomu, podział domenowy, przepływy systemowe, projekt API, model danych, obsługę płatności, inventory, cache, event-driven architecture, bezpieczeństwo, observability, deployment oraz rekomendowany roadmap rozwoju.
+| Cel czytania | Punkt wejścia |
+| --- | --- |
+| Teoria i model problemu | [Wymagania](#wymagania) |
+| Implementacja i jej dowody | [Mapa mechanizmów](#mapa-mechanizmów) |
+| Uruchomienie i eksperymenty | [Uruchomienie](#uruchomienie) |
+| Ograniczenia i scenariusze awarii | [Failure modes](#failure-modes) |
 
-Dokument zakłada platformę e-commerce typu B2C lub B2B z możliwością dalszego skalowania w kierunku marketplace.
+Wspólne mechanizmy i ich testy znajdziesz w [indeksie pojęć backend-engineering](../../backend-engineering/README.md#globalny-indeks-pojęć). Tutaj śledź ich konsekwencje dla opisywanego systemu.
+Diagramy docelowe i warianty rozwoju czytaj razem z mapą implementacji; sam opis architektury nie oznacza, że wszystkie jej komponenty są uruchamiane w laboratorium.
+<!-- reading-guide:end -->
 
----
+## Zacznij tutaj
 
-## 2. Założenia biznesowe
+To studium nie próbuje implementować całego sklepu. Pokazuje najtrudniejszą
+granicę systemu e-commerce: przejście od zmiennego koszyka do trwałego zamówienia,
+rezerwacji ograniczonego stocku i wyniku płatności, a następnie bezpieczne
+rozpropagowanie tego wyniku do systemów pochodnych.
 
-System ma obsługiwać:
+| Pytanie | Odpowiedź |
+| --- | --- |
+| Najważniejszy niezmiennik | Zamówienie `PAID` ma dokładnie jedną zakończoną płatność i potwierdzone, niewygasłe rezerwacje wszystkich pozycji. |
+| Krytyczny przepływ | koszyk → snapshot ceny → zamówienie → atomowa rezerwacja → payment intent → wynik PSP → potwierdzenie stocku → outbox |
+| Szybka weryfikacja | `mvnw.cmd --batch-mode --no-transfer-progress test` |
+| PostgreSQL | `mvnw.cmd --batch-mode --no-transfer-progress -Pinfrastructure-tests verify` |
+| Świadome ograniczenie | PSP, broker, e-mail i OpenSearch są granicami demonstracyjnymi; webhook i reconciliation pokazują protokół, ale implementacja nie deklaruje exactly-once, settlement ani zgodności PCI DSS. |
 
-- przeglądanie katalogu produktów,
-- wyszukiwanie i filtrowanie produktów,
-- zarządzanie koszykiem,
-- składanie zamówień,
-- płatności online,
-- obsługę promocji, kuponów i rabatów,
-- rezerwację oraz aktualizację stanów magazynowych,
-- obsługę dostaw,
-- panel użytkownika,
-- panel administratora,
-- powiadomienia e-mail, SMS lub push,
-- integracje z systemami płatności, magazynem, kurierami i fakturowaniem.
+## Mapa mechanizmów
 
-Rekomendowanym podejściem początkowym jest **modular monolith**, zaprojektowany z wyraźnymi granicami domenowymi. Dzięki temu można szybciej dostarczyć MVP, a później wydzielać wybrane moduły do osobnych serwisów, kiedy pojawi się realna potrzeba skalowania.
+| Mechanizm | Kod | Test | Gwarancja i granica |
+| --- | --- | --- | --- |
+| ochrona przed oversellingiem | `InventoryService`, `InventoryItemRepository` | `InventoryInvariantTest`, `PostgreSqlInfrastructureIT` | PostgreSQL `FOR UPDATE` i `@Version`; dwa równoległe requesty nie rezerwują ostatniej sztuki |
+| lifecycle rezerwacji | `InventoryReservation` | `ReservationStateMachineTest` | pojedyncze przejście z `ACTIVE` do stanu terminalnego |
+| payment/order state machine | `Payment`, `CustomerOrder` | `PaymentStateMachineTest` | wynik płatności nie może zostać odwrócony przez spóźniony callback |
+| idempotentny checkout | `IdempotencyService`, unique constraint | `CheckoutFlowIntegrationTest` | retry zwraca ten sam order/payment i nie rezerwuje stocku ponownie |
+| podpisany webhook PSP | `PaymentWebhookVerifier`, `PaymentService` | `PaymentWebhookVerifierTest` | HMAC surowego body, timestamp, event ID, kwota, waluta i stan monotoniczny |
+| wynik płatności nieznany | `PaymentReconciliationWorker`, `PaymentProviderClient` | `PaymentReconciliationWorkerTest` | brak odpowiedzi PSP nie jest mapowany na porażkę; zmiana wymaga terminalnego wyniku providera |
+| transactional outbox | `OutboxService`, `OutboxPublisher` | `OutboxEventStateTest`, `PostgreSqlInfrastructureIT` | `SKIP LOCKED`, lease claimu i recovery; delivery pozostaje at-least-once |
+| pricing i pieniądze | `PromotionEngine`, `MoneyPolicy` | `PromotionEngineTest`, `MoneyPolicyTest` | priority/stackability, okno czasowe, jedna waluta i jawne rounding |
+| kontrakt HTTP | `GlobalExceptionHandler`, springdoc | `ApiContractTest` | Problem Details i obecność krytycznych elementów w generowanym OpenAPI |
+| idempotentny e-mail | `NotificationWorker`, `EmailClient` | `NotificationWorkerTest` | stabilny klucz `outbox-{id}` musi zostać honorowany przez produkcyjny provider |
+| odbudowywalny indeks | `SearchIndexWorker` | `SearchIndexWorkerTest` | PostgreSQL pozostaje source of truth, OpenSearch jest projekcją |
+| zgodność schematu | migracje Flyway + `ddl-auto=validate` | `SchemaContractTest`, `PostgreSqlInfrastructureIT` | ten sam jawny schemat uruchamia się na H2 i PostgreSQL; Hibernate go nie modyfikuje |
 
----
+## Zakres
 
-## 3. Wymagania funkcjonalne
+### Funkcje objęte studium
 
-### 3.1 Użytkownik
+- katalog produktów i wariantów;
+- koszyk ze snapshotem ceny;
+- checkout chroniony kluczem idempotencji;
+- rezerwacja, potwierdzenie, zwolnienie i wygaśnięcie stocku;
+- zamówienie i płatność jako maszyny stanów;
+- outbox, retry, dead-letter state i niezależne markery konsumentów;
+- projekcja wyszukiwarki oraz powiadomienia;
+- promocje, loyalty, zwroty, marketplace, ERP i WMS jako przykłady
+  downstreamów lub sąsiednich domen.
 
-Użytkownik może:
+### Poza zakresem wykonywalnej gwarancji
 
-- założyć konto,
-- zalogować się,
-- przeglądać produkty,
-- wyszukiwać produkty,
-- filtrować po kategorii, cenie, marce, dostępności i ocenach,
-- dodać produkt do koszyka,
-- zmienić ilość produktu w koszyku,
-- złożyć zamówienie,
-- opłacić zamówienie,
-- śledzić status zamówienia,
-- anulować zamówienie, jeśli status na to pozwala,
-- pobrać fakturę lub potwierdzenie zamówienia,
-- wystawić opinię.
+- certyfikowana integracja z PSP, 3-D Secure/SCA i settlement;
+- produkcyjny broker oraz exactly-once processing;
+- pełne naliczanie podatków zależne od jurysdykcji;
+- realna replikacja PostgreSQL z `docker-compose`;
+- kompletna ochrona danych kartowych i certyfikacja PCI DSS;
+- optymalny silnik promocji, fraud detection i globalny multi-region active-active.
 
-### 3.2 Administrator
+## Wymagania
 
-Administrator może:
+### Funkcjonalne
 
-- zarządzać produktami,
-- zarządzać kategoriami,
-- zarządzać stanami magazynowymi,
-- zarządzać promocjami,
-- zarządzać zamówieniami,
-- obsługiwać zwroty i reklamacje,
-- widzieć raporty sprzedażowe,
-- zarządzać użytkownikami.
+1. Klient przegląda katalog i buduje koszyk.
+2. Checkout zapisuje historyczny snapshot nazwy, SKU, ceny i waluty.
+3. System nie sprzedaje większej liczby sztuk niż dostępna.
+4. Retry tego samego checkoutu nie tworzy kolejnego zamówienia ani płatności.
+5. Wynik płatności potwierdza albo zwalnia rezerwację.
+6. Anulowanie przed płatnością zwalnia inventory w tej samej transakcji.
+7. Zmiany domenowe trafiają do outboxa i mogą odbudować projekcje.
 
-### 3.3 System
+### Niefunkcjonalne
 
-System musi:
+- katalog może być eventually consistent i agresywnie cache'owany;
+- decyzje checkout/inventory/payment wymagają strong consistency w obrębie
+  pojedynczej bazy źródłowej;
+- p95 odczytu katalogu powinno być znacznie niższe niż p95 checkoutu;
+- awaria OpenSearch, e-maila lub ERP nie może wycofać opłaconego zamówienia;
+- backlog asynchroniczny musi być ograniczony, mierzalny i możliwy do replayu;
+- system powinien degradować się przez wyłączenie funkcji pobocznych, a nie przez
+  przyjmowanie zamówień bez poprawnego stocku.
 
-- synchronizować płatności,
-- obsługiwać webhooki od operatorów płatności,
-- aktualizować statusy zamówień,
-- rezerwować i zwalniać stany magazynowe,
-- generować dokumenty sprzedaży,
-- wysyłać powiadomienia,
-- indeksować produkty w wyszukiwarce,
-- obsługiwać błędy integracji zewnętrznych.
+## Capacity estimation
 
----
+Poniższe liczby są założeniem ćwiczenia, nie wynikiem pomiaru:
 
-## 4. Wymagania niefunkcjonalne
+| Wielkość | Założenie średnie | Peak |
+| --- | ---: | ---: |
+| aktywni użytkownicy dziennie | 1 000 000 | — |
+| odczyty katalogu | 5 000 RPS | 25 000 RPS |
+| modyfikacje koszyka | 800 RPS | 4 000 RPS |
+| checkout | 100 RPS | 1 000 RPS |
+| callbacki PSP | 100 RPS | 1 500 RPS |
+| eventy outbox | 500/s | 5 000/s |
 
-### 4.1 Skalowalność
+Przy 100 RPS checkoutu powstaje około 8,6 mln zamówień dziennie. Jeżeli średni
+rekord zamówienia z pozycjami zajmuje 4 KiB, sam gorący zapis to około 34 GiB
+dziennie przed indeksami, WAL-em, kopiami i historią audytową. Taka skala wymaga
+retencji, archiwizacji i partycjonowania tabel czasowych, zanim wymaga shardowania
+całej domeny.
 
-Najbardziej obciążone elementy:
+Peak jest ważniejszy od średniej. Kampania lub flash sale tworzy hot SKU, dla
+którego tysiące checkoutów konkurują o jeden rekord inventory. Większa liczba
+instancji API nie zwiększa wtedy przepustowości tej decyzji; potrzebne są kolejka,
+admission control albo osobny mechanizm alokacji tokenów stocku.
 
-- katalog produktów,
-- wyszukiwarka,
-- koszyk,
-- checkout,
-- promocje,
-- płatności,
-- inventory.
+Warto policzyć również przepływ danych, a nie wyłącznie RPS. Jeżeli odpowiedź
+katalogowa ma średnio 20 KiB, peak 25 000 RPS oznacza około 500 MiB/s ruchu przed
+kompresją i cache'em brzegowym. Zdjęcia i wideo nie powinny przechodzić przez API:
+obiekt trafia do object storage, a klient pobiera go przez CDN z podpisanym lub
+publicznym URL-em. Przy 5 000 eventów/s i 2 KiB na rekord outbox generuje około
+824 GiB surowych danych dziennie, jeśli rekordów nie archiwizujemy. Capacity plan
+musi więc obejmować bandwidth, połączenia, IOPS, rozmiar indeksów, WAL, retencję i
+tempo opróżniania backlogu, a nie jedynie liczbę instancji aplikacji.
 
-Katalog i wyszukiwarka będą miały dużo więcej odczytów niż zapisów. Checkout i płatności będą miały mniejszy ruch, ale większą krytyczność.
-
-### 4.2 Dostępność
-
-Rekomendowany priorytet dostępności:
-
-- katalog: bardzo wysoka dostępność,
-- koszyk: wysoka dostępność,
-- checkout: wysoka dostępność,
-- płatności: wysoka spójność i odporność na duplikaty,
-- panel admina: niższy priorytet niż ścieżka zakupowa.
-
-### 4.3 Spójność danych
-
-Silna spójność jest potrzebna dla:
-
-- płatności,
-- zamówień,
-- rezerwacji stanów magazynowych,
-- finalizacji checkoutu.
-
-Spójność eventual consistency wystarczy dla:
-
-- wyszukiwarki,
-- rekomendacji,
-- raportów,
-- widoków produktowych,
-- powiadomień,
-- analityki.
-
-### 4.4 Bezpieczeństwo
-
-System musi obsługiwać:
-
-- uwierzytelnianie,
-- autoryzację ról,
-- ochronę danych osobowych,
-- szyfrowanie danych wrażliwych,
-- zabezpieczenie webhooków,
-- rate limiting,
-- ochronę przed fraudem,
-- audyt akcji administratorów.
-
----
-
-## 5. Architektura wysokiego poziomu
+## Architektura
 
 ```text
-                ┌─────────────────────┐
-                │     Web / Mobile     │
-                └──────────┬──────────┘
-                           │
-                    ┌──────▼──────┐
-                    │ API Gateway │
-                    └──────┬──────┘
-                           │
- ┌─────────────────────────┼─────────────────────────┐
- │                         │                         │
- ▼                         ▼                         ▼
-Auth Service        Catalog Service            Cart Service
- │                         │                         │
- ▼                         ▼                         ▼
-User DB              Product DB / Search       Redis / Cart DB
-
- ┌─────────────────────────┼─────────────────────────┐
- │                         │                         │
- ▼                         ▼                         ▼
-Order Service        Payment Service           Inventory Service
- │                         │                         │
- ▼                         ▼                         ▼
-Order DB             Payment Provider          Inventory DB
-
- ┌─────────────────────────┼─────────────────────────┐
- │                         │                         │
- ▼                         ▼                         ▼
-Promotion Service    Notification Service      Shipping Service
- │                         │                         │
- ▼                         ▼                         ▼
-Promo DB             Email/SMS/Push            Courier APIs
-
-                           │
-                           ▼
-                    Message Broker
-                Kafka / RabbitMQ / SQS
+                         ┌──────────────┐
+ client ──HTTP──────────▶│ ecommerce-api│
+                         └──────┬───────┘
+                                │ jedna transakcja lokalna
+                       ┌────────▼─────────┐
+                       │ PostgreSQL writer │
+                       │ order/inventory   │
+                       │ payment/outbox    │
+                       └────────┬─────────┘
+                                │ poll / docelowo broker
+                    ┌───────────┴───────────┐
+                    ▼                       ▼
+             search-indexer         notification-worker
+                    │                       │
+                    ▼                       ▼
+              OpenSearch               e-mail provider
 ```
 
----
+`api/` jest jedyną kanoniczną aplikacją zapisującą. Nadrzędny katalog jest
+reactorem Maven, a nie czwartą aplikacją. `search-indexer` i
+`notification-service` są obecnie workerami współdzielącymi bazę. Jest to prosty
+wariant transactional-log tailing, nie niezależne mikroserwisy. Docelowe
+wydzielenie wymaga brokera, kontraktów zdarzeń i niezależnego ownership danych.
 
-## 6. Podział domenowy
+## Model danych i source of truth
 
-### 6.1 Auth / Identity
+| Dane | Source of truth | Typowe access patterny |
+| --- | --- | --- |
+| produkt i wariant | PostgreSQL catalog | po slug/SKU/ID, lista kategorii |
+| dostępność | PostgreSQL inventory | po variant ID, blokowany zapis rezerwacji |
+| koszyk | PostgreSQL; Redis może być cache'em | aktywny koszyk użytkownika |
+| zamówienie | PostgreSQL order | po ID+user, historia użytkownika |
+| płatność | PostgreSQL + okresowa rekoncyliacja PSP | po order, idempotency key, provider event ID |
+| event integracyjny | PostgreSQL outbox | najstarsze NEW/FAILED, claim batcha |
+| wyszukiwanie | OpenSearch, odbudowywalna projekcja | tekst, filtry, ranking |
 
-Odpowiada za:
+Zamówienie nie odwołuje się do aktualnej ceny w katalogu. Przechowuje snapshot,
+ponieważ cena, nazwa i wariant mogą zmienić się już po zakupie. Kwoty pieniężne
+używają `BigDecimal` i jawnej waluty; reguły zaokrąglania powinny należeć do
+jednego komponentu money/pricing, a nie do kontrolerów.
 
-- rejestrację,
-- logowanie,
-- refresh tokeny,
-- role,
-- reset hasła,
-- MFA, jeżeli potrzebne,
-- sesje użytkowników.
+## Granice domenowe i odpowiedzialność danych
 
-Przykładowy model danych:
+E-commerce nie jest jedną domeną CRUD. Katalog odpowiada na pytanie „co można
+oferować?”, inventory — „ile można jeszcze przydzielić?”, pricing — „jaka cena
+obowiązuje w tym kontekście?”, a order — „co klient rzeczywiście kupił?”. Te
+odpowiedzi są powiązane, lecz mają inny lifecycle, wolumen i wymagany poziom
+spójności. Wspólna encja `Product` używana przez wszystkie moduły szybko staje
+się modelem anemicznym, który miesza opis produktu, cenę, stock, ranking i dane
+historyczne zamówienia.
 
-```text
-users
-- id
-- email
-- password_hash
-- phone
-- status
-- created_at
-- updated_at
+| Obszar | Odpowiedzialność | Własne dane | Dlaczego granica jest istotna |
+| --- | --- | --- | --- |
+| Identity | konto, principal, role i zgody | użytkownik, sesja, consent | checkout ufa principalowi, nie `userId` z requestu |
+| Catalog | produkt, wariant, atrybuty, kategorie | product, variant, category | opis zmienia się niezależnie od zamówienia |
+| Pricing | cena bazowa, cennik, podatki i rabaty | price list, promotion rule | cena zależy od rynku, czasu, waluty i klienta |
+| Cart | intencja zakupu użytkownika | cart, cart item | koszyk nie jest rezerwacją ani umową sprzedaży |
+| Inventory | podaż i alokacja stocku | item, reservation, movement | tylko ten obszar może zdecydować o dostępności |
+| Checkout | orkiestracja granicy zakupu | idempotency record, quote | zamienia zmienny koszyk w trwałą decyzję |
+| Order | historyczny fakt biznesowy | order, order item | przechowuje snapshot niezależny od katalogu |
+| Payment | intencja i wynik rozliczenia | payment, provider event | timeout nie jest równoznaczny z porażką |
+| Fulfillment | kompletacja i dostawa | shipment, parcel, tracking | jedno zamówienie może mieć wiele przesyłek |
+| Search | wyszukiwanie i ranking | odbudowywalny dokument | jest projekcją zoptymalizowaną do odczytu |
+| Notification | komunikacja z klientem | delivery attempt, template version | błąd e-maila nie unieważnia zamówienia |
 
-roles
-- id
-- name
+Granica domenowa nie musi od razu oznaczać osobnego procesu. W tym projekcie
+modularny monolit daje wspólną transakcję dla checkoutu, a rozdział pakietów
+utrzymuje ownership. Mikroserwis ma sens dopiero wtedy, gdy niezależne skalowanie,
+tempo zmian, bezpieczeństwo albo zespół uzasadniają koszt komunikacji sieciowej,
+eventual consistency i operacji wielu baz.
 
-user_roles
-- user_id
-- role_id
-```
+## Katalog, wariant i wyszukiwanie
 
-Rekomendacja: hasła przechowywać jako hash, np. Argon2id lub bcrypt. Nie przechowywać danych kart płatniczych.
+Produkt opisuje ofertę widoczną dla człowieka, natomiast wariant/SKU jest
+konkretną jednostką sprzedaży, np. „koszulka, granatowa, M”. Cena, kod kreskowy i
+inventory zwykle dotyczą wariantu, a tytuł, opis i marka — produktu. Ta różnica
+zapobiega przechowywaniu stocku na poziomie abstrakcyjnego produktu.
 
----
+Relacyjny katalog dobrze obsługuje integralność zapisu i panel administracyjny,
+ale nie musi dobrze wykonywać pełnotekstowego wyszukiwania, facetingu, literówek
+i rankingu. Dlatego dokument wyszukiwarki denormalizuje produkt, warianty,
+kategorie, dostępność i pola rankingowe. Jest świadomie duplikowany, ponieważ
+optymalizuje inny access pattern.
 
-### 6.2 Catalog Service
+W produkcyjnym indeksie trzeba jawnie rozstrzygnąć:
 
-Odpowiada za:
+- analizatory językowe, stemming, synonimy oraz normalizację znaków;
+- filtrowanie po polach keyword i faceting bez wysokiej cardinality;
+- ranking tekstowy kontra sygnały biznesowe, np. dostępność i popularność;
+- autocomplete jako osobny indeks/prefix field, a nie wildcard od początku;
+- wersję dokumentu chroniącą przed nadpisaniem nowszego stanu starym eventem;
+- reindex przez nowy indeks i atomową zmianę aliasu;
+- zachowanie przy opóźnieniu indeksu i możliwość fallbacku do katalogu.
 
-- produkty,
-- warianty produktów,
-- kategorie,
-- marki,
-- ceny bazowe,
-- zdjęcia,
-- atrybuty,
-- widoczność produktu.
+Search nie powinien być źródłem ceny akceptowanej przez checkout. Wynik może być
+chwilowo stary, więc karta produktu i checkout ponownie odczytują dane źródłowe.
 
-Przykładowy model danych:
+## Koszyk, pricing, promocje i pieniądze
 
-```text
-products
-- id
-- sku
-- name
-- slug
-- description
-- brand_id
-- category_id
-- status
-- created_at
-- updated_at
+Koszyk reprezentuje edytowalną intencję, a nie obietnicę ceny lub dostępności.
+Może przechowywać snapshot wyświetlonej ceny, aby pokazać użytkownikowi zmianę,
+ale checkout musi przeliczyć ofertę na serwerze. Typowy model tworzy wtedy
+krótkotrwały `Quote` zawierający pozycje, rabaty, podatek, dostawę, walutę,
+wersję reguł i termin ważności.
 
-product_variants
-- id
-- product_id
-- sku
-- name
-- price
-- currency
-- attributes_json
-- status
-
-categories
-- id
-- parent_id
-- name
-- slug
-
-product_images
-- id
-- product_id
-- url
-- sort_order
-```
-
-Katalog powinien mieć osobny model zapisu i odczytu. Relacyjna baza może być źródłem prawdy, a Elasticsearch/OpenSearch może obsługiwać wyszukiwanie.
-
----
-
-### 6.3 Search Service
-
-Odpowiada za:
-
-- full-text search,
-- filtrowanie,
-- sortowanie,
-- facety,
-- sugestie,
-- autocomplete.
-
-Rekomendowana technologia:
+Poprawny pipeline pricingu powinien być deterministyczny dla tych samych danych:
 
 ```text
-OpenSearch / Elasticsearch
+cena cennikowa
+  → rabaty pozycji
+  → rabaty koszyka / kupon
+  → koszt dostawy
+  → podatek zgodny z jurysdykcją
+  → total i jawne zaokrąglenie
 ```
 
-Przykładowy dokument w indeksie:
+Kolejność ma znaczenie. Rabat 10% przed podatkiem może dać inny wynik niż po
+naliczeniu podatku, a promocje mogą się wykluczać albo mieć priorytety. Silnik
+promocji potrzebuje reguł stackability, limitu użyć i idempotentnego naliczenia.
+Kupon „ostatnie 100 użyć” jest problemem współbieżności podobnym do inventory.
 
-```json
-{
-  "product_id": "p_123",
-  "name": "Nike Air Max",
-  "description": "Buty sportowe...",
-  "category": "Shoes",
-  "brand": "Nike",
-  "price": 499.99,
-  "currency": "PLN",
-  "attributes": {
-    "size": ["42", "43"],
-    "color": ["black"]
-  },
-  "available": true,
-  "rating": 4.7
-}
+Pieniądze wymagają wartości i kodu waluty. Nie używamy `double`; skala oraz
+rounding mode są częścią kontraktu. Dla systemu wielowalutowego zapisujemy kwotę
+oryginalną, kurs, źródło kursu i czas jego obowiązywania. Suma zamówienia powinna
+wynikać z zapisanych składowych, aby dało się ją wyjaśnić podczas reklamacji.
+
+## Projektowanie API sklepu
+
+API powinno ujawniać zasoby i decyzje biznesowe, a nie strukturę tabel. Odczyty
+katalogu są bezpieczne i cache'owalne, natomiast checkout jest komendą z efektem
+ubocznym i wymaga klucza idempotencji.
+
+| Operacja | Przykładowa semantyka | Ważny kontrakt |
+| --- | --- | --- |
+| `GET /products/{slug}` | odczyt produktu | `ETag`, cache-control, 404 |
+| `GET /products?cursor=...` | lista/filtrowanie | stabilny sort i keyset pagination |
+| `PUT /carts/{id}/items/{variantId}` | ustawienie ilości | idempotentne, opcjonalne `If-Match` |
+| `DELETE /carts/{id}/items/{variantId}` | usunięcie pozycji | retry daje ten sam stan |
+| `POST /checkout` | utworzenie zamówienia | `Idempotency-Key`, hash body, 201/409 |
+| `GET /orders/{id}` | status dla właściciela | autoryzacja object-level, read-your-writes |
+| `POST /payments/webhooks/{provider}` | wynik PSP | podpis, timestamp, deduplikacja event ID |
+| `POST /orders/{id}/cancel` | komenda domenowa | dozwolony stan i idempotentna kompensacja |
+
+Błędy powinny używać jednolitego Problem Details (`application/problem+json`)
+z kodem maszynowym, correlation ID i bez stack trace. Rozróżniamy błąd składni
+requestu, naruszenie reguły domenowej, konflikt współbieżności, niedostępność
+zależności i błąd wewnętrzny. Sama odpowiedź `400` nie daje klientowi stabilnego
+kontraktu.
+
+Lista produktów wymaga stabilnego sortowania z tie-breakerem, np.
+`(createdAt, productId)`. Offset jest prosty, lecz przy dużym zbiorze kosztowny i
+niestabilny podczas równoległych zmian; cursor/keyset lepiej nadaje się do feedu.
+Publiczny kontrakt powinien mieć OpenAPI, test kompatybilności i politykę
+deprecacji. Dodawanie pola jest zwykle kompatybilne, ale zmiana znaczenia,
+obowiązkowości albo enumu może złamać klienta bez zmiany URL.
+
+## Macierz spójności
+
+Nie każdy fragment sklepu wymaga tej samej spójności. Próba zapewnienia globalnej
+strong consistency zwiększa latency i coupling; używanie eventual consistency
+wszędzie prowadzi natomiast do oversellingu i niewyjaśnionych płatności.
+
+| Decyzja | Wymagana semantyka | Uzasadnienie |
+| --- | --- | --- |
+| rezerwacja ostatniej sztuki | serializowana/atomowa per SKU | nie można zaakceptować dwóch właścicieli |
+| utworzenie order + reservation + outbox | jedna lokalna transakcja | brak częściowo zapisanego checkoutu |
+| retry checkoutu | ten sam wynik dla tego samego żądania | klient nie wie, czy odpowiedź zginęła |
+| wynik płatności | deduplikacja + stan monotoniczny | callback może być spóźniony i powtórzony |
+| karta produktu | bounded stale | stary opis nie narusza inwariantu zakupu |
+| search | eventual consistency | indeks można odbudować z source of truth |
+| e-mail | at-least-once z idempotentnym providerem | wiadomość nie należy do transakcji orderu |
+| historia tuż po checkoutcie | read-your-writes | replika może jeszcze nie widzieć zamówienia |
+
+W systemie rozproszonym „saga” nie tworzy rozproszonej transakcji. Koordynuje
+lokalne transakcje i kompensacje. Kompensacja nie cofa czasu: refund jest nowym
+zdarzeniem finansowym, a release stocku nowym ruchem magazynowym. Każdy krok musi
+być idempotentny, mieć deadline i rozróżniać wynik negatywny od nieznanego.
+
+## Krytyczny flow checkoutu
+
+1. API wymaga `Idempotency-Key` i hashuje semantyczne body requestu.
+2. Unique constraint ogranicza klucz do użytkownika oraz operacji.
+3. Pobierany jest aktywny koszyk; jego pozycje zawierają snapshot ceny.
+4. Powstaje zamówienie `PENDING_PAYMENT` z immutable snapshotem pozycji.
+5. Dla każdego wariantu inventory pobierane jest z pessimistic write lock.
+6. Rezerwacja zmniejsza `sellable = available - reserved` i otrzymuje deadline.
+7. Powstaje dokładnie jeden payment intent dla zamówienia.
+8. Zamówienie, rezerwacje, płatność i eventy outbox commitują się razem.
+9. Retry zakończonego requestu zwraca ten sam wynik.
+
+Jedna transakcja jest świadomym wyborem modularnego monolitu. Po fizycznym
+wydzieleniu domen nie istnieje transakcja obejmująca wszystkie bazy; proces musi
+stać się sagą z timeoutami, idempotentnymi komendami i kompensacjami.
+
+## Inventory i problem oversellingu
+
+Naiwny algorytm `SELECT → if available → UPDATE` traci poprawność, gdy dwie
+transakcje odczytają tę samą wartość. Projekt stosuje:
+
+- pessimistic write lock przy decyzji reserve/confirm/release;
+- `@Version` jako dodatkową ochronę przed utraconą aktualizacją w innych ścieżkach;
+- invarianty w encji blokujące ujemne wartości i confirm bez rezerwacji;
+- unique constraint `order + variant`, który blokuje podwójną rezerwację pozycji;
+- osobny stan `EXPIRED`, odmienny od ręcznego `RELEASED`.
+
+Alternatywą jest pojedynczy conditional update:
+
+```sql
+update inventory_items
+set reserved_quantity = reserved_quantity + :quantity
+where variant_id = :variant
+  and available_quantity - reserved_quantity >= :quantity;
 ```
 
-Aktualizacja indeksu powinna być asynchroniczna:
+`updatedRows == 1` oznacza sukces. Conditional update zwykle skraca czas blokady,
+ale utrudnia bogatszą diagnostykę. Dla flash sale warto rozważyć admission queue
+lub tokeny, aby baza nie stała się kolejką tysięcy oczekujących transakcji.
+
+## Maszyny stanów
 
 ```text
-ProductUpdated event → Message Broker → Search Indexer → OpenSearch
+Reservation: ACTIVE ──▶ CONFIRMED
+                    ├─▶ RELEASED
+                    └─▶ EXPIRED
+
+Payment:     PENDING ──▶ SUCCEEDED
+                    └─▶ FAILED
+
+Order: PENDING_PAYMENT ──▶ PAID
+                       ├─▶ PAYMENT_FAILED ──▶ CANCELLED
+                       └─▶ CANCELLED
 ```
 
----
+Stan terminalny nie może zostać nadpisany spóźnionym callbackiem. Szczególnie
+`FAILED → SUCCEEDED` nie jest zwykłym setterem: wymaga nowej próby płatności albo
+rekoncyliacji i jawnego audytu.
 
-### 6.4 Cart Service
+Wyścig `payment success` kontra `reservation expiration` rozstrzyga blokada
+rezerwacji. Success sprawdza deadline przed potwierdzeniem. Jeśli expiration
+wygra, płatność nie może bezwarunkowo oznaczyć zamówienia jako opłacone; potrzebny
+jest refund/void lub ręczna ścieżka naprawcza.
 
-Koszyk jest stanem tymczasowym i nie musi mieć takiej samej trwałości jak zamówienie.
+## Idempotencja
 
-Możliwe podejścia:
+Zakres klucza to `(userId, operation, idempotencyKey)`. Ten sam klucz z innym
+hashem body daje `409 Conflict`. Rekord `PROCESSING` oznacza operację w toku;
+klient powinien ponowić odczyt z backoffem zamiast wykonywać efekt drugi raz.
 
-- Redis dla koszyka anonimowego i szybkiego dostępu,
-- PostgreSQL/DynamoDB dla trwałego koszyka użytkownika,
-- hybryda: Redis + okresowa persystencja.
+Unique constraint jest ostatnią linią obrony między instancjami, ale sam wzorzec
+`find → insert` nie usuwa wyścigu. Przegrany insert musi zostać zmapowany na
+odczyt istniejącego wyniku lub odpowiedź `409`, nigdy na drugi checkout.
 
-Model:
+Rekord utworzony w tej samej transakcji co checkout znika przy rollbacku. To
+świadomy wariant: klient może ponowić request. Trwałe przechowywanie błędów wymaga
+osobnej transakcji claim/finalize i obsługi przypadku, gdy wynik idempotencji
+zostanie zatwierdzony, a biznesowa transakcja nie.
 
-```text
-carts
-- id
-- user_id nullable
-- session_id nullable
-- status
-- created_at
-- updated_at
+## Płatności i webhook
 
-cart_items
-- id
-- cart_id
-- product_variant_id
-- quantity
-- unit_price_snapshot
-- added_at
+Endpointy `mock-success` i `mock-failure` są dostępne wyłącznie dla administratora
+i służą do laboratorium. Endpoint `POST /api/payments/webhooks/provider` pokazuje
+rzeczywistą granicę zaufania: weryfikuje HMAC nad surowym body oraz timestamp
+przed deserializacją. Następnie `PaymentService` sprawdza:
+
+1. podpis HMAC lub podpis asymetryczny na surowym body;
+2. timestamp i maksymalny wiek callbacka;
+3. unikalny `providerEventId` chroniący przed replayem;
+4. zgodność merchant account, waluty i kwoty;
+5. dozwolone przejście maszyny stanów;
+6. audyt bez danych karty, tokenów i sekretów.
+
+Timeout requestu do PSP nie oznacza porażki płatności. Oznacza wynik nieznany.
+`PaymentReconciliationWorker` odpytuje port `PaymentProviderClient` dla starych
+płatności `PENDING`. Brak odpowiedzi pozostawia wynik nieznany; tylko terminalna
+odpowiedź providera przechodzi przez ten sam idempotentny handler co webhook.
+Lokalny `NoopPaymentProviderClient` jest świadomie symulacją, nie integracją PSP.
+Przechowywanie
+PAN/CVV jest poza zakresem; system powinien używać tokenizacji/hosted checkout,
+aby ograniczyć zakres PCI DSS.
+
+### Autoryzacja, capture i rozliczenie
+
+„Płatność udana” może oznaczać różne rzeczy. W modelu authorize/capture PSP
+najpierw blokuje środki, a capture następuje dopiero po potwierdzeniu możliwości
+realizacji. Sprzedaż natychmiastowa łączy oba kroki, ale utrudnia obsługę braku
+stocku. `void` anuluje niewychwyconą autoryzację, `refund` tworzy zwrot po capture,
+a chargeback jest procesem zainicjowanym poza sklepem.
+
+System powinien przechowywać własny payment intent i identyfikatory PSP, lecz nie
+traktować callbacka jako księgi finansowej. Okresowa reconciliation porównuje
+zamówienia, płatności, refundy i settlement z raportem providera. Rozbieżność jest
+sygnałem operacyjnym wymagającym kolejki naprawczej, nie automatycznego
+„ustawienia statusu na sukces”. Dla marketplace dochodzi ledger rozdzielający
+należności sprzedawców, prowizję platformy i payouty.
+
+3-D Secure/SCA może przerwać synchroniczny request i wymagać interakcji klienta.
+Dlatego payment intent posiada stan oczekujący, a zamówienie nie zakłada, że
+wywołanie PSP zakończy się w jednym HTTP request-response.
+
+## Outbox i delivery semantics
+
+Event domenowy jest zapisywany w tej samej transakcji co zmiana agregatu. Worker
+pobiera batch przez PostgreSQL `FOR UPDATE SKIP LOCKED`, przechodzi przez
+`PROCESSING`, a błąd otrzymuje
+wykładniczy backoff. Po pięciu błędach rekord trafia do `DEAD` i wymaga alertu
+oraz kontrolowanego replayu. `claimedAt` pełni rolę krótkiego lease: rekord
+pozostawiony w `PROCESSING` przez martwego workera może zostać przejęty ponownie.
+
+Nie ma atomowej transakcji pomiędzy PostgreSQL a brokerem lub providerem e-mail.
+Awaria po efekcie zewnętrznym, lecz przed commitem markera, tworzy duplikat.
+Recovery po wygaśnięciu claimu nie wie, czy publikacja zdążyła nastąpić.
+Dlatego semantyka brzmi **at-least-once**, a konsument musi używać stabilnego
+event ID jako klucza idempotencji.
+
+Ordering powinien być wymagany tylko w obrębie agregatu, np. `orderId`. Globalne
+FIFO ogranicza skalowanie i zwykle nie jest potrzebne. Po przejściu na broker
+aggregate ID powinno być partition key.
+
+## Search jako odbudowywalna projekcja
+
+OpenSearch nie jest source of truth. Event tylko wskazuje, który produkt zmienił
+się; indexer doczytuje bieżący stan z katalogu i inventory, a następnie wykonuje
+upsert dokumentu po `productId`. `InventoryUpdated` mapuje `variantId` na produkt.
+
+Potrzebne operacyjnie mechanizmy to:
+
+- initial snapshot i przejście do strumienia zmian;
+- wersja dokumentu lub monotoniczna wersja agregatu dla reorderu;
+- okresowa rekoncyliacja liczby/hashów rekordów;
+- alias indeksu dla bezprzerwowego reindexu;
+- usunięcie dokumentu dla produktu usuniętego;
+- bounded retry i dead-letter zamiast nieskończonego blokowania partycji.
+
+## Cache
+
+Cache katalogu może zwracać krótkotrwale stare opisy i ceny prezentacyjne, ale
+checkout ponownie waliduje snapshot oraz stock w bazie źródłowej. Cache nigdy nie
+jest autorytetem do decyzji o sprzedaży.
+
+Klucze powinny zawierać wszystkie wymiary odpowiedzi: produkt, język, walutę,
+tenant/market i wersję kontraktu. Hot key wymaga request coalescing, jitter TTL i
+ochrony przed stampede. Awaria Redis powinna degradować wydajność katalogu, nie
+poprawność checkoutu.
+
+## Skalowanie i partycjonowanie
+
+1. Najpierw skaluj stateless API i read cache.
+2. Dodaj read replicas wyłącznie dla odczytów tolerujących lag; po checkoutcie
+   stosuj read-your-writes na writerze.
+3. Partycjonuj historyczne orders/outbox po czasie dla retencji i maintenance.
+4. Oddziel workery od request path, stosując bounded batch i backpressure.
+5. Sharduj dopiero po zmierzeniu limitu jednego writera. Dobry shard key zachowuje
+   order, payment i idempotency record razem; `userId` ułatwia historię klienta,
+   ale komplikuje globalne raporty i hot tenants.
+
+Inventory dla jednego SKU jest naturalnym punktem serializacji. Shardowanie nie
+usuwa hot SKU, ponieważ wszystkie decyzje nadal trafiają do jednego właściciela.
+
+### Flash sale i kontrola przeciążenia
+
+Przy nagłym piku problemem nie jest tylko CPU API. Hot SKU serializuje transakcje,
+pool połączeń do bazy staje się kolejką, a retry klientów może zwielokrotnić ruch.
+Skalowanie instancji bez limitu pogarsza przeciążenie downstreamu.
+
+Ochrona powinna mieć kilka warstw: rate limit per użytkownik, ograniczoną kolejkę,
+limit współbieżnych checkoutów, krótki deadline, retry budget i load shedding.
+Dla ekstremalnej kampanii można poprzedzić bazę pulą tokenów lub kolejką per SKU,
+ale taki model komplikuje uczciwość, wygasanie alokacji i odzyskiwanie po awarii.
+Wirtualna poczekalnia jest decyzją produktowo-operacyjną, nie tylko techniczną.
+
+## Fulfillment, anulowanie, zwroty i refundy
+
+Opłacenie zamówienia nie kończy procesu. Fulfillment może podzielić order na
+przesyłki z różnych magazynów, dopuścić częściowy backorder albo oznaczyć pozycję
+jako niemożliwą do realizacji. Stan przesyłki i stan zamówienia nie powinny być
+jednym enumem: jedna paczka może być dostarczona, gdy druga nadal czeka.
+
+Anulowanie, zwrot towaru i refund to różne procesy:
+
+- anulowanie przed capture zwykle zwalnia rezerwację i wykonuje `void`;
+- anulowanie po capture wymaga refundu i decyzji o zatrzymaniu wysyłki;
+- zwrot rozpoczyna się po wydaniu towaru i posiada własną autoryzację RMA;
+- przyjęty zwrot nie zawsze wraca do `sellable` — może być uszkodzony;
+- częściowy refund musi wskazywać pozycje, podatki, dostawę i powód;
+- każdy ruch stocku i pieniędzy powinien pozostawić audytowalny zapis.
+
+W dużym systemie stan orderu bywa projekcją stanów payment, fulfillment i return.
+Nie wolno pozwolić, aby pojedynczy spóźniony event cofnął proces z terminalnego
+stanu do wcześniejszego.
+
+## Sąsiednie domeny dużej platformy
+
+Krytyczny checkout nie wyczerpuje architektury e-commerce. Poniższe obszary mają
+inne access patterny i nie powinny być dopisywane do agregatu `Order` tylko
+dlatego, że uczestniczą w zakupie.
+
+### Media i CDN
+
+Zdjęcia oraz filmy produktów należą do object storage, a katalog przechowuje ich
+identyfikatory i metadane. Upload używa pre-signed URL, walidacji typu i rozmiaru,
+skanowania malware oraz asynchronicznego generowania wariantów. CDN odciąża API,
+lecz wymaga wersjonowanych, immutable URL albo kontrolowanej invalidacji. API nie
+powinno proxy'ować dużych plików przez własną pulę wątków i pamięć.
+
+### Fraud, risk i abuse
+
+Risk scoring może korzystać z urządzenia, velocity, adresu, historii klienta i
+sygnałów PSP. Decyzja musi rozróżniać allow, deny i manual review. Model ML nie
+zastępuje audytowalnych reguł ani limitów. Ochrony wymagają również credential
+stuffing, card testing, scraping cen, masowe używanie kuponów i boty flash-sale.
+Fail-open lub fail-closed jest decyzją biznesową zależną od operacji: niedostępny
+recommender może się wyłączyć, ale niedostępna kontrola ryzyka płatności może
+zatrzymać transakcję wysokiego ryzyka.
+
+### Marketplace i settlement
+
+Marketplace dodaje seller ownership oferty, moderację, prowizję, podatki,
+split-order, payout oraz spory. Płatność klienta nie oznacza natychmiastowego
+payoutu sprzedawcy. Ledger powinien oddzielać kwotę brutto, prowizję platformy,
+refundy, chargebacki i saldo możliwe do wypłaty. Raport finansowy nie powinien
+powstawać przez sumowanie aktualnych statusów zamówień.
+
+### Rekomendacje i analityka
+
+Rekomendacje są projekcją i mogą degradować się do bestsellerów. Impression,
+click, add-to-cart i purchase tworzą strumień analityczny, który nie może
+blokować request path. Event analityczny potrzebuje zgody, retencji, wersji
+schematu i ochrony przed wysoką cardinality. Wyniki eksperymentów A/B wymagają
+stabilnego przypisania wariantu i guardrail metrics, nie tylko wzrostu CTR.
+
+### Cykl życia danych
+
+Dane zamówień, płatności, audytu i PII mają różne okresy retencji. Usunięcie konta
+może oznaczać anonimizację danych kontaktowych przy zachowaniu dokumentów
+finansowych wymaganych prawem. Proces usunięcia musi objąć bazę źródłową, cache,
+search, analitykę i późniejsze odtworzenie z backupu. Backup powinien mieć
+procedurę ponownego zastosowania tombstone'ów, aby restore nie „wskrzesił” PII.
+
+## Dostępność, deployment i disaster recovery
+
+Minimalna topologia produkcyjna obejmuje kilka instancji stateless API w co
+najmniej dwóch strefach, PostgreSQL writer z repliką/failoverem, osobne workery,
+Redis oraz klaster wyszukiwarki. Każdy komponent ma inną rolę:
+
+- liveness odpowiada, czy proces należy zrestartować;
+- readiness blokuje ruch, dopóki proces nie może bezpiecznie obsługiwać requestu;
+- graceful shutdown przestaje przyjmować ruch i kończy lub zwalnia claimy;
+- bounded pool chroni bazę i providera przed nieograniczoną współbieżnością;
+- autoscaling używa także saturation/queue age, nie tylko CPU;
+- migracje schematu stosują expand/contract, aby stara i nowa wersja mogły
+  współistnieć podczas rolloutu.
+
+HA ogranicza przerwy przy typowej awarii instancji lub strefy. Disaster recovery
+odpowiada na utratę lub uszkodzenie danych. Trzeba ustalić mierzalne RPO (ile
+danych wolno utracić) i RTO (jak długo trwa przywrócenie), wykonywać backupy PITR
+oraz regularnie odtwarzać je w izolowanym środowisku. Backup bez testu restore
+jest jedynie nadzieją.
+
+W multi-region active-passive ruch przełącza się po potwierdzeniu zdrowia danych
+i zależności. Active-active dla inventory wymaga znacznie trudniejszego modelu
+własności lub globalnego konsensusu; konflikt „ostatniej sztuki” nie znika dzięki
+dwóm regionom. W wielu sklepach lepszy jest regionalny owner stocku niż pozorna
+dostępność zapisu wszędzie.
+
+## Najważniejsze alternatywy i trade-offy
+
+| Decyzja w laboratorium | Kiedy jest rozsądna | Kiedy rozważyć alternatywę |
+| --- | --- | --- |
+| modularny monolit | jeden zespół, wspólna transakcja, szybka nauka domeny | niezależne tempo zmian/skala i dojrzałe granice |
+| PostgreSQL jako source of truth | silne invarianty i relacyjne zapytania | ekstremalny wolumen z jasno ograniczonym access patternem |
+| pessimistic lock inventory | krótka transakcja i umiarkowana konkurencja | hot SKU: conditional update, token allocation lub kolejka |
+| polling outboxa | prostota i umiarkowany throughput | broker/CDC przy wielu konsumentach i dużym backlogu |
+| OpenSearch | faceting, relevance, typo tolerance, duży katalog | PostgreSQL FTS dla prostszego i mniejszego katalogu |
+| koszyk w PostgreSQL | trwałość i łatwiejsza diagnostyka | Redis przy ogromnym churnie, z zaplanowaną utratą/fallbackiem |
+| orkiestracja checkoutu | czytelny owner procesu i kompensacji | choreografia tylko przy małej liczbie luźno związanych reakcji |
+
+Technologii nie wybiera się po nazwie problemu. Najpierw określamy niezmiennik,
+access pattern, akceptowalną niespójność i failure mode, a dopiero później bazę,
+brokera lub framework.
+
+## Failure modes
+
+| Awaria | Oczekiwane zachowanie |
+| --- | --- |
+| klient traci odpowiedź checkoutu | retry z tym samym kluczem zwraca ten sam wynik |
+| dwa checkouty walczą o ostatnią sztukę | jeden lock/conditional update wygrywa, drugi dostaje konflikt |
+| PSP timeout | stan pozostaje nieznany/pending; reconciliation ustala wynik |
+| duplikat callbacka PSP | provider event ID i maszyna stanów usuwają drugi efekt |
+| rezerwacja wygasa podczas płatności | jedna transakcja wygrywa lock; nie powstaje paid order bez stocku |
+| broker niedostępny | biznesowy commit pozostaje; outbox retry z backoffem |
+| crash po publikacji | możliwy duplikat; consumer deduplikuje event ID |
+| OpenSearch niedostępny | katalog źródłowy działa; indeks ma backlog i może być odbudowany |
+| e-mail provider niedostępny | zamówienie pozostaje ważne; retry/DLQ i alert |
+| replica lag | krytyczny odczyt po zapisie idzie do writera |
+
+## Observability
+
+### SLI i przykładowe SLO
+
+Wartości są celem ćwiczenia, nie pomiarem projektu:
+
+- 99,9% checkoutów bez błędu systemowego w oknie 30 dni;
+- p95 checkoutu poniżej 800 ms bez czasu interakcji użytkownika z PSP;
+- brak naruszeń invariantów inventory;
+- 99% eventów outbox opublikowanych w 30 s;
+- 99% dokumentów search nie starszych niż 60 s od source of truth.
+
+### Metryki
+
+- checkout attempts/success/failure z niskokardynalnym reason;
+- lock wait, deadlock i optimistic-lock conflict;
+- active/expired reservations oraz wiek najstarszej aktywnej rezerwacji;
+- payment pending age i reconciliation mismatch;
+- outbox backlog, oldest-event age, attempts oraz DEAD count;
+- consumer lag, duplicate count i processing latency;
+- search indexing lag oraz reconciliation drift.
+
+`BusinessMetrics` wykonuje obecnie histogram czasu checkoutu, oczekiwania na
+blokadę inventory i publikacji batcha outbox. Liczniki rozróżniają wynik
+płatności, publikację, odrzucony webhook oraz rekoncyliację zakończoną od nadal
+nieznanego wyniku PSP. Gauges pokazują backlog i wiek najstarszego eventu.
+`@Observed` tworzy osobne obserwacje checkoutu i outboxa, a Micrometer Tracing
+umieszcza `traceId`/`spanId` w kontekście logowania. Produkcyjny eksport OTLP oraz
+propagacja correlation/causation ID w payloadzie brokera pozostają granicą
+wdrożeniową.
+
+Nie umieszczaj `userId`, `orderId`, SKU ani event ID w labelach metryk. Należą do
+logów i trace'ów. Trace powinien łączyć checkout, payment callback i publikację
+outbox przez correlation/causation ID.
+
+### Alert i runbook
+
+Alertuj na wiek, nie tylko rozmiar backlogu. Pierwsze kroki runbooka:
+
+1. rozróżnij awarię producenta, bazy, brokera i konsumenta;
+2. zatrzymaj automatyczny replay, jeśli efekt może nie być idempotentny;
+3. określ najstarszy event i dotknięte typy agregatów;
+4. usuń przyczynę, wykonaj mały canary replay;
+5. porównaj projekcję z source of truth i dopiero zwiększ batch.
+
+## Security i trust boundaries
+
+- klient nie może podać user ID zamiast principal z uwierzytelnienia;
+- endpointy admina i mock PSP wymagają roli administratora;
+- produkcyjny webhook PSP jest osobną trust boundary i wymaga podpisu;
+- ceny, rabaty, shipping i total są liczone po stronie serwera;
+- rate limiting powinien chronić login, koszyk, checkout i webhook;
+- logi nie zawierają bearer tokenów, sekretów, pełnych adresów ani danych karty;
+- sekrety są rotowane przez secret manager, nie plik `application.yml`;
+- audit log operacji administracyjnych commitowany jest razem ze zmianą;
+- retencja i anonimizacja PII muszą zachować wymagane prawnie dane finansowe.
+
+Implementacja webhooka używa HMAC SHA-256, constant-time comparison, pięciominutowego
+okna czasowego i unikalnego `providerEventId`. Sekret z domyślnej konfiguracji
+jest wyłącznie lokalnym fallbackiem; środowisko inne niż edukacyjne musi ustawić
+`PAYMENT_WEBHOOK_SECRET`. Endpointy H2 console, OpenAPI i mock PSP nie powinny być
+publicznie dostępne w profilu produkcyjnym.
+
+## Ewolucja schematu i kompatybilny rollout
+
+Flyway jest właścicielem DDL, a Hibernate działa z `ddl-auto=validate`. `V1`
+opisuje jawny baseline, natomiast `V2` dodaje lease outboxa. Kolejne zmiany nie
+edytują zastosowanej migracji — dodają nowy plik. Rollout zero-downtime stosuje:
+
+1. **expand** — dodanie nullable kolumny/tabeli/indeksu kompatybilnego ze starą aplikacją;
+2. wdrożenie kodu zapisującego oba formaty lub wykonanie kontrolowanego backfillu;
+3. przełączenie odczytu i obserwację błędów/driftu;
+4. **contract** — usunięcie starego pola dopiero po wycofaniu wszystkich starych instancji.
+
+Duży indeks buduje się online/concurrently, a duży backfill porcjami z limitem,
+checkpointem i mierzoną presją na replikację. Rollback aplikacji nie zawsze
+oznacza rollback migracji; destrukcyjne DDL powinno być osobnym, opóźnionym krokiem.
+
+## Test strategy
+
+Szybka suite bez infrastruktury obejmuje:
+
+- invarianty encji i maszyny stanów;
+- kontrakty workera i stabilne klucze idempotencji;
+- uruchomienie migracji Flyway i walidację mapowań na H2;
+- start całego kontekstu API;
+- pełny lokalny checkout i idempotentny retry;
+- Problem Details oraz generowany kontrakt OpenAPI;
+- HMAC/timestamp webhooka, reconciliation, pricing i rounding pieniędzy.
+
+Profil `infrastructure-tests` używa PostgreSQL 16 Testcontainers i dowodzi:
+
+- że dwa równoległe rezerwowania ostatniej sztuki dają dokładnie jednego zwycięzcę;
+- rzeczywistą semantykę pessimistic lock;
+- unique constraints idempotencji i payment provider event;
+- że dwaj workerzy claimują różne rekordy przez `SKIP LOCKED`;
+- migracje Flyway i krytyczne unique constraints na prawdziwym dialekcie.
+
+H2 jest użyteczny do szybkiego feedbacku, ale nie jest dowodem zachowania
+PostgreSQL. Test kontekstu dowodzi tylko, że aplikacja startuje.
+
+## Uruchomienie
+
+```powershell
+cd system-design/ecommerce
+
+# wszystkie szybkie testy trzech modułów
+.\mvnw.cmd --batch-mode --no-transfer-progress test
+
+# pełny build
+.\mvnw.cmd --batch-mode --no-transfer-progress verify
+
+# kontrakty PostgreSQL; wymaga działającego Dockera
+.\mvnw.cmd --batch-mode --no-transfer-progress -Pinfrastructure-tests verify
+
+# środowisko demonstracyjne
+docker compose up -d postgres-writer redis opensearch
 ```
 
-Cena w koszyku może się zmienić. Przy checkout trzeba ponownie przeliczyć ceny, promocje i dostępność.
-
----
-
-### 6.5 Checkout Service
-
-Checkout koordynuje proces składania zamówienia.
-
-Odpowiada za:
-
-- walidację koszyka,
-- przeliczenie cen,
-- naliczenie promocji,
-- sprawdzenie dostępności,
-- rezerwację stocku,
-- utworzenie zamówienia,
-- rozpoczęcie płatności.
-
-Przykładowy flow:
-
-```text
-1. User clicks "Buy"
-2. Checkout validates cart
-3. Checkout checks inventory
-4. Checkout calculates final price
-5. Checkout reserves inventory
-6. Checkout creates order with status PENDING_PAYMENT
-7. Checkout creates payment intent
-8. User pays
-9. Payment webhook confirms payment
-10. Order becomes PAID
-11. Fulfillment process starts
-```
-
-Checkout nie powinien ufać cenom z frontendu.
-
----
-
-### 6.6 Order Service
-
-Order Service jest jednym z najważniejszych elementów systemu.
-
-Statusy zamówień:
-
-```text
-CREATED
-PENDING_PAYMENT
-PAID
-PAYMENT_FAILED
-PROCESSING
-SHIPPED
-DELIVERED
-CANCELLED
-RETURNED
-REFUNDED
-```
-
-Model:
-
-```text
-orders
-- id
-- user_id
-- order_number
-- status
-- currency
-- subtotal_amount
-- discount_amount
-- shipping_amount
-- total_amount
-- billing_address_id
-- shipping_address_id
-- created_at
-- updated_at
-
-order_items
-- id
-- order_id
-- product_id
-- product_variant_id
-- sku
-- product_name_snapshot
-- quantity
-- unit_price
-- discount_amount
-- total_amount
-
-order_status_history
-- id
-- order_id
-- old_status
-- new_status
-- changed_by
-- reason
-- created_at
-```
-
-Zamówienie powinno przechowywać snapshot danych produktu, ceny i adresu. Nie można polegać wyłącznie na aktualnych danych z katalogu, bo produkt może później zmienić nazwę, cenę albo zostać usunięty.
-
----
-
-### 6.7 Payment Service
-
-Odpowiada za:
-
-- tworzenie płatności,
-- obsługę webhooków,
-- idempotencję,
-- refundy,
-- mapowanie statusów operatora płatności na statusy wewnętrzne.
-
-Nie należy samodzielnie przechowywać danych kart. Operator płatności powinien obsługiwać tokenizację.
-
-Model:
-
-```text
-payments
-- id
-- order_id
-- provider
-- provider_payment_id
-- status
-- amount
-- currency
-- idempotency_key
-- created_at
-- updated_at
-
-payment_events
-- id
-- payment_id
-- provider_event_id
-- event_type
-- payload_json
-- received_at
-```
-
-Kluczowe zasady:
-
-- każdy webhook musi być weryfikowany podpisem,
-- każdy webhook musi być idempotentny,
-- płatność nie może zostać zaksięgowana dwa razy,
-- `provider_event_id` powinien być unikalny.
-
----
-
-### 6.8 Inventory Service
-
-Inventory Service zarządza stanami magazynowymi.
-
-Model:
-
-```text
-inventory_items
-- id
-- product_variant_id
-- warehouse_id
-- available_quantity
-- reserved_quantity
-- sold_quantity
-- updated_at
-
-inventory_reservations
-- id
-- order_id
-- product_variant_id
-- quantity
-- status
-- expires_at
-- created_at
-```
-
-Statusy rezerwacji:
-
-```text
-ACTIVE
-CONFIRMED
-RELEASED
-EXPIRED
-```
-
-Przykład:
-
-```text
-available_quantity = 10
-reserved_quantity = 2
-sellable_quantity = available_quantity - reserved_quantity = 8
-```
-
-Checkout powinien tworzyć rezerwację na określony czas, np. 15 minut. Jeśli płatność nie zostanie zakończona, rezerwacja wygasa.
-
----
-
-### 6.9 Promotion Service
-
-Odpowiada za:
-
-- kupony,
-- rabaty procentowe,
-- rabaty kwotowe,
-- promocje na kategorie,
-- promocje na produkty,
-- darmową dostawę,
-- limity użyć,
-- reguły typu “kup 2, zapłać za 1”.
-
-Model:
-
-```text
-promotions
-- id
-- name
-- type
-- status
-- starts_at
-- ends_at
-- priority
-- rules_json
-- effects_json
-
-coupons
-- id
-- code
-- promotion_id
-- max_uses
-- used_count
-- user_limit
-```
-
-Promocje powinny być liczone po stronie backendu, najlepiej w jednym miejscu. To ogranicza błędy i nadużycia.
-
----
-
-### 6.10 Shipping Service
-
-Odpowiada za:
-
-- metody dostawy,
-- kalkulację kosztów dostawy,
-- integrację z kurierami,
-- tworzenie etykiet,
-- tracking.
-
-Model:
-
-```text
-shipments
-- id
-- order_id
-- provider
-- tracking_number
-- status
-- shipping_method
-- shipped_at
-- delivered_at
-```
-
-Statusy:
-
-```text
-PENDING
-LABEL_CREATED
-PICKED_UP
-IN_TRANSIT
-DELIVERED
-FAILED
-RETURNED
-```
-
----
-
-### 6.11 Notification Service
-
-Odpowiada za:
-
-- e-maile transakcyjne,
-- SMS-y,
-- powiadomienia push,
-- szablony wiadomości,
-- retry w przypadku błędów.
-
-Przykładowe eventy:
-
-```text
-OrderCreated
-PaymentSucceeded
-PaymentFailed
-OrderShipped
-OrderDelivered
-RefundCreated
-```
-
-Notification Service powinien działać asynchronicznie. Brak wysłania e-maila nie może blokować zamówienia.
-
----
-
-### 6.12 Admin Panel
-
-Panel administracyjny powinien korzystać z tych samych API, ale mieć osobną warstwę autoryzacji.
-
-Funkcje:
-
-- CRUD produktów,
-- zarządzanie zamówieniami,
-- zarządzanie promocjami,
-- zarządzanie użytkownikami,
-- raporty,
-- ręczne zwroty,
-- historia zmian.
-
-Każda krytyczna akcja admina powinna być audytowana:
-
-```text
-admin_audit_logs
-- id
-- admin_user_id
-- action
-- entity_type
-- entity_id
-- old_value_json
-- new_value_json
-- ip_address
-- created_at
-```
-
----
-
-## 7. Główne flow systemowe
-
-### 7.1 Przeglądanie produktu
-
-```text
-User → Frontend → API Gateway → Catalog Service
-                              → Inventory Service
-                              → Review Service
-                              → Pricing/Promotion Service
-```
-
-Dla wydajności można używać widoku produktowego zdenormalizowanego:
-
-```text
-Product Read Model
-- product data
-- price
-- availability
-- rating
-- images
-```
-
-Taki widok może być aktualizowany eventami.
-
----
-
-### 7.2 Dodanie do koszyka
-
-```text
-User → Cart API
-Cart Service:
-  1. sprawdza, czy produkt istnieje
-  2. sprawdza, czy wariant jest aktywny
-  3. opcjonalnie sprawdza dostępność
-  4. zapisuje pozycję w koszyku
-```
-
-Na tym etapie nie należy jeszcze finalnie rezerwować stocku, bo użytkownicy często porzucają koszyki.
-
----
-
-### 7.3 Checkout
-
-```text
-User → Checkout API
-
-Checkout Service:
-  1. Pobiera koszyk
-  2. Waliduje produkty
-  3. Pobiera aktualne ceny
-  4. Przelicza promocje
-  5. Sprawdza inventory
-  6. Rezerwuje inventory
-  7. Tworzy order
-  8. Tworzy payment intent
-  9. Zwraca URL/session płatności
-```
-
-To powinno być idempotentne. Jeśli użytkownik kliknie “Kupuję” dwa razy, system nie może utworzyć dwóch opłacanych zamówień.
-
----
-
-### 7.4 Płatność
-
-```text
-Payment Provider → Webhook → Payment Service
-Payment Service:
-  1. Weryfikuje podpis webhooka
-  2. Sprawdza provider_event_id
-  3. Aktualizuje payment status
-  4. Publikuje PaymentSucceeded / PaymentFailed
-```
-
-Następnie:
-
-```text
-PaymentSucceeded → Order Service → status PAID
-PaymentSucceeded → Inventory Service → confirm reservation
-PaymentSucceeded → Notification Service → send confirmation
-PaymentSucceeded → Fulfillment Service → start processing
-```
-
----
-
-### 7.5 Anulowanie zamówienia
-
-```text
-User/Admin → Order Service
-
-Jeżeli status pozwala:
-  1. Order status = CANCELLED
-  2. Payment refund, jeśli płatność była pobrana
-  3. Inventory reservation release
-  4. Notification
-```
-
-Nie każde zamówienie można anulować. Przykładowo, po przekazaniu do kuriera anulowanie może już wymagać procesu zwrotu.
-
----
-
-## 8. API Design
-
-### 8.1 Public API
-
-#### Produkty
-
-```http
-GET /api/products
-GET /api/products/{slug}
-GET /api/categories
-GET /api/search?q=nike&category=shoes&price_min=100&price_max=500
-```
-
-#### Koszyk
-
-```http
-GET /api/cart
-POST /api/cart/items
-PATCH /api/cart/items/{itemId}
-DELETE /api/cart/items/{itemId}
-```
-
-Body:
-
-```json
-{
-  "productVariantId": "var_123",
-  "quantity": 2
-}
-```
-
-#### Checkout
-
-```http
-POST /api/checkout
-```
-
-Body:
-
-```json
-{
-  "cartId": "cart_123",
-  "shippingAddressId": "addr_1",
-  "billingAddressId": "addr_2",
-  "shippingMethodId": "courier_standard",
-  "couponCode": "SUMMER20",
-  "idempotencyKey": "uuid-generated-by-client"
-}
-```
-
-Response:
-
-```json
-{
-  "orderId": "ord_123",
-  "paymentUrl": "https://payment-provider/checkout/session/abc"
-}
-```
-
-#### Zamówienia
-
-```http
-GET /api/orders
-GET /api/orders/{orderId}
-POST /api/orders/{orderId}/cancel
-```
-
-#### Płatności
-
-```http
-POST /api/payments/webhook/{provider}
-```
-
-Webhook musi być niedostępny logicznie dla zwykłych użytkowników i weryfikowany podpisem.
-
----
-
-## 9. Event-driven architecture
-
-Rekomendowany message broker:
-
-- Kafka, jeśli potrzebujesz dużej przepustowości i event streamingu,
-- RabbitMQ, jeśli zależy Ci na prostszej kolejce z routingiem,
-- AWS SQS/SNS, jeśli system jest na AWS i chcesz prostszej obsługi operacyjnej.
-
-Przykładowe eventy:
-
-```text
-ProductCreated
-ProductUpdated
-ProductDeleted
-CartCheckedOut
-OrderCreated
-OrderPaid
-OrderCancelled
-PaymentSucceeded
-PaymentFailed
-InventoryReserved
-InventoryReservationExpired
-ShipmentCreated
-ShipmentDelivered
-RefundIssued
-```
-
-Przykład eventu:
-
-```json
-{
-  "eventId": "evt_123",
-  "eventType": "OrderPaid",
-  "occurredAt": "2026-06-05T10:00:00Z",
-  "version": 1,
-  "payload": {
-    "orderId": "ord_123",
-    "userId": "usr_456",
-    "totalAmount": 299.99,
-    "currency": "PLN"
-  }
-}
-```
-
-Warto zastosować **Outbox Pattern**, żeby nie zgubić eventów.
-
----
-
-## 10. Outbox Pattern
-
-Problem:
-
-```text
-Order Service zapisuje zamówienie w DB,
-ale publikacja eventu do brokera się nie udaje.
-```
-
-Rozwiązanie:
-
-W tej samej transakcji zapisujesz zamówienie i event do tabeli `outbox_events`.
-
-```text
-orders
-outbox_events
-```
-
-Potem osobny worker publikuje eventy do brokera.
-
-Model:
-
-```text
-outbox_events
-- id
-- aggregate_type
-- aggregate_id
-- event_type
-- payload_json
-- status
-- created_at
-- published_at
-```
-
-Dzięki temu nie tracisz eventów między bazą a brokerem.
-
----
-
-## 11. Idempotencja
-
-Idempotencja jest krytyczna w:
-
-- checkout,
-- płatnościach,
-- webhookach,
-- tworzeniu zamówień,
-- refundach,
-- rezerwacji inventory.
-
-Przykłady:
-
-```text
-POST /checkout z tym samym idempotencyKey
-→ zwraca to samo orderId zamiast tworzyć nowe zamówienie
-```
-
-Tabela:
-
-```text
-idempotency_keys
-- key
-- user_id
-- request_hash
-- response_json
-- status
-- created_at
-```
-
-Dla webhooków:
-
-```text
-payment_events.provider_event_id UNIQUE
-```
-
----
-
-## 12. Bazy danych
-
-### 12.1 Rekomendowany zestaw
-
-```text
-PostgreSQL        główne dane transakcyjne
-Redis             cache, sesje, koszyk, rate limiting
-OpenSearch        wyszukiwanie produktów
-Object Storage    zdjęcia produktów, faktury, dokumenty
-Kafka/RabbitMQ    komunikacja asynchroniczna
-Data Warehouse    raporty i analityka
-```
-
-### 12.2 Które dane gdzie?
-
-| Obszar | Technologia |
-|---|---|
-| Użytkownicy | PostgreSQL |
-| Produkty | PostgreSQL |
-| Koszyk | Redis + PostgreSQL opcjonalnie |
-| Zamówienia | PostgreSQL |
-| Płatności | PostgreSQL |
-| Inventory | PostgreSQL |
-| Search | OpenSearch |
-| Sesje | Redis |
-| Zdjęcia | S3/GCS/Azure Blob |
-| Eventy | Kafka/RabbitMQ/SQS |
-| Raporty | BigQuery/Snowflake/Redshift/PostgreSQL read replica |
-
----
-
-## 13. Cache
-
-Cache powinien być używany ostrożnie. Najlepsze miejsca:
-
-- lista kategorii,
-- szczegóły produktu,
-- rekomendacje,
-- konfiguracja promocji,
-- sesje,
-- koszyk,
-- rate limiting.
-
-Przykład cache key:
-
-```text
-product:{product_id}:details
-category:{category_id}:tree
-search:query_hash:{hash}
-cart:{user_id}
-```
-
-Strategie:
-
-- TTL dla danych często odczytywanych,
-- invalidacja przez eventy,
-- cache aside pattern,
-- stale-while-revalidate dla katalogu.
-
-Nie należy cache’ować finalnej ceny checkoutu bez ponownej walidacji.
-
----
-
-## 14. Skalowanie
-
-### 14.1 Najpierw modular monolith
-
-Na początku:
-
-```text
-Jedna aplikacja backendowa
-Jedna baza PostgreSQL
-Redis
-OpenSearch
-Kolejka
-```
-
-Wewnątrz aplikacji moduły:
-
-```text
-Auth
-Catalog
-Cart
-Checkout
-Order
-Payment
-Inventory
-Promotion
-Shipping
-Notification
-Admin
-```
-
-To jest prostsze, tańsze i szybsze w rozwoju.
-
-### 14.2 Później mikroserwisy
-
-Wydzielać dopiero wtedy, gdy pojawi się realny problem:
-
-- Catalog/Search ma dużo ruchu,
-- Order/Payment wymaga niezależnej niezawodności,
-- Inventory wymaga osobnego modelu skalowania,
-- Notification generuje dużo zadań asynchronicznych,
-- Admin rozwija się niezależnie.
-
-Kandydaci do wydzielenia:
-
-```text
-Catalog Service
-Search Service
-Order Service
-Payment Service
-Inventory Service
-Notification Service
-```
-
----
-
-## 15. Spójność i transakcje
-
-Najtrudniejszy problem: checkout dotyka kilku domen:
-
-- koszyk,
-- ceny,
-- promocje,
-- inventory,
-- order,
-- payment.
-
-Nie należy robić jednej wielkiej rozproszonej transakcji. Lepsze podejście to **Saga Pattern**.
-
-Przykład sagi checkoutu:
-
-```text
-1. ValidateCart
-2. ReserveInventory
-3. CreateOrder
-4. CreatePaymentIntent
-5. WaitForPayment
-6. ConfirmInventory
-7. MarkOrderAsPaid
-8. StartFulfillment
-```
-
-Kroki kompensujące:
-
-```text
-PaymentFailed → ReleaseInventory
-OrderCancelled → ReleaseInventory
-PaymentCapturedButOrderFailed → RefundPayment
-```
-
----
-
-## 16. Security Design
-
-### 16.1 Uwierzytelnianie
-
-- JWT access token z krótkim TTL,
-- refresh token rotowany,
-- sesje przechowywane po stronie backendu lub token blacklist w Redisie,
-- MFA dla adminów.
-
-### 16.2 Autoryzacja
-
-Role:
-
-```text
-CUSTOMER
-SUPPORT_AGENT
-WAREHOUSE_MANAGER
-ADMIN
-SUPER_ADMIN
-```
-
-Zasady:
-
-- użytkownik widzi tylko swoje zamówienia,
-- admin ma uprawnienia według roli,
-- akcje finansowe wymagają silniejszych uprawnień,
-- operacje admina są audytowane.
-
-### 16.3 Ochrona API
-
-- rate limiting,
-- CSRF protection, jeśli używane są cookies,
-- CORS ograniczony do znanych domen,
-- input validation,
-- output encoding,
-- ochrona przed brute force,
-- blokady po wielu nieudanych logowaniach.
-
-### 16.4 Dane wrażliwe
-
-- hasła tylko jako hash,
-- tokeny szyfrowane lub trzymane w secret managerze,
-- dane płatnicze poza systemem, u operatora,
-- logi bez danych wrażliwych,
-- szyfrowanie danych w spoczynku i w tranzycie.
-
----
-
-## 17. Observability
-
-System powinien mieć:
-
-- logi strukturalne,
-- metryki,
-- tracing,
-- alerty,
-- dashboardy biznesowe i techniczne.
-
-### 17.1 Przykładowe metryki techniczne
-
-```text
-http_request_duration
-http_5xx_rate
-db_query_duration
-redis_latency
-queue_lag
-payment_webhook_failures
-checkout_failure_rate
-search_latency
-```
-
-### 17.2 Przykładowe metryki biznesowe
-
-```text
-conversion_rate
-cart_abandonment_rate
-orders_per_hour
-gross_merchandise_value
-average_order_value
-payment_success_rate
-refund_rate
-out_of_stock_rate
-```
-
-### 17.3 Trace ID
-
-Każde żądanie powinno mieć `correlation_id`, przekazywane przez:
-
-```text
-API Gateway → services → message broker → workers
-```
-
----
-
-## 18. Failure scenarios
-
-### 18.1 Płatność się udała, ale webhook dotarł dwa razy
-
-Rozwiązanie:
-
-```text
-provider_event_id UNIQUE
-```
-
-Drugi webhook zostaje przyjęty, ale nie wykonuje ponownie skutków ubocznych.
-
-### 18.2 Użytkownik kliknął checkout dwa razy
-
-Rozwiązanie:
-
-```text
-idempotencyKey
-```
-
-Zwracamy istniejące zamówienie lub istniejącą sesję płatności.
-
-### 18.3 Brak stocku po kliknięciu “Kup”
-
-Rozwiązanie:
-
-- ponowna walidacja stocku przy checkout,
-- komunikat do użytkownika,
-- aktualizacja koszyka.
-
-### 18.4 Payment provider nie odpowiada
-
-Rozwiązanie:
-
-- retry z backoffem,
-- status `PENDING_PAYMENT`,
-- możliwość wznowienia płatności,
-- job sprawdzający status płatności po stronie providera.
-
-### 18.5 Search index jest opóźniony
-
-Akceptowalne, jeśli produkt został zaktualizowany, ale wyszukiwarka pokaże starą wersję przez kilka sekund.
-
-Źródłem prawdy pozostaje baza katalogu.
-
-### 18.6 Notification Service nie działa
-
-Nie blokuje zamówienia. Event zostaje w kolejce i jest ponawiany.
-
----
-
-## 19. Deployment
-
-### 19.1 Proponowana infrastruktura
-
-```text
-Frontend: CDN + static hosting
-Backend: Kubernetes / ECS / Cloud Run
-Database: managed PostgreSQL
-Cache: managed Redis
-Search: OpenSearch
-Queue: Kafka / RabbitMQ / SQS
-Storage: S3-compatible object storage
-Secrets: Secret Manager / Vault
-Monitoring: Prometheus + Grafana / Datadog
-Logs: ELK / Loki / Cloud Logging
-Tracing: OpenTelemetry
-```
-
-### 19.2 Środowiska
-
-```text
-local
-dev
-staging
-production
-```
-
-### 19.3 CI/CD
-
-Pipeline:
-
-```text
-1. lint
-2. tests
-3. build
-4. security scan
-5. migration check
-6. deploy to staging
-7. smoke tests
-8. deploy to production
-```
-
-Deployment:
-
-- blue-green albo rolling deployment,
-- feature flags,
-- automatyczny rollback przy błędach,
-- migracje DB kompatybilne wstecznie.
-
----
-
-## 20. Frontend Architecture
-
-Frontend może być zrobiony jako:
-
-```text
-Next.js / React
-```
-
-Moduły:
-
-```text
-Home
-Product Listing Page
-Product Detail Page
-Cart
-Checkout
-User Account
-Orders
-Admin Panel
-```
-
-Rekomendacje:
-
-- SSR/SSG dla stron produktowych i kategorii,
-- CSR dla koszyka i panelu użytkownika,
-- CDN dla assetów,
-- image optimization,
-- lazy loading,
-- schema.org dla SEO,
-- obsługa canonical URLs.
-
----
-
-## 21. SEO
-
-Dla e-commerce SEO jest krytyczne.
-
-System powinien obsługiwać:
-
-- przyjazne URL-e,
-- server-side rendering,
-- sitemap.xml,
-- robots.txt,
-- canonical tags,
-- structured data,
-- metadane produktów,
-- przekierowania 301 dla usuniętych produktów,
-- strony kategorii indeksowalne,
-- filtrowanie z kontrolą indeksacji.
-
-Przykładowe URL-e:
-
-```text
-/products/nike-air-max-black
-/category/buty-sportowe
-/brand/nike
-```
-
----
-
-## 22. Rekomendowany model startowy
-
-Najrozsądniejszy wariant startowy:
-
-```text
-Frontend:
-- Next.js
-
-Backend:
-- Modular monolith
-- NestJS / Spring Boot / Django / Laravel / .NET
-
-Database:
-- PostgreSQL
-
-Cache:
-- Redis
-
-Search:
-- OpenSearch
-
-Queue:
-- RabbitMQ albo SQS
-
-Storage:
-- S3-compatible storage
-
-Payments:
-- Stripe / PayU / Przelewy24 / Adyen, zależnie od rynku
-
-Monitoring:
-- OpenTelemetry + Grafana/Datadog
-```
-
----
-
-## 23. Docelowa architektura logiczna
-
-```text
-                           ┌───────────────────────┐
-                           │        Frontend        │
-                           │   Web / Mobile / PWA   │
-                           └───────────┬───────────┘
-                                       │
-                           ┌───────────▼───────────┐
-                           │      API Gateway       │
-                           │ Auth, Rate Limit, WAF  │
-                           └───────────┬───────────┘
-                                       │
-        ┌──────────────────────────────┼──────────────────────────────┐
-        │                              │                              │
-        ▼                              ▼                              ▼
-┌───────────────┐              ┌───────────────┐              ┌───────────────┐
-│ Catalog       │              │ Cart          │              │ Checkout      │
-│ Module        │              │ Module        │              │ Module        │
-└───────┬───────┘              └───────┬───────┘              └───────┬───────┘
-        │                              │                              │
-        ▼                              ▼                              ▼
-┌───────────────┐              ┌───────────────┐              ┌───────────────┐
-│ Product DB    │              │ Redis         │              │ Order Module  │
-└───────────────┘              └───────────────┘              └───────┬───────┘
-                                                                        │
-        ┌──────────────────────────────┬────────────────────────────────┘
-        │                              │
-        ▼                              ▼
-┌───────────────┐              ┌───────────────┐
-│ Payment       │              │ Inventory     │
-│ Module        │              │ Module        │
-└───────┬───────┘              └───────┬───────┘
-        │                              │
-        ▼                              ▼
-┌───────────────┐              ┌───────────────┐
-│ Provider API  │              │ Inventory DB  │
-└───────────────┘              └───────────────┘
-
-        ┌─────────────────────────────────────────────────────────────┐
-        │                     Message Broker                          │
-        └───────────────┬───────────────────────┬─────────────────────┘
-                        │                       │
-                        ▼                       ▼
-              ┌─────────────────┐      ┌─────────────────┐
-              │ Notifications   │      │ Search Indexer   │
-              └─────────────────┘      └─────────────────┘
-```
-
----
-
-## 24. Najważniejsze decyzje architektoniczne
-
-### Decyzja 1: Modular monolith zamiast mikroserwisów na start
-
-Uzasadnienie:
-
-- szybszy development,
-- mniej kosztów operacyjnych,
-- prostszy deployment,
-- łatwiejsze transakcje,
-- mniejsze ryzyko przedwczesnej komplikacji.
-
-Granice domenowe trzeba jednak zaprojektować tak, jakby moduły mogły zostać później wydzielone.
-
-### Decyzja 2: PostgreSQL jako główna baza transakcyjna
-
-Uzasadnienie:
-
-- dobre transakcje,
-- spójność,
-- relacje między zamówieniami, użytkownikami i płatnościami,
-- dojrzałość,
-- łatwe raportowanie na początku.
-
-### Decyzja 3: OpenSearch dla wyszukiwania
-
-Relacyjna baza nie jest najlepszym narzędziem do zaawansowanego wyszukiwania produktowego, facetingu i autocomplete.
-
-### Decyzja 4: Redis dla cache i koszyka
-
-Koszyk jest często odczytywany i modyfikowany, ale nie jest tak krytyczny jak zamówienie. Redis dobrze pasuje do tej roli, o ile finalny checkout zawsze wykonuje ponowną walidację.
-
-### Decyzja 5: Eventy dla procesów pobocznych
-
-Nie warto blokować checkoutu przez:
-
-- e-mail,
-- indeksację search,
-- analitykę,
-- synchronizację raportów.
-
-To powinno działać asynchronicznie.
-
----
-
-## 25. Minimalny MVP
-
-Na MVP wystarczy:
-
-```text
-Frontend:
-- lista produktów
-- szczegóły produktu
-- koszyk
-- checkout
-- konto użytkownika
-- lista zamówień
-
-Backend:
-- Auth
-- Catalog
-- Cart
-- Order
-- Payment
-- Inventory
-- Admin basic
-
-Integracje:
-- jeden provider płatności
-- jedna metoda dostawy
-- e-mail transakcyjny
-```
-
-Nie robić od razu:
-
-- marketplace,
-- wielu magazynów,
-- zaawansowanego systemu rekomendacji,
-- rozbudowanego loyalty programu,
-- mikroserwisów dla wszystkiego,
-- własnego systemu płatności,
-- pełnego ERP.
-
----
-
-## 26. Ryzyka projektowe
-
-Największe ryzyka:
-
-1. **Błędna obsługa stocku**  
-   Może prowadzić do sprzedaży produktów, których nie ma.
-
-2. **Brak idempotencji płatności**  
-   Może prowadzić do podwójnych zamówień lub błędnych statusów.
-
-3. **Zbyt wczesne mikroserwisy**  
-   Spowolnią development i podniosą koszt utrzymania.
-
-4. **Niespójne ceny między koszykiem a checkoutem**  
-   Cena musi być zawsze finalnie liczona po stronie backendu.
-
-5. **Słaba obsługa webhooków**  
-   Webhooki od operatorów płatności są krytyczne i muszą być odporne na duplikaty, opóźnienia i błędy.
-
-6. **Brak audit logów w adminie**  
-   Przy e-commerce to poważny problem operacyjny i bezpieczeństwa.
-
----
-
-## 27. Rekomendowany roadmap
-
-### Etap 1 — MVP
-
-- Auth
-- Catalog
-- Cart
-- Checkout
-- Orders
-- Payments
-- Basic Admin
-- Basic Inventory
-- E-mail confirmations
-
-### Etap 2 — Stabilizacja
-
-- OpenSearch
-- Redis cache
-- idempotency keys
-- outbox pattern
-- monitoring
-- audit logs
-- retry dla integracji
-
-### Etap 3 — Skalowanie
-
-- wydzielenie Search Indexera,
-- wydzielenie Notification Service,
-- read replicas,
-- CDN,
-- lepsze cache’owanie katalogu,
-- worker do inventory expiration.
-
-### Etap 4 — Zaawansowane funkcje
-
-- promocje zaawansowane,
-- zwroty,
-- faktury,
-- integracja ERP/WMS,
-- rekomendacje,
-- marketplace,
-- wiele magazynów,
-- dynamic pricing,
-- loyalty program.
-
----
-
-## 28. Podsumowanie rekomendowanej architektury
-
-Najlepszy praktyczny design:
-
-```text
-Start:
-Modular Monolith + PostgreSQL + Redis + OpenSearch + Queue
-
-Docelowo:
-Wybrane domeny jako osobne serwisy:
-- Catalog/Search
-- Order
-- Payment
-- Inventory
-- Notification
-```
-
-Najważniejsze zasady:
-
-- checkout musi być idempotentny,
-- płatności muszą być odporne na duplikaty,
-- stock musi być rezerwowany i zwalniany,
-- ceny muszą być przeliczane po stronie backendu,
-- wyszukiwarka nie jest źródłem prawdy,
-- eventy muszą być publikowane przez Outbox Pattern,
-- admin actions muszą być audytowane,
-- system nie powinien zaczynać jako przesadnie rozproszony.
-
----
-
-## 29. Rekomendowany stos technologiczny
-
-Przykładowy stack dla realnego projektu:
-
-```text
-Frontend:
-- Next.js
-- React
-- TypeScript
-
-Backend:
-- NestJS / Spring Boot / .NET / Django
-- REST API lub GraphQL dla wybranych use-case’ów
-
-Database:
-- PostgreSQL
-
-Cache:
-- Redis
-
-Search:
-- OpenSearch / Elasticsearch
-
-Queue:
-- RabbitMQ / Kafka / AWS SQS
-
-Storage:
-- S3-compatible object storage
-
-Payments:
-- Stripe / PayU / Przelewy24 / Adyen
-
-Infrastructure:
-- Docker
-- Kubernetes / ECS / Cloud Run
-- Terraform
-
-Observability:
-- OpenTelemetry
-- Prometheus
-- Grafana
-- Loki / ELK / Cloud Logging
-```
-
----
-
-## 30. Finalna rekomendacja
-
-Dla większości zespołów najlepszą decyzją będzie rozpoczęcie od dobrze zaprojektowanego modular monolithu z wyraźnymi granicami domenowymi.
-
-Nie należy zaczynać od pełnej architektury mikroserwisowej, jeśli nie ma jeszcze realnych problemów ze skalowaniem, zespołami lub niezależnym deploymentem. Najpierw warto zbudować solidny, spójny rdzeń domenowy: katalog, koszyk, checkout, zamówienia, płatności i inventory.
-
-Najbardziej krytyczne technicznie obszary to:
-
-- idempotencja checkoutu,
-- poprawna obsługa webhooków płatności,
-- rezerwacje stocku,
-- spójność statusów zamówień,
-- bezpieczeństwo panelu administracyjnego,
-- audyt operacji,
-- odporność na błędy integracji zewnętrznych.
-
-Taka architektura jest wystarczająco prosta na MVP, ale jednocześnie przygotowana pod dalszy rozwój i skalowanie.
+Domyślna aplikacja używa H2 i mocków, dlatego nie wymaga lokalnych usług.
+`postgres-replica-1/2` w compose nie konfigurują streaming replication — są
+wyłącznie nazwanymi instancjami demonstracyjnymi i nie dowodzą read replica lag.
+
+OpenAPI jest dostępne lokalnie pod `/v3/api-docs`, Swagger UI pod
+`/swagger-ui/index.html`, Prometheus pod `/actuator/prometheus`. Profil
+PostgreSQL uruchamia Flyway przed Hibernate; aplikacja odmawia startu, jeżeli
+mapowanie encji nie zgadza się ze schematem. Profil `production` wyłącza H2
+console i dokumentację interaktywną oraz włącza publisher i reconciliation;
+należy go łączyć z właściwym profilem infrastruktury i secret managerem.
+
+## Kryteria dalszego wydzielenia usług
+
+Wydziel domenę dopiero wtedy, gdy istnieje przynajmniej jeden mierzalny powód:
+
+- inny profil skalowania lub niezależny SLO;
+- odrębny ownership zespołu i cykl wdrożeń;
+- izolacja awarii o realnej wartości;
+- wymóg bezpieczeństwa lub danych;
+- obecny modularny monolit osiągnął zmierzony limit.
+
+Kosztem wydzielenia są kontrakty, observability, retry, idempotencja, eventual
+consistency, replay, migracje i operacje. Diagram z większą liczbą prostokątów
+nie jest automatycznie lepszym systemem.

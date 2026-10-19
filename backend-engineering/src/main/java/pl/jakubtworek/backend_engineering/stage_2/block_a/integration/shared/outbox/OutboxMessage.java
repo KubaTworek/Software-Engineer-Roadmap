@@ -1,6 +1,7 @@
 package pl.jakubtworek.backend_engineering.stage_2.block_a.integration.shared.outbox;
 
 import java.time.Instant;
+import java.util.Objects;
 
 // Outbox record stored in the same database transaction as the business change.
 // It prevents losing events when the service crashes after commit but before publishing.
@@ -28,19 +29,26 @@ public final class OutboxMessage {
             String correlationId,
             Instant createdAt
     ) {
-        this.id = id;
-        this.aggregateId = aggregateId;
-        this.eventType = eventType;
+        this.id = requireNonBlank(id, "id");
+        this.aggregateId = requireNonBlank(aggregateId, "aggregateId");
+        this.eventType = requireNonBlank(eventType, "eventType");
+        if (eventVersion <= 0) {
+            throw new IllegalArgumentException("eventVersion must be greater than zero");
+        }
         this.eventVersion = eventVersion;
-        this.payload = payload;
-        this.correlationId = correlationId;
-        this.createdAt = createdAt;
+        this.payload = Objects.requireNonNull(payload, "payload must not be null");
+        this.correlationId = requireNonBlank(correlationId, "correlationId");
+        this.createdAt = Objects.requireNonNull(createdAt, "createdAt must not be null");
         this.attempts = 0;
         this.published = false;
     }
 
     // Marks the message as successfully published to the broker.
     public void markAsPublished(Instant publishedAt) {
+        Objects.requireNonNull(publishedAt, "publishedAt must not be null");
+        if (publishedAt.isBefore(createdAt)) {
+            throw new IllegalArgumentException("publishedAt must not be before createdAt");
+        }
         this.published = true;
         this.publishedAt = publishedAt;
         this.lastError = null;
@@ -48,8 +56,18 @@ public final class OutboxMessage {
 
     // Records a failed publishing attempt.
     public void markAsFailed(String error) {
+        if (published) {
+            throw new IllegalStateException("A published message cannot be marked as failed");
+        }
         this.attempts++;
-        this.lastError = error;
+        this.lastError = requireNonBlank(error, "error");
+    }
+
+    private static String requireNonBlank(String value, String name) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(name + " must not be blank");
+        }
+        return value;
     }
 
     public String id() {

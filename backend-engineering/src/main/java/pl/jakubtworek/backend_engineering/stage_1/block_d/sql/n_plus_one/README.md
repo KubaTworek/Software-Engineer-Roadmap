@@ -1,6 +1,22 @@
-# Problem N+1 w ORM — szczegółowe podsumowanie
+# n plus one
 
-# Wprowadzenie
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** n plus one.
+> - **Typowy błąd:** Iteracja po relacji lazy generująca zapytanie dla każdego rekordu.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** brak jawnej roli w nazwach klas; intencję przykładu określają opis i test, nie sam brak prefiksu.
+> - **Granica:** Model i H2 sprawdzają logikę; blokady, plan zapytania i zachowanie silnika potwierdza dopiero odpowiedni profil infrastrukturalny.
+<!-- material-card:end -->
+
+## Problem N+1 w ORM — szczegółowe podsumowanie
+
+
+
+## Wprowadzenie
 
 Problem N+1 jest jednym z najczęstszych i najbardziej kosztownych problemów wydajnościowych występujących w ORM-ach. Dotyczy praktycznie wszystkich popularnych frameworków:
 - Hibernate,
@@ -24,7 +40,7 @@ N+1 query problem
 
 ---
 
-# Na czym polega problem N+1
+## Na czym polega problem N+1
 
 Problem pojawia się wtedy, gdy:
 1. ORM pobiera listę encji,
@@ -41,7 +57,7 @@ N + 1
 
 ---
 
-# Typowy przykład
+## Typowy przykład
 
 Przykład w Hibernate/JPA:
 
@@ -64,7 +80,7 @@ Jednak ORM działa inaczej niż intuicyjnie się wydaje.
 
 ---
 
-# Co naprawdę wykonuje baza
+## Co naprawdę wykonuje baza
 
 Najpierw ORM wykonuje:
 
@@ -99,7 +115,7 @@ to ORM wykona:
 
 ---
 
-# Dlaczego to jest problem
+## Dlaczego to jest problem
 
 Sam pojedynczy SELECT zwykle jest szybki.
 
@@ -119,7 +135,7 @@ staje się dominujący.
 
 ---
 
-# N+1 jako problem skalowania
+## N+1 jako problem skalowania
 
 Problem N+1 często:
 - nie jest widoczny lokalnie,
@@ -139,7 +155,7 @@ To bardzo typowy problem aplikacji ORM-owych.
 
 ---
 
-# Lazy Loading jako główna przyczyna
+## Lazy Loading jako główna przyczyna
 
 Najczęściej źródłem N+1 jest:
 ```text
@@ -158,7 +174,7 @@ Jednak w pętli prowadzi do katastrofy wydajnościowej.
 
 ---
 
-# Jak rozpoznać N+1
+## Jak rozpoznać N+1
 
 Najczęstsze symptomy:
 - bardzo dużo podobnych SELECT-ów,
@@ -180,7 +196,7 @@ To klasyczny sygnał N+1.
 
 ---
 
-# Fetch Join jako podstawowe rozwiązanie
+## Fetch Join jako podstawowe rozwiązanie
 
 Najpopularniejszym rozwiązaniem jest:
 ```text
@@ -201,7 +217,7 @@ ORM wykonuje wtedy:
 
 ---
 
-# Co generuje baza
+## Co generuje baza
 
 SQL wygląda mniej więcej tak:
 
@@ -219,7 +235,7 @@ Dzięki temu:
 
 ---
 
-# Dlaczego JOIN FETCH jest szybszy
+## Dlaczego JOIN FETCH jest szybszy
 
 Największa oszczędność wynika z:
 - redukcji roundtripów,
@@ -232,7 +248,7 @@ Jedno większe query bardzo często jest znacznie szybsze niż:
 
 ---
 
-# Problem JOIN FETCH — eksplozja danych
+## Problem JOIN FETCH — eksplozja danych
 
 JOIN FETCH nie jest jednak darmowy.
 
@@ -248,7 +264,7 @@ W wyniku SQL:
 
 ---
 
-# Row Multiplication
+## Row Multiplication
 
 To bardzo ważny problem.
 
@@ -270,7 +286,7 @@ Przy dużych relacjach może dojść do:
 
 ---
 
-# ORM Hydration Cost
+## ORM Hydration Cost
 
 ORM musi później:
 - deduplikować encje,
@@ -285,7 +301,7 @@ To również kosztuje:
 
 ---
 
-# JOIN FETCH a paginacja
+## JOIN FETCH a paginacja
 
 Jednym z największych problemów JOIN FETCH jest:
 ```text
@@ -308,7 +324,7 @@ Problem:
 
 ---
 
-# Co to oznacza
+## Co to oznacza
 
 LIMIT 20 nie oznacza:
 ```text
@@ -330,7 +346,7 @@ To bardzo częsty problem ORM-ów.
 
 ---
 
-# Lepsza strategia paginacji
+## Lepsza strategia paginacji
 
 Najczęściej stosowane rozwiązanie:
 1. pobranie ID parent entities,
@@ -350,7 +366,7 @@ To:
 
 ---
 
-# Batch Fetching
+## Batch Fetching
 
 Kolejną strategią jest:
 ```text
@@ -375,7 +391,7 @@ Przykładowo:
 
 ---
 
-# Zalety batch loading
+## Zalety batch loading
 
 To kompromis pomiędzy:
 - JOIN FETCH,
@@ -393,7 +409,7 @@ Dlatego:
 
 ---
 
-# EntityGraph
+## EntityGraph
 
 W JPA/Hibernate istnieje również:
 ```text
@@ -410,7 +426,7 @@ To wygodniejsze dla:
 
 ---
 
-# N+1 nie zawsze jest problemem
+## N+1 nie zawsze jest problemem
 
 Bardzo ważna zasada:
 
@@ -430,7 +446,7 @@ JOIN FETCH może:
 
 ---
 
-# Trade-off
+## Trade-off
 
 W praktyce zawsze istnieje trade-off:
 
@@ -448,7 +464,7 @@ Nie istnieje uniwersalnie najlepsze rozwiązanie.
 
 ---
 
-# Znaczenie indeksów
+## Znaczenie indeksów
 
 Relacje używane przez ORM powinny być indeksowane.
 
@@ -467,7 +483,7 @@ To potrafi dramatycznie pogorszyć problem N+1.
 
 ---
 
-# Jak diagnozować problem
+## Jak diagnozować problem
 
 Najlepsze narzędzia:
 - logowanie SQL,
@@ -485,7 +501,7 @@ Najważniejsze jest mierzenie:
 
 ---
 
-# Największy błąd
+## Największy błąd
 
 Największym błędem jest:
 - optymalizowanie „na ślepo”,
@@ -497,7 +513,7 @@ W praktyce:
 
 ---
 
-# Najważniejsza praktyczna zasada
+## Najważniejsza praktyczna zasada
 
 Problem N+1 nie polega wyłącznie na:
 ```text

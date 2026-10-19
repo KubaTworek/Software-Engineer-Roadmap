@@ -1,5 +1,7 @@
 package pl.jakubtworek.backend_engineering.stage_3.block_b.alerts.runbook;
 
+import java.util.Objects;
+
 /**
  * Renders runbooks as Markdown files.
  *
@@ -9,6 +11,7 @@ package pl.jakubtworek.backend_engineering.stage_3.block_b.alerts.runbook;
 public final class RunbookMarkdownRenderer {
 
     public String render(Runbook runbook) {
+        Objects.requireNonNull(runbook, "runbook must not be null");
         StringBuilder markdown = new StringBuilder();
 
         markdown.append("# runbooks/")

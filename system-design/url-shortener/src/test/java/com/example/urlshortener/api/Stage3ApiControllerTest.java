@@ -2,15 +2,19 @@ package com.example.urlshortener.api;
 
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 import org.junit.jupiter.api.Test;
+import org.mockito.Answers;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
@@ -18,6 +22,9 @@ import org.springframework.test.web.servlet.MvcResult;
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 class Stage3ApiControllerTest {
+
+    @MockitoBean(answers = Answers.RETURNS_DEEP_STUBS)
+    StringRedisTemplate redisTemplate;
 
     @Autowired
     MockMvc mockMvc;
@@ -57,13 +64,32 @@ class Stage3ApiControllerTest {
     }
 
     @Test
+    void rejectsStaleModerationAndKeepsDeleteAsATombstone() throws Exception {
+        String shortCode = createUrl("stage3-lifecycle-test");
+
+        mockMvc.perform(post("/api/v1/admin/urls/{shortCode}/block", shortCode)
+                        .header("X-Admin-Token", "test-admin-token")
+                        .header("If-Match", "99")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"stale decision\"}"))
+                .andExpect(status().isPreconditionFailed());
+
+        mockMvc.perform(delete("/api/v1/admin/urls/{shortCode}", shortCode)
+                        .header("X-Admin-Token", "test-admin-token")
+                        .header("X-Admin-Actor", "moderator-17"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DELETED"))
+                .andExpect(jsonPath("$.version").isNumber());
+
+        mockMvc.perform(get("/" + shortCode)).andExpect(status().isGone());
+    }
+
+    @Test
     void exposesDashboardAnalytics() throws Exception {
         String shortCode = createUrl("stage3-analytics-test");
 
         mockMvc.perform(get("/" + shortCode))
             .andExpect(status().isFound());
-
-        Thread.sleep(500);
 
         mockMvc.perform(get("/api/v1/dashboard/urls/{shortCode}/analytics", shortCode))
             .andExpect(status().isOk())

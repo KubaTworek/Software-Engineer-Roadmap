@@ -4,13 +4,16 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
 @SpringBootTest(properties = {
-        "spring.datasource.url=jdbc:h2:mem:news_feed_test;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH",
+        "spring.datasource.url=jdbc:h2:mem:news_feed_test;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;NON_KEYWORDS=VALUE",
         "spring.datasource.driver-class-name=org.h2.Driver",
         "spring.datasource.username=sa",
         "spring.datasource.password=",
         "spring.flyway.enabled=false",
         "spring.jpa.hibernate.ddl-auto=create-drop",
-        "spring.kafka.bootstrap-servers=localhost:9092"
+        "spring.kafka.bootstrap-servers=localhost:9092",
+        "spring.kafka.listener.auto-startup=false",
+        "spring.kafka.admin.auto-create=false",
+        "newsfeed.search.initialize-index=false"
 })
 class NewsFeedApplicationTests {
 

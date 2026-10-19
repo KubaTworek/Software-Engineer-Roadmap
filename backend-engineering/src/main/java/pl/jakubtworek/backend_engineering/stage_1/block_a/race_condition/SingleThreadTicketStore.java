@@ -6,7 +6,7 @@ import java.util.concurrent.*;
  * TicketStore implementation where all state modifications
  * are executed inside a single-thread executor.
  */
-public class SingleThreadTicketStore implements TicketStore {
+public class SingleThreadTicketStore implements TicketStore, AutoCloseable {
 
     // Number of tickets currently available
     private int available = 1;
@@ -41,10 +41,11 @@ public class SingleThreadTicketStore implements TicketStore {
         try {
             // Wait for the task to complete before returning
             future.get();
-        } catch (Exception e) {
-
-            // Wrap checked exceptions into RuntimeException
-            throw new RuntimeException(e);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while waiting for purchase", exception);
+        } catch (ExecutionException exception) {
+            throw new IllegalStateException("Purchase task failed", exception.getCause());
         }
     }
 
@@ -70,5 +71,10 @@ public class SingleThreadTicketStore implements TicketStore {
     public String name() {
         // Identifier used to distinguish this implementation in tests
         return "Single-thread Executor";
+    }
+
+    @Override
+    public void close() {
+        executor.shutdownNow();
     }
 }

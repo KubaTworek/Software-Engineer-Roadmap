@@ -1,6 +1,76 @@
 # Metrics / Logging System — System Design
 
+<!-- reading-guide:start -->
+## Ścieżki czytania
+
+| Cel czytania | Punkt wejścia |
+| --- | --- |
+| Teoria i model problemu | [34. Semantyka sygnałów telemetrycznych](#34-semantyka-sygnałów-telemetrycznych) |
+| Implementacja i jej dowody | [Co jest rzeczywiście wykonywalne](#co-jest-rzeczywiście-wykonywalne) |
+| Uruchomienie i eksperymenty | [44. Uruchamianie i eksperymenty](#44-uruchamianie-i-eksperymenty) |
+| Ograniczenia i scenariusze awarii | [39. Semantyka awarii i dostarczenia](#39-semantyka-awarii-i-dostarczenia) |
+
+Wspólne mechanizmy i ich testy znajdziesz w [indeksie pojęć backend-engineering](../../backend-engineering/README.md#globalny-indeks-pojęć). Tutaj śledź ich konsekwencje dla opisywanego systemu.
+Diagramy docelowe i warianty rozwoju czytaj razem z mapą implementacji; sam opis architektury nie oznacza, że wszystkie jej komponenty są uruchamiane w laboratorium.
+<!-- reading-guide:end -->
+
+## Zacznij tutaj
+
+| Pytanie | Odpowiedź |
+| --- | --- |
+| Najważniejszy niezmiennik | Telemetria jednego tenanta nie może być odczytana jako dane innego, a niekontrolowana cardinality nie może wyczerpać systemu. |
+| Krytyczny przepływ | Agent/SDK → autoryzacja i walidacja → Kafka → zapis idempotentny w ClickHouse → query/rollup → stanowy alert. |
+| Rekomendowany test | `mvnw.cmd clean verify`; kontrakty storage: `mvnw.cmd clean -Pinfrastructure-tests verify`. |
+| Świadome ograniczenia | To wykonywalny model pojedynczego regionu. Nie zastępuje Prometheusa, Loki ani Collectora; HA, federacja zapytań i produkcyjny object storage pozostają granicami opisanymi, a nie udawaną implementacją. |
+
 Kompleksowy projekt systemu do zbierania, przechowywania, indeksowania, agregowania i udostępniania metryk oraz logów. Architektura jest inspirowana systemami klasy Prometheus, Loki, ELK/OpenSearch, Alertmanager i Grafana, ale opisana jako własny projekt produkcyjny.
+
+## Co jest rzeczywiście wykonywalne
+
+| Obszar | Implementowana gwarancja | Granica przykładu |
+|---|---|---|
+| Multi-tenancy | Tenant pochodzi z uwierzytelnionego klucza, a zapisy, odczyty, alerty i cold export są tenant-scoped. | ClickHouse nie ma tu osobnych klastrów ani row policies; izolację wymusza aplikacja i test infrastrukturalny. |
+| Ingest | Limit batcha i czasu, redakcja sekretów/PII, quota i walidacja semantyki metryk przed publikacją. | API nie implementuje natywnego OTLP ani remote-write. |
+| Kafka | Klucz partycji jest tenantem, producent ma idempotence, consumer używa manualnego commitu, ograniczonego retry i topiców `.DLT`. | Atomowość ClickHouse + offset nie jest transakcją XA; stabilne `event_id` daje efekt idempotentnego redelivery. |
+| Storage | Raw dane mają `event_id`; `ReplacingMergeTree` i odczyt `FINAL` usuwają logiczne duplikaty. Bloom filter przechowuje każdy segment i nie może powodować false negative przez nadpisanie batcha. | `FINAL` jest dydaktycznie czytelne, ale w dużym klastrze wymagałoby optymalizacji. |
+| Rollup i histogram | Każda rozdzielczość jest liczona z raw: `sum`, `count`, `min`, `max` i ważona średnia pozostają poprawne. Histogram przechowuje skumulowane buckety, sumę, count i exemplar; test dowodzi scalania i estymacji kwantyla. | Schemat nie implementuje exponential histogramu ani kompletnego Prometheus TSDB. |
+| Agent | Stabilny identyfikator linii, trwały offset zapisywany dopiero po 2xx, retry z backoffem i jitterem. | Plik źródłowy jest lokalnym buforem; przed rotacją operator musi zapewnić jego retencję. |
+| Alerting | Trwałe reguły i stan w PostgreSQL, `for`, jawna polityka braku danych, silence, inhibition, deduplikacja przejść oraz wielowęzłowy outbox z `SKIP LOCKED`, retry i stanem `dead`. | Grouping wielu reguł w jedną wiadomość i rozbudowane matchery etykiet są granicą przykładu. |
+| Cold storage | Eksport jest tenant-scoped, atomowo publikuje gzip i manifest z liczbą wierszy oraz SHA-256. Restore drill sprawdza integralność i ładuje dane wyłącznie do izolowanej tabeli. | Adapter używa filesystemu i wczytuje godzinę do pamięci; S3 multipart, katalog danych i restore do produkcyjnych tabel wymagają osobnego workflow. |
+| Control plane | Tenanty, hashe kluczy API, wersjonowane reguły, silence i stany alertów znajdują się w PostgreSQL, którego schemat ewoluuje przez Flyway. | ClickHouse pozostaje data plane; nie należy przechowywać w nim silnie spójnych sekretów i konfiguracji. |
+| Security | RBAC rozdziela `platform_admin`, admina tenanta, writera i viewera; błędy mają Problem Details, webhook jest fail-closed i wymaga allow-listy HTTPS. | TLS kończy proxy/service mesh. Profil `production` odmawia startu z demo sekretami. |
+| Self-observability | Actuator/Prometheus publikuje niskokardynalne liczniki przetworzonych rekordów i commitów offsetu. | Pełne dashboardy i alerty SLO są opisane jako wdrożenie operatorskie. |
+
+Ta tabela jest kontraktem między teorią a kodem. Sekcje poniżej opisują także
+architekturę docelową; jeśli mechanizm nie występuje w tabeli jako wykonywalny,
+nie należy zakładać, że samo jego opisanie oznacza implementację.
+
+## Semantyka sygnałów: najważniejsze rozróżnienia
+
+Metryka nie jest wyłącznie parą `timestamp + double`. `gauge` opisuje stan,
+`counter` jest monotoniczny poza resetem procesu, a histogram przechowuje
+skumulowane buckety, sumę i liczność. Z countera wylicza się rate z dwóch
+punktów; ujemna różnica oznacza reset, nie ujemny ruch. Histogramy można scalać
+tylko przy zgodnych granicach bucketów. Średnia średnich jest błędna, jeśli grupy
+mają różne liczności: poprawny rollup przechowuje `sum` i `count`, a następnie
+liczy `sum(sum) / sum(count)`.
+
+Timestamp zdarzenia mówi, kiedy obserwacja powstała, a `ingested_at` — kiedy
+dotarła do platformy. Partycjonowanie, retencja i zapytania biznesowe korzystają
+z event time; ingest time służy do pomiaru laga i deduplikacji. Spóźnione dane
+powodują ponowne wyliczenie deterministycznego bucketa, dlatego rollup używa
+wersjonowanego `ReplacingMergeTree`, a nie dopisywania średnich do średnich.
+
+Log jest zdarzeniem o ograniczonym schemacie i dowolnych atrybutach. Treść może
+zawierać PII lub sekret, więc redakcja następuje przed brokerem — usunięcie
+danych dopiero z indeksu pozostawiłoby je w Kafce i cold storage. Bloom filter
+jest jedynie negatywnym indeksem: `false` pozwala pominąć segment, `true` nadal
+wymaga weryfikacji w źródle prawdy. Utrata choć jednego filtra segmentu mogłaby
+dać false negative, dlatego segmenty nie są zastępowane wspólnym kluczem.
+
+Trace ma relację parent–child i propagowany kontekst. Ten projekt przyjmuje
+spany i pozwala korelować `trace_id` z logiem, ale nie udaje kompletnego backendu
+trace: tail sampling, service graph i OTLP Collector należą do osobnej warstwy.
 
 ---
 
@@ -39,6 +109,17 @@ Kompleksowy projekt systemu do zbierania, przechowywania, indeksowania, agregowa
 31. [Proponowany stack technologiczny](#31-proponowany-stack-technologiczny)
 32. [Finalna rekomendowana architektura](#32-finalna-rekomendowana-architektura)
 33. [Najważniejsze decyzje projektowe](#33-najważniejsze-decyzje-projektowe)
+34. [Semantyka sygnałów telemetrycznych](#34-semantyka-sygnałów-telemetrycznych)
+35. [Projektowanie pojemności](#35-projektowanie-pojemności)
+36. [Jak działa warstwa storage](#36-jak-działa-warstwa-storage)
+37. [Teoria wykonywania zapytań](#37-teoria-wykonywania-zapytań)
+38. [Alerting jako maszyna stanów](#38-alerting-jako-maszyna-stanów)
+39. [Semantyka awarii i dostarczenia](#39-semantyka-awarii-i-dostarczenia)
+40. [Jak studiować implementację](#40-jak-studiować-implementację)
+41. [Protokoły i interoperacyjność](#41-protokoły-i-interoperacyjność)
+42. [HA, DR i ewolucja schematu](#42-ha-dr-i-ewolucja-schematu)
+43. [Koszt i zarządzanie pojemnością](#43-koszt-i-zarządzanie-pojemnością)
+44. [Uruchamianie i eksperymenty](#44-uruchamianie-i-eksperymenty)
 
 ---
 
@@ -1900,3 +1981,709 @@ Największe ryzyko projektu to nie sam ingest, tylko **koszt i kontrola kardynal
 | Multi-tenancy | Shared + dedicated shard groups dla dużych tenantów |
 | Security | TLS, OIDC/API keys, RBAC/ABAC, redaction |
 | Największe ryzyko | Kardynalność i koszt logów |
+
+---
+
+# 34. Semantyka sygnałów telemetrycznych
+
+System telemetryczny nie przechowuje jednego rodzaju danych. Metryka, log i
+span mogą odnosić się do tego samego requestu, ale mają inne własności, sposób
+agregacji oraz koszt zapytania. Projekt storage'u powinien wynikać z semantyki
+sygnału, a nie z wygody jednego DTO.
+
+## 34.1 Counter
+
+Counter reprezentuje skumulowaną liczbę zdarzeń, na przykład:
+
+```text
+http_requests_total{service="checkout", status="500"} = 18420
+```
+
+Najważniejszym niezmiennikiem countera jest monotoniczność w obrębie życia
+procesu. Counter może spaść tylko po restarcie, przejęciu sharda albo błędzie
+instrumentacji. Sama wartość `18420` zwykle nie jest interesująca. Query engine
+oblicza przyrost lub tempo:
+
+```text
+increase = current - previous
+rate     = increase / elapsed_seconds
+```
+
+Jeżeli `current < previous`, nie wolno zwrócić ujemnego ruchu. Trzeba wykryć
+reset i rozpocząć nowe okno. Przy wielu replikach najpierw liczy się rate dla
+każdej serii, a dopiero potem sumuje wyniki. Sumowanie surowych counterów przed
+obsługą resetów może wygenerować fałszywy spadek.
+
+## 34.2 Gauge
+
+Gauge opisuje stan w danej chwili: temperaturę, długość kolejki, liczbę
+aktywnych połączeń albo użycie pamięci. Może rosnąć i maleć. Agregacja zależy od
+pytania:
+
+- `avg` pokazuje typowy poziom w oknie;
+- `max` pomaga znaleźć pik saturacji;
+- `last` odpowiada na pytanie o bieżący stan;
+- `sum` ma sens tylko wtedy, gdy serie opisują rozłączne części całości.
+
+Przykładowo suma procentowego użycia CPU wszystkich podów nie jest poprawną
+„wartością CPU usługi”, dopóki nie zdefiniujemy mianownika i limitów każdego
+poda. Typ metryki nie wystarcza — potrzebna jest jeszcze definicja jednostki.
+
+## 34.3 Histogram i percentyle
+
+Histogram reprezentuje rozkład, na przykład czas odpowiedzi. Klasyczny model
+zawiera skumulowane buckety oraz `sum` i `count`:
+
+```text
+request_duration_seconds_bucket{le="0.1"}  700
+request_duration_seconds_bucket{le="0.5"}  940
+request_duration_seconds_bucket{le="1.0"}  990
+request_duration_seconds_bucket{le="+Inf"} 1000
+request_duration_seconds_sum              182.4
+request_duration_seconds_count             1000
+```
+
+Bucket `le="0.5"` zawiera również obserwacje z bucketa `le="0.1"`. Histogramy
+można agregować między instancjami, jeżeli mają identyczne granice bucketów.
+Percentyl jest estymowany z rozkładu i nie jest zwykłą średnią. W szczególności:
+
+```text
+p99(A ∪ B) != avg(p99(A), p99(B))
+```
+
+Summary obliczające quantile po stronie klienta jest trudniejsze do scalania.
+Dlatego system centralny zwykle preferuje histogram klasyczny, exponential
+histogram albo szkic taki jak DDSketch/t-digest.
+
+## 34.4 Temporality: cumulative i delta
+
+`cumulative` oznacza wartość od początku życia procesu. `delta` oznacza zmianę
+od poprzedniego eksportu. Collector może konwertować te reprezentacje, ale musi
+utrzymywać stan i poprawnie obsługiwać restarty oraz brakujące punkty.
+
+| Temporality | Zaleta | Ryzyko |
+|---|---|---|
+| cumulative | łatwo wykryć retry tego samego punktu i policzyć rate | reset procesu wymaga detekcji |
+| delta | prostsza agregacja przyrostów w backendzie | utrata jednego eksportu oznacza utratę przyrostu |
+
+Implementacja przechowuje typ i temporality jawnie na granicy ingestu. Nie są
+to dekoracyjne pola — query i przyszły compactor muszą interpretować je zgodnie
+z kontraktem.
+
+## 34.5 Log jako zdarzenie
+
+Log jest niezmiennym zdarzeniem, a nie aktualnym stanem. Dobrze zaprojektowany
+log ma mały zestaw stabilnych pól indeksowanych oraz elastyczne attributes:
+
+```text
+timestamp, severity, service, host, trace_id, message, attributes
+```
+
+Wysokokardynalne identyfikatory, takie jak `order_id`, są użyteczne w treści lub
+atrybutach, ale kosztowne jako globalny indeks. Selektywny indeks odpowiada
+szybko na najczęstsze pytania, a rzadkie wyszukiwanie wykonuje ograniczony scan.
+To świadomy kompromis między kosztem zapisu a latencją dowolnego zapytania.
+
+## 34.6 Trace i korelacja
+
+Trace jest grafem spanów opisujących jedną operację rozproszoną. `trace_id`
+łączy cały graf, a `span_id` i `parent_span_id` opisują zależności. Poprawna
+propagacja kontekstu pozwala przejść:
+
+```text
+alert p99 → exemplar → trace → span zależności → log z tym samym trace_id
+```
+
+Exemplar jest przykładowym `trace_id` dołączonym do obserwacji histogramu.
+Pozwala znaleźć konkretny request bez indeksowania każdego identyfikatora jako
+labela metryki. To ważne rozróżnienie: korelacja nie powinna powodować eksplozji
+kardynalności.
+
+## 34.7 Event time, ingest time i processing time
+
+System rozróżnia trzy zegary:
+
+- **event time** — kiedy zdarzenie powstało u źródła;
+- **ingest time** — kiedy platforma je odebrała;
+- **processing time** — kiedy consumer lub job je przetworzył.
+
+Różnica `ingest time - event time` to lag transportu, ale może też zawierać
+clock skew. Dane spóźnione powinny trafić do bucketa event time. Job rollupu musi
+więc umieć ponownie przeliczyć zamknięty bucket. Z kolei SLO pipeline'u powinno
+korzystać także z ingest/processing time, aby odróżnić stare zdarzenie od wolnej
+platformy.
+
+---
+
+# 35. Projektowanie pojemności
+
+Diagram architektury bez obliczeń pojemności nie mówi, czy system jest realny.
+Estymacje nie muszą być idealne; mają ujawnić rząd wielkości i dominujący koszt.
+
+## 35.1 Wolumen zapisu
+
+Podstawowe przybliżenie:
+
+```text
+bytes_per_second = events_per_second × average_encoded_event_size
+bytes_per_day    = bytes_per_second × 86 400
+stored_bytes     = bytes_per_day × retention_days × replication_factor
+                   / compression_ratio
+```
+
+Przykład dla 300 000 logów/s, średnio 700 B, retencji hot 14 dni, replikacji 2
+i kompresji 5:1:
+
+```text
+300 000 × 700 B                  ≈ 210 MB/s
+210 MB/s × 86 400                ≈ 18.1 TB/day raw
+18.1 TB × 14 × 2 / 5             ≈ 101 TB hot storage
+```
+
+Do wyniku trzeba dodać indeksy, metadane części, zapas na merge oraz headroom.
+Planowanie klastra dokładnie „na średnią” prowadzi do awarii podczas piku lub
+rebalansu.
+
+## 35.2 Metryki i kardynalność
+
+Liczba próbek zależy od liczby aktywnych serii i interwału scrape/export:
+
+```text
+samples_per_second = active_series / scrape_interval_seconds
+```
+
+Pięć milionów serii eksportowanych co 15 sekund to około 333 tys. próbek/s.
+Największym ryzykiem jest iloczyn wartości labeli:
+
+```text
+service(100) × endpoint(80) × status(6) × region(4) = 192 000 serii
+```
+
+Dodanie `user_id(1 000 000)` nie zwiększa kosztu liniowo o kilka procent, lecz
+zmienia przestrzeń kombinacji o sześć rzędów wielkości. Dlatego projekt posiada
+zarówno statyczną blokadę ryzykownych labeli, jak i atomowy budżet unikalnych
+serii oraz wartości labela na godzinę.
+
+## 35.3 Partycje Kafki
+
+Minimalna liczba partycji wynika z wolniejszej strony pipeline'u:
+
+```text
+partitions_by_ingest  = ceil(total_ingest_rate / producer_partition_rate)
+partitions_by_consume = ceil(total_ingest_rate / consumer_partition_rate)
+partitions            = max(partitions_by_ingest, partitions_by_consume)
+```
+
+Należy dodać zapas na awarię brokera i przyszły wzrost. Zbyt mało partycji
+ogranicza równoległość, ale tysiące małych partycji zwiększają koszt metadanych,
+rebalansu i otwartych plików. Klucz partycji określa granicę orderingu. W tym
+laboratorium tenant jest kluczem; duży tenant może wymagać klucza
+`tenant + source/shard`, aby uniknąć hot partition.
+
+## 35.4 Batch size a latency
+
+Batching amortyzuje kompresję, request sieciowy i tworzenie części w ClickHouse.
+Większy batch poprawia throughput, ale zwiększa:
+
+- czas oczekiwania pierwszego zdarzenia;
+- ilość danych ponowionych po błędzie;
+- pamięć procesu;
+- rozmiar pojedynczego failure domain.
+
+Flush powinien następować po osiągnięciu limitu elementów, bajtów albo czasu —
+zależnie od tego, co wystąpi pierwsze. Sam limit liczby rekordów nie chroni przed
+batchem zawierającym kilka ogromnych logów.
+
+## 35.5 Bufor i czas na naprawę
+
+Kafka oraz lokalny spool kupują czas operatorowi:
+
+```text
+buffer_hours = usable_buffer_bytes / incoming_bytes_per_hour
+```
+
+Jeżeli consumer jest wolniejszy od producenta o `50 MB/s`, backlog rośnie o
+4.32 TB dziennie. Pytanie operacyjne nie brzmi wyłącznie „czy mamy kolejkę?”,
+lecz „ile godzin degradacji storage'u kolejka wytrzyma, zanim zacznie usuwać
+najstarsze dane?”.
+
+## 35.6 Little's Law dla zapytań
+
+Dla stabilnego systemu:
+
+```text
+concurrency ≈ requests_per_second × average_latency_seconds
+```
+
+Przy 200 query/s i średniej 2 s potrzeba obsłużyć około 400 równoległych query.
+Jeśli pojedyncze zapytanie może skanować setki GB, brak limitu współbieżności
+zamienia niewielki wzrost ruchu w saturację dysku i pamięci. Admission control
+powinien uwzględniać koszt, nie tylko liczbę requestów.
+
+---
+
+# 36. Jak działa warstwa storage
+
+## 36.1 Dlaczego ClickHouse
+
+ClickHouse jest kolumnowym silnikiem OLAP. Zapytanie czytające tylko
+`timestamp`, `service` i `value` nie musi odczytywać ciężkiej treści loga.
+Kompresja działa dobrze, ponieważ sąsiednie wartości tej samej kolumny są
+podobne. To odpowiada workloadowi telemetrycznemu: dużo appendów i agregacje po
+dużych zakresach, mało aktualizacji pojedynczego rekordu.
+
+ClickHouse nie zastępuje silnie spójnej bazy metadanych. Klucze API, wersje
+reguł i stan delivery wymagają constraints, transakcji i jednoznacznej
+unikalności, dlatego należą do PostgreSQL.
+
+## 36.2 Parts, partitions i background merge
+
+Insert tworzy immutable part. W tle mniejsze parts są scalane. Partycja określa
+granicę zarządzania danymi, nie gwarantuje jednego fizycznego pliku. Zbyt małe
+batche produkują „too many parts”, a zbyt drobne partycjonowanie zwiększa koszt
+metadanych.
+
+`ORDER BY` w rodzinie MergeTree definiuje sortowanie i sparse primary index.
+Nie jest klasycznym unikalnym kluczem. Najczęściej filtrowane prefiksy powinny
+znajdować się z lewej strony klucza. Umieszczenie wysokokardynalnego pola na
+początku może pogorszyć lokalność danych.
+
+## 36.3 ReplacingMergeTree i idempotencja
+
+`ReplacingMergeTree(version)` zachowuje najnowszą wersję wierszy o tym samym
+sorting key, ale deduplikacja następuje podczas asynchronicznego merge. Przed
+merge obie wersje fizycznie istnieją. `FINAL` wymusza logiczne scalenie podczas
+odczytu, kosztem dodatkowej pracy.
+
+Dlatego poprawny model wygląda następująco:
+
+1. producent nadaje stabilne `event_id`;
+2. retry przesyła ten sam identyfikator;
+3. sorting key zawiera `event_id`;
+4. query wymagające natychmiastowej deduplikacji używa `FINAL` albo równoważnej
+   agregacji po kluczu;
+5. monitoring mierzy liczbę wersji oczekujących na merge.
+
+Losowe ID generowane dopiero w consumerze nie zapewniłoby idempotencji, bo ten
+sam rekord po redelivery dostałby nową tożsamość.
+
+## 36.4 Poprawna algebra rollupu
+
+Rollup musi przechowywać składniki umożliwiające dalsze łączenie:
+
+```text
+sum(A ∪ B)   = sum(A) + sum(B)
+count(A ∪ B) = count(A) + count(B)
+min(A ∪ B)   = min(min(A), min(B))
+max(A ∪ B)   = max(max(A), max(B))
+avg(A ∪ B)   = (sum(A) + sum(B)) / (count(A) + count(B))
+```
+
+Sama średnia nie jest wystarczającym stanem agregatu. Jeśli grupa A zawiera
+jedną próbkę `100`, a grupa B dziewięć próbek `0`, średnia średnich daje `50`,
+podczas gdy poprawny wynik to `10`. Implementacja liczy każdą rozdzielczość z
+raw i przechowuje count, dzięki czemu nie propaguje błędu.
+
+## 36.5 TTL nie usuwa danych natychmiast
+
+TTL w MergeTree jest realizowany podczas background merge. Przekroczenie czasu
+retencji nie oznacza natychmiastowego zniknięcia każdego bajtu. System nie może
+używać TTL jako mechanizmu ścisłego usunięcia regulacyjnego bez osobnej
+procedury i weryfikacji. Wyrażenie TTL musi też zwrócić typ `Date` lub
+`DateTime`; przy `DateTime64` potrzebna jest jawna konwersja, którą sprawdza test
+wykonujący cały schemat na ClickHouse 24.8.
+
+## 36.6 Bloom filter
+
+Bloom filter odpowiada na pytanie: „czy element na pewno nie występuje?”. Ma
+false positives, ale poprawnie zbudowany nie ma false negatives. Dla `n`
+elementów, `m` bitów i `k` funkcji hashujących przybliżone prawdopodobieństwo
+false positive wynosi:
+
+```text
+p ≈ (1 - e^(-k n / m))^k
+```
+
+Optymalna liczba hashy jest w przybliżeniu równa `(m/n) × ln(2)`. Filtr jest
+indeksem pomocniczym, nigdy źródłem prawdy. Jeżeli istnieje kilka segmentów tej
+samej godziny, zapytanie może pominąć godzinę tylko wtedy, gdy każdy segment
+mówi „brak”. Zastąpienie starszego filtra nowszym mogłoby stworzyć false
+negative na poziomie całego systemu, mimo że pojedynczy filtr jest poprawny.
+
+## 36.7 Hot, warm i cold tier
+
+Warstwy różnią się ceną, latencją i możliwościami query:
+
+| Tier | Typowy format | Cel |
+|---|---|---|
+| hot | ClickHouse/TSDB | interaktywne query i alerting |
+| warm | rzadsze rollupy lub wolniejsze nody | dłuższy trend przy umiarkowanym koszcie |
+| cold | Parquet/NDJSON w object storage | audyt, offline analytics, restore |
+
+Eksport nie jest zakończony, dopóki nie ma kompletnego obiektu i manifestu z
+liczbą wierszy oraz checksumą. Usunięcie hot danych powinno nastąpić dopiero po
+weryfikacji manifestu i możliwości odczytu. Lokalny adapter demonstruje ten
+kontrakt; produkcyjnie używa się versioningu, multipart uploadu i lifecycle
+policy storage'u.
+
+---
+
+# 37. Teoria wykonywania zapytań
+
+## 37.1 Query planner
+
+Planner zamienia żądanie użytkownika na fizyczny plan:
+
+1. uwierzytelnia tenant i nakłada jego predicate;
+2. waliduje zakres czasu oraz limit;
+3. wybiera raw albo rollup odpowiedni do szerokości okna i rozdzielczości;
+4. stosuje predicate pushdown po czasie, service, severity i labels;
+5. konsultuje indeks pomocniczy, np. Bloom filter;
+6. szacuje liczbę partycji, bajtów i shardów;
+7. odrzuca lub kolejkowuje plan przekraczający budżet;
+8. scala częściowe wyniki i stosuje końcowy limit.
+
+Planner nie powinien ufać limitowi odpowiedzi jako limitowi kosztu. Zapytanie
+`LIMIT 10` może najpierw przeskanować rok danych, a dopiero potem wybrać dziesięć
+wierszy.
+
+## 37.2 Fan-out i partial results
+
+W klastrze query gateway wysyła subquery do wielu shardów. Latencja całości jest
+zbliżona do najwolniejszego sharda. Trzeba zdefiniować zachowanie przy błędzie:
+
+- fail closed — brak odpowiedzi, ale brak ryzyka niepełnego wyniku;
+- partial result — szybsza użyteczność operacyjna, lecz wynik musi być oznaczony;
+- retry wyłącznie brakującego sharda — większa latencja i obciążenie wtórne.
+
+Alerting zazwyczaj powinien być bardziej konserwatywny niż interaktywny
+dashboard. Niepełny wynik nie może po cichu wyglądać jak zdrowy system.
+
+## 37.3 Paginacja logów
+
+Duży offset zmusza storage do odnalezienia i odrzucenia poprzednich rekordów.
+Stabilniejszy jest cursor/keyset oparty na `(timestamp, event_id)`. Cursor musi
+zawierać oba pola, ponieważ wiele zdarzeń ma ten sam timestamp. Sortowanie musi
+być deterministyczne również podczas napływu nowych danych.
+
+## 37.4 Cache zapytań
+
+Cache key musi zawierać co najmniej tenant, znormalizowane query, zakres czasu,
+rozdzielczość i wersję uprawnień. Brak tenantId w kluczu jest wyciekiem danych,
+nie tylko błędem wydajnościowym. Najbezpieczniej cache'ować zamknięte okna czasu;
+bieżący bucket szybko się zmienia i wymaga krótkiego TTL lub ominięcia cache.
+
+## 37.5 Ochrona przed kosztownym query
+
+System powinien ograniczać:
+
+- maksymalny zakres czasu;
+- liczbę serii i shardów;
+- skanowane bajty;
+- pamięć agregacji;
+- równoległość per tenant;
+- czas wykonania;
+- liczbę regexów lub ich złożoność;
+- maksymalną rozdzielczość odpowiedzi.
+
+Budżet per tenant chroni przed noisy neighbour. Globalny budżet chroni klaster,
+gdy wielu poprawnie zachowujących się tenantów generuje pik jednocześnie.
+
+---
+
+# 38. Alerting jako maszyna stanów
+
+## 38.1 Dlaczego samo `value > threshold` nie wystarcza
+
+Jeżeli evaluator wysyła powiadomienie przy każdym przebiegu spełniającym
+warunek, operator dostaje alert storm. Potrzebny jest trwały stan reguły:
+
+```text
+INACTIVE --condition=true--> PENDING
+PENDING  --for elapsed-----> FIRING
+PENDING  --condition=false-> INACTIVE
+FIRING   --condition=true--> FIRING
+FIRING   --condition=false-> RESOLVED
+RESOLVED ------------------> INACTIVE/PENDING
+```
+
+`for=5m` oznacza ciągłe utrzymywanie warunku przez pięć minut, a nie pięć
+dodatnich próbek. Gdy evaluation interval wynosi minutę, brak jednego przebiegu
+nie powinien automatycznie zerować stanu bez jawnej polityki missing data.
+
+## 38.2 Missing data
+
+Brak próbki może znaczyć:
+
+- system jest zdrowy i nie było zdarzeń;
+- exporter nie działa;
+- pipeline telemetryczny ma lag;
+- query przekroczyło timeout;
+- seria zniknęła po deploymencie.
+
+Reguła musi określić `no data = OK`, `no data = ALERT` albo `KEEP LAST STATE`.
+W przeciwnym razie awaria monitoringu może wyglądać jak poprawa monitorowanego
+systemu. Dobrym wzorcem jest osobny alert na świeżość danych.
+
+## 38.3 Deduplikacja, grouping i inhibition
+
+- **deduplikacja** zapobiega ponownej notyfikacji tego samego przejścia;
+- **grouping** łączy podobne alerty w jedną wiadomość;
+- **silence** wycisza dopasowane alerty w określonym czasie;
+- **inhibition** wycisza alert podrzędny, gdy aktywna jest przyczyna nadrzędna;
+- **throttling** ogranicza częstotliwość przypomnień.
+
+Przykład: aktywny alert `region_down` może inhibować tysiące alertów
+`instance_unreachable` z tego regionu. Nie usuwa zdarzeń ani stanu; zmienia
+jedynie decyzję o dostarczeniu powiadomienia.
+
+## 38.4 Trwałe dostarczenie
+
+Zmiana stanu i wysłanie webhooka nie mogą być jednym kruchym wywołaniem.
+Implementacja zapisuje delivery do PostgreSQL outbox. Workery przejmują rekordy
+przez `FOR UPDATE SKIP LOCKED`, dzięki czemu wiele instancji nie wysyła tego
+samego rekordu jednocześnie. Błąd powoduje retry z backoffem, a po wyczerpaniu
+budżetu stan `dead`, który wymaga obserwowalności i ręcznego replayu.
+
+Status 2xx oznacza zaakceptowanie webhooka, nie wykonanie reakcji po stronie
+odbiorcy. Odbiorca również powinien deduplikować po identyfikatorze delivery.
+
+---
+
+# 39. Semantyka awarii i dostarczenia
+
+## 39.1 At-most-once, at-least-once i effectively-once
+
+| Model | Zachowanie | Koszt |
+|---|---|---|
+| at-most-once | brak duplikatów, ale możliwa utrata | najprostszy |
+| at-least-once | brak utraty przy zachowaniu retencji, możliwe duplikaty | retry i deduplikacja |
+| exactly-once | pojedynczy efekt w zdefiniowanej granicy transakcji | wysoki, często myląca nazwa |
+
+Kafka nie czyni automatycznie całego przepływu exactly-once. Transakcja brokera
+nie obejmuje ClickHouse i zewnętrznego webhooka. Projekt osiąga
+**effectively-once dla logical event**: consumer commitnie offset dopiero po
+zapisie, a redelivery z tym samym `event_id` jest deduplikowane przez storage.
+
+## 39.2 Okno awarii consumera
+
+Najważniejszy scenariusz:
+
+```text
+1. consumer pobiera rekord offset=42
+2. zapisuje dane do ClickHouse
+3. proces umiera przed commitem offsetu
+4. nowa instancja ponownie pobiera offset=42
+5. zapisuje ten sam event_id
+6. logiczny odczyt widzi jeden rekord
+```
+
+Commit przed krokiem 2 tworzyłby okno utraty. Generowanie nowego ID w kroku 5
+tworzyłoby trwały duplikat. Dlatego kolejność efektów jest elementem kontraktu.
+
+## 39.3 Poison record i DLT
+
+Rekord niezgodny ze schematem nie naprawi się po setnym retry. Nieskończone
+ponawianie blokuje partycję i wszystkie poprawne rekordy za nim. Retry powinno
+być ograniczone, a następnie rekord trafia do DLT z:
+
+- oryginalnym topicem, partycją i offsetem;
+- klasą oraz komunikatem błędu;
+- wersją schematu;
+- correlation/event ID;
+- czasem i liczbą prób.
+
+DLT nie jest koszem „fire and forget”. Potrzebuje alertu, retencji, narzędzia do
+inspekcji i kontrolowanego replayu po poprawieniu przyczyny.
+
+## 39.4 Backpressure zamiast nieograniczonej pamięci
+
+Gdy downstream zwalnia, system może:
+
+1. buforować do jawnego limitu;
+2. ograniczyć producenta lub zwrócić 429;
+3. zastosować sampling/drop według udokumentowanej polityki;
+4. priorytetyzować sygnały audytowe i krytyczne;
+5. skalować konsumentów, jeśli bottleneck nie jest dalej w storage'u.
+
+Nieograniczona kolejka w pamięci tylko przesuwa awarię w czasie i kończy się
+OOM. Autoscaling consumera nie pomaga, jeżeli wspólny ClickHouse jest już
+nasycony — zwiększa wtedy presję na zależność.
+
+## 39.5 Macierz awarii
+
+| Awaria | Oczekiwane zachowanie | Sygnał operatorski |
+|---|---|---|
+| agent → gateway | retry z jitterem, trwały offset | wiek lokalnego backlogu |
+| gateway → Kafka | brak 202 bez ack brokera | publish error rate |
+| consumer → ClickHouse | brak commitu, ograniczone retry, DLT | consumer lag i DLT rate |
+| PostgreSQL metadata | fail closed dla auth/admin | metadata availability |
+| query shard | timeout lub jawny partial result | scanned bytes, failed shards |
+| webhook | outbox retry, potem dead | oldest pending delivery |
+| cold export | brak usunięcia hot danych bez manifestu | export lag i checksum failures |
+
+---
+
+# 40. Jak studiować implementację
+
+Najlepsza kolejność nie prowadzi po nazwach klas, lecz po granicach gwarancji:
+
+1. **Wejście i zaufanie** — zacznij od `IngestController`, `IngestPolicy`,
+   `SensitiveDataRedactor` i RBAC. Sprawdź, które dane klient może podać, a które
+   są wyprowadzane z uwierzytelnionego kontekstu.
+2. **Koszt metryk** — przejdź przez `CardinalityGuard` i
+   `CardinalityBudgetStore`. Zwróć uwagę, dlaczego sam raport po zapisie nie jest
+   mechanizmem ochronnym.
+3. **Granica kolejki** — porównaj publikację w kontrolerze z manualnym commitem,
+   retry i DLT w `TelemetryConsumers` oraz `KafkaTopicConfig`.
+4. **Tożsamość danych** — prześledź `eventId` od agenta/ingestu do sorting key w
+   ClickHouse i odczytu `FINAL`.
+5. **Indeksy pomocnicze** — zobacz, dlaczego Bloom filter i full-text terms mogą
+   przyspieszać query, ale nie mogą zastąpić źródła prawdy.
+6. **Agregacja** — uruchom `MetricSemanticsTest` i porównaj go z SQL w
+   `MetricsDownsampler`.
+7. **Alerting** — przejdź od `AlertStateMachine` przez trwały stan do
+   `notification_outbox` i workera delivery.
+8. **Warstwy danych** — zestaw schemat ClickHouse z migracjami Flyway w
+   `telemetry-server/src/main/resources/db/migration`.
+   Odpowiedz, dlaczego każda tabela trafiła do konkretnego silnika.
+9. **Agent** — zasymuluj odpowiedź 500 i restart. Sprawdź, kiedy checkpoint może
+   zostać przesunięty, a kiedy musi pozostać bez zmian.
+10. **Kontrakty infrastruktury** — uruchom profil `infrastructure-tests` i
+    przeczytaj testy jako wykonywalną dokumentację gwarancji.
+
+Pytania kontrolne po przejściu laboratorium:
+
+- Co stanie się po awarii między zapisem a commitem offsetu?
+- Które pola mogą powodować cardinality explosion?
+- Dlaczego p99 nie można uśredniać?
+- Czy Bloom filter może być podstawą pozytywnej odpowiedzi?
+- Jak odróżnić brak danych od zdrowego systemu?
+- Która baza jest źródłem prawdy dla reguły alertowej?
+- Jak długo system przetrwa niedostępność ClickHouse przy obecnym backlogu?
+- Które zapytanie może zwrócić mało danych, ale przeskanować bardzo dużo?
+- Co dokładnie oznacza „dostarczono webhook”?
+- Jak zweryfikować, że cold export jest kompletny przed usunięciem hot danych?
+
+---
+
+# 41. Protokoły i interoperacyjność
+
+Architektura telemetryczna powinna rozdzielać **model sygnału** od protokołu
+transportowego. Ten projekt celowo udostępnia proste JSON/HTTP API, aby pokazać
+semantykę, ale platforma produkcyjna zwykle przyjmuje standardowe protokoły:
+
+| Protokół | Typowe zastosowanie | Najważniejsza własność |
+|---|---|---|
+| OTLP/gRPC | metryki, logi i trace między SDK, Collectorem i backendem | batching, kompresja, streaming HTTP/2 i wspólny model zasobów |
+| OTLP/HTTP | środowiska, w których gRPC jest utrudnione | prostszy routing przez proxy kosztem części zalet streamingu |
+| Prometheus remote write | próbki time series do długoterminowego backendu | protobuf + snappy, retry i możliwość duplikatów |
+| syslog / Fluent Bit | istniejące źródła logów i hosty | niejednorodny schemat, konieczność parsowania i wzbogacenia |
+
+Collector jest warstwą pośrednią, nie bazą danych: może batchować, redagować,
+próbkować, routować i ponawiać. Nie usuwa potrzeby quota, idempotencji ani
+backpressure w backendzie. Każdy envelope powinien nieść `schema_version`,
+resource attributes, event time i stabilne ID. Ewolucja additive jest zwykle
+kompatybilna; usunięcie pola lub zmiana jego znaczenia wymaga okresu podwójnego
+odczytu/zapisu i obserwacji udziału starych producentów.
+
+Kompresja zmniejsza sieć, ale zwiększa CPU i opóźnienie małego batcha. Limit
+dotyczy zarówno rozmiaru skompresowanego, jak i rozpakowanego, aby uniknąć
+compression bomb. Odpowiedź 202 potwierdza trwałe przyjęcie przez broker, nie
+widoczność w query ani zapis do cold storage.
+
+---
+
+# 42. HA, DR i ewolucja schematu
+
+High availability ogranicza przerwy po awarii komponentu w jednym regionie;
+disaster recovery odtwarza usługę po utracie większej domeny awarii. To różne
+cele i powinny mieć osobne liczby:
+
+- **RPO** określa dopuszczalną utratę danych, np. 5 minut;
+- **RTO** określa maksymalny czas przywrócenia usługi, np. 60 minut;
+- Kafka wymaga replikacji partycji i `min.insync.replicas`, ClickHouse —
+  replikowanych tabel oraz wielu availability zones;
+- PostgreSQL metadata wymaga synchronicznej lub asynchronicznej repliki,
+  backupu PITR i testu promocji;
+- object storage potrzebuje versioningu, lifecycle i ewentualnej replikacji
+  między regionami.
+
+Active-passive upraszcza spójność i koszty, ale wydłuża failover. Active-active
+zmniejsza latency i potencjalny RTO, lecz wymaga globalnej tożsamości eventów,
+rozwiązywania konfliktów, routingu tenantów oraz jawnej semantyki query podczas
+laga replikacji. System nie może obiecać silnego read-after-write, jeśli odczyt
+trafia do asynchronicznej repliki.
+
+Backup bez testu odtworzenia jest jedynie nadzieją. Implementowany restore drill
+sprawdza tenant-scoped key, SHA-256, NDJSON i liczbę rekordów, a następnie ładuje
+rekordy do tabeli `restore_drill_rows` z krótkim TTL. Produkcyjny runbook musi
+jeszcze mierzyć RTO, odtworzyć zależności w poprawnej kolejności, porównać count
+i zakres czasu oraz uzyskać zatwierdzenie przed przełączeniem query.
+
+Schemat PostgreSQL jest wersjonowany przez Flyway. Migracje są append-only:
+opublikowanego pliku `V...sql` nie należy zmieniać, tylko dodać kolejną wersję.
+Dla ClickHouse bezpieczny rollout stosuje expand/contract: najpierw nowa kolumna
+i czytnik tolerujący oba warianty, potem backfill, przełączenie writerów, pomiar,
+a usunięcie starego pola dopiero w późniejszym wdrożeniu.
+
+---
+
+# 43. Koszt i zarządzanie pojemnością
+
+Koszt observability rośnie przede wszystkim z bajtami ingestu, retencją,
+kardynalnością serii, replikacją i liczbą skanowanych bajtów. Liczba dashboardów
+nie jest dobrym przybliżeniem kosztu: pojedyncze nieograniczone query może być
+droższe niż tysiące selektywnych zapytań.
+
+FinOps dla platformy telemetrycznej powinien mierzyć koszt per tenant i sygnał:
+
+- bytes/events/s przed i po kompresji;
+- aktywne serie i nowe wartości każdego labela;
+- hot-storage bytes, cold-storage bytes i replication factor;
+- scanned bytes, CPU-seconds oraz cache hit ratio zapytań;
+- udział danych odrzuconych, próbkowanych i wysłanych do DLT.
+
+Mechanizmy kontroli kosztu muszą być przewidywalne: quota, limity okna query,
+retencja per klasa danych, sampling oraz preagregacja. Sampling logów nie może
+bezrefleksyjnie usuwać audytu i błędów. Z kolei exemplars pozwalają zachować
+kilka reprezentatywnych trace ID bez indeksowania każdego request ID jako labela.
+Showback informuje tenantów o użyciu; chargeback przypisuje koszt. Oba wymagają
+stabilnego modelu atrybucji, nie labela dostarczonego bez zaufania przez klienta.
+
+---
+
+# 44. Uruchamianie i eksperymenty
+
+Najkrótsza ścieżka weryfikacji na Windows:
+
+```powershell
+.\mvnw.cmd --batch-mode --no-transfer-progress clean verify
+.\mvnw.cmd --batch-mode --no-transfer-progress -Pinfrastructure-tests verify
+docker compose up --build
+```
+
+Pierwsza komenda uruchamia szybkie testy bez Dockera. Profil infrastrukturalny
+sprawdza PostgreSQL/Flyway, Kafkę, wykonywalność schematu ClickHouse, izolację
+tenantów, replay indeksu, histogram oraz pełny przepływ HTTP → Kafka →
+ClickHouse → query. Test przekrojowy czeka na eventual consistency zamiast
+zakładać, że HTTP 202 oznacza natychmiastowy odczyt.
+
+Po uruchomieniu stacku można wykonać eksperyment wydajnościowy (wymaga `k6`):
+
+```powershell
+$env:K6_PROFILE='load' # load, stress, spike albo soak
+.\mvnw.cmd --batch-mode --no-transfer-progress -Pload-test integration-test
+```
+
+Skrypt używa **open workload model** dla ingestu, więc przeciążenie ujawnia się
+jako `dropped_iterations`, a nie jako sztuczne spowolnienie generatora. Mierzy
+p95/p99 osobno dla ingestu i query, error rate oraz wymaga zera odrzuconych
+iteracji. Przed testem należy zapisać oczekiwaną przepustowość, limit CPU/dysku,
+retencję i kryterium przerwania. Load sprawdza cel, stress szuka punktu
+nasycenia, spike gwałtowny skok, a soak wycieki i narastające kolejki.
+
+Po eksperymencie porównaj client latency z consumer lag, ClickHouse merge queue,
+liczbą parts, scanned bytes, PostgreSQL connection usage i najstarszym rekordem
+outboxa. Sam niski czas HTTP 202 nie dowodzi zdrowia systemu, jeśli backlog rośnie
+szybciej niż może zostać opróżniony.

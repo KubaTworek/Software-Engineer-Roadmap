@@ -1,3 +1,17 @@
+# Widoczność pamięci i happens-before
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** Widoczność pamięci i happens-before.
+> - **Typowy błąd:** Pomylenie widoczności zapewnianej przez volatile z atomowością inkrementacji.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=VisibilityExampleTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** brak jawnej roli w nazwach klas; intencję przykładu określają opis i test, nie sam brak prefiksu.
+> - **Granica:** Test kontroluje wybrany przeplot w JVM; pojedyncze uruchomienie nie dowodzi wszystkich zachowań dopuszczonych przez JMM ani wydajności pod obciążeniem.
+<!-- material-card:end -->
+
 Współdzielenie stanu i widoczność pamięci w programach wielowątkowych (Java)
 ==================================================
 

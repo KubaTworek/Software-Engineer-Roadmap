@@ -1,10 +1,21 @@
 package com.example.newsfeed.moderation;
 
+import com.example.newsfeed.common.NotFoundException;
+import com.example.newsfeed.common.UnauthorizedException;
+import com.example.newsfeed.events.DomainEvent;
+import com.example.newsfeed.events.NewsFeedTopics;
+import com.example.newsfeed.feed.FeedCacheService;
+import com.example.newsfeed.outbox.DomainEventPublisher;
+import com.example.newsfeed.post.Post;
+import com.example.newsfeed.post.PostRepository;
+import com.example.newsfeed.user.User;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.Clock;
 import java.util.*;
 
 /**
@@ -65,6 +76,11 @@ public class ModerationService {
      *     review-threshold: 0.60
      */
     private final double reviewThreshold;
+    private final PostRepository posts;
+    private final ModerationAuditLogRepository auditLog;
+    private final DomainEventPublisher events;
+    private final FeedCacheService feedCache;
+    private final Clock clock;
 
     /**
      * Wstrzyknięcie repozytorium i progów moderacji z konfiguracji.
@@ -72,14 +88,30 @@ public class ModerationService {
      * Dzięki progom z application.yml można dostrajać agresywność moderacji
      * bez zmiany kodu.
      */
+    @Autowired
     public ModerationService(
             ModerationReviewRepository repository,
             @Value("${newsfeed.moderation.auto-hide-threshold:0.85}") double autoHideThreshold,
-            @Value("${newsfeed.moderation.review-threshold:0.60}") double reviewThreshold
+            @Value("${newsfeed.moderation.review-threshold:0.60}") double reviewThreshold,
+            PostRepository posts,
+            ModerationAuditLogRepository auditLog,
+            DomainEventPublisher events,
+            FeedCacheService feedCache,
+            Clock clock
     ) {
         this.repository = repository;
         this.autoHideThreshold = autoHideThreshold;
         this.reviewThreshold = reviewThreshold;
+        this.posts = posts;
+        this.auditLog = auditLog;
+        this.events = events;
+        this.feedCache = feedCache;
+        this.clock = clock;
+    }
+
+    /** Wygodny konstruktor czystej klasyfikacji używany w szybkim teście reguł. */
+    ModerationService(ModerationReviewRepository repository, double autoHideThreshold, double reviewThreshold) {
+        this(repository, autoHideThreshold, reviewThreshold, null, null, null, null, Clock.systemUTC());
     }
 
     /**
@@ -104,9 +136,8 @@ public class ModerationService {
          *
          * Null traktujemy jako pusty tekst.
          */
-        String lower = text == null
-                ? ""
-                : text.toLowerCase();
+        String original = text == null ? "" : text;
+        String lower = original.toLowerCase(Locale.ROOT);
 
         /*
          * Score ryzyka.
@@ -134,19 +165,10 @@ public class ModerationService {
             score += 0.20;
         }
 
-        /*
-         * Próba wykrycia agresywnego / spamowego stylu tekstu.
-         *
-         * Uwaga:
-         * w tym kodzie sprawdzamy uppercase na zmiennej lower,
-         * czyli po wcześniejszym toLowerCase().
-         * To sprawia, że ta reguła praktycznie nigdy nie zadziała.
-         *
-         * Jeśli chcesz wykrywać caps lock, trzeba liczyć uppercase
-         * na oryginalnym tekście, a nie na lower.
-         */
-        if (lower.length() > 0
-                && lower.chars().filter(Character::isUpperCase).count() > lower.length() * 0.5) {
+        /* Caps lock liczymy na oryginale; znormalizowana kopia służy tylko słownikowi. */
+        long letters = original.chars().filter(Character::isLetter).count();
+        long uppercaseLetters = original.chars().filter(Character::isUpperCase).count();
+        if (letters > 0 && uppercaseLetters > letters * 0.5) {
             score += 0.10;
         }
 
@@ -229,7 +251,7 @@ public class ModerationService {
                             decision.score(),
                             decision.reason(),
                             null,
-                            Instant.now(),
+                            clock.instant(),
                             null
                     )
             );
@@ -265,5 +287,46 @@ public class ModerationService {
         return repository.findTop50ByStatusOrderByCreatedAtAsc(
                 "needs_review"
         );
+    }
+
+    /**
+     * Jedna transakcja blokuje review, zmienia source of truth posta i zapisuje
+     * audyt oraz outbox. Dzięki temu nie istnieje stan „opublikowany bez śladu
+     * decyzji” ani podwójna decyzja dwóch moderatorów.
+     */
+    @Transactional
+    public ModerationReview decide(User moderator, UUID reviewId, ModerationDecisionRequest request) {
+        if (!moderator.canModerate()) {
+            throw new UnauthorizedException("Moderator role is required.");
+        }
+        ModerationReview review = repository.findByIdForDecision(reviewId)
+                .orElseThrow(() -> new NotFoundException("Moderation review not found."));
+        if (!"post".equals(review.getEntityType())) {
+            throw new IllegalStateException("Unsupported moderation entity type: " + review.getEntityType());
+        }
+        Post post = posts.findById(review.getEntityId())
+                .orElseThrow(() -> new NotFoundException("Moderated post not found."));
+        Instant now = clock.instant();
+        String decision = request.decision() == ModerationDecisionRequest.Decision.APPROVE
+                ? "approved" : "rejected";
+        review.decide(decision, moderator.getId(), request.reason(), now);
+
+        if (request.decision() == ModerationDecisionRequest.Decision.APPROVE) {
+            post.publish(now);
+            DomainEvent created = new DomainEvent(UUID.randomUUID(), NewsFeedTopics.POST_CREATED,
+                    post.getAuthor().getId(), post.getId(), now, Map.of(
+                    "authorId", post.getAuthor().getId().toString(),
+                    "postId", post.getId().toString(),
+                    "createdAt", post.getCreatedAt().toString()));
+            events.publish(NewsFeedTopics.POST_CREATED, post.getAuthor().getId().toString(), created);
+        } else {
+            post.hide(now);
+        }
+
+        auditLog.save(new ModerationAuditLog(UUID.randomUUID(), review.getId(), review.getEntityId(),
+                moderator.getId(), decision, request.reason(), now));
+        feedCache.evictGlobalFeed();
+        feedCache.evictPersonalizedFeed(post.getAuthor().getId());
+        return review;
     }
 }

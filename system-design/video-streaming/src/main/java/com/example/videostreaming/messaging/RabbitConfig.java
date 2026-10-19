@@ -8,6 +8,7 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.beans.factory.annotation.Value;
 
 @Configuration
 public class RabbitConfig {
@@ -27,6 +28,21 @@ public class RabbitConfig {
     @Bean
     Queue transcodingDlq(MessagingProperties props) {
         return QueueBuilder.durable(props.transcodingDlq()).build();
+    }
+
+    /**
+     * Retry nie może zajmować wątku consumera przez sleep. Wiadomość czeka w
+     * kolejce bez consumera, a po TTL RabbitMQ kieruje ją z powrotem do głównej
+     * kolejki transkodowania. To jest prosta, stała zwłoka; exponential backoff
+     * wymaga kilku kolejek lub opóźnionego exchange pluginu.
+     */
+    @Bean
+    Queue transcodingRetryQueue(MessagingProperties props) {
+        return QueueBuilder.durable(props.transcodingQueue() + ".retry")
+                .withArgument("x-message-ttl", props.initialRetryDelayMs())
+                .withArgument("x-dead-letter-exchange", props.exchange())
+                .withArgument("x-dead-letter-routing-key", props.transcodingRoutingKey())
+                .build();
     }
 
     @Bean
@@ -74,6 +90,13 @@ public class RabbitConfig {
     }
 
     @Bean
+    Binding transcodingRetryBinding(DirectExchange videoExchange, Queue transcodingRetryQueue,
+                                    MessagingProperties props) {
+        return BindingBuilder.bind(transcodingRetryQueue).to(videoExchange)
+                .with(props.transcodingRoutingKey() + ".retry");
+    }
+
+    @Bean
     Binding qoeBinding(DirectExchange videoExchange, Queue qoeQueue, MessagingProperties props) {
         return BindingBuilder.bind(qoeQueue).to(videoExchange).with(props.qoeRoutingKey());
     }
@@ -112,7 +135,8 @@ public class RabbitConfig {
 
     @Bean
     SimpleRabbitListenerContainerFactory rabbitListenerContainerFactory(ConnectionFactory connectionFactory,
-                                                                       Jackson2JsonMessageConverter converter) {
+                                                                       Jackson2JsonMessageConverter converter,
+                                                                       @Value("${spring.rabbitmq.listener.simple.auto-startup:true}") boolean autoStartup) {
         SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
         factory.setConnectionFactory(connectionFactory);
         factory.setMessageConverter(converter);
@@ -120,6 +144,9 @@ public class RabbitConfig {
         factory.setConcurrentConsumers(1);
         factory.setMaxConcurrentConsumers(4);
         factory.setPrefetchCount(1);
+        // Własna fabryka nie dziedziczy automatycznie tej właściwości Spring Boota.
+        // Jawne przekazanie flagi pozwala testom kontekstu pozostać wolnym od brokera.
+        factory.setAutoStartup(autoStartup);
         return factory;
     }
 }

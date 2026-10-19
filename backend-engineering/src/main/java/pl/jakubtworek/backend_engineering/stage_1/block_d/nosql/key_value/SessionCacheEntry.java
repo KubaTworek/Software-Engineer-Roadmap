@@ -39,7 +39,8 @@ public class SessionCacheEntry {
     }
 
     public boolean isExpired(Instant now) {
-        return now.isAfter(expiresAt);
+        // TTL boundaries are inclusive: at expiresAt the session is no longer valid.
+        return !now.isBefore(expiresAt);
     }
 
     public boolean hasRole(String role) {

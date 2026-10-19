@@ -1,4 +1,4 @@
-package pl.jakubtworek.backend_engineering.stage_2.block_c.workshop.src.main.java.com.example.demoapi.health;
+package com.example.demoapi.health;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;

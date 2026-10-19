@@ -39,4 +39,7 @@ public interface PaymentProviderClient {
      * @return odpowiedź providera z identyfikatorem płatności i URL checkoutu
      */
     PspPaymentResponse createPayment(PspPaymentRequest request);
+
+    /** Capture/refund/cancel również przekraczają granicę efektu zewnętrznego. */
+    PspOperationResponse execute(PspOperationRequest request);
 }

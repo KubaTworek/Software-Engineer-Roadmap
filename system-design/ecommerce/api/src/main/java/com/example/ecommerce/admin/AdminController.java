@@ -35,7 +35,29 @@ public class AdminController {
     private final MarketplaceService marketplace;
     private final WarehouseService warehouses;
     private final ReturnService returns;
-    public AdminController(CatalogService catalog, InventoryService inventory, OrderService orders, AdminAuditService audit, AdminAuditLogRepository auditLogs) { this.catalog=catalog; this.inventory=inventory; this.orders=orders; this.audit=audit; this.auditLogs=auditLogs; }
+    public AdminController(
+            CatalogService catalog,
+            InventoryService inventory,
+            OrderService orders,
+            AdminAuditService audit,
+            AdminAuditLogRepository auditLogs,
+            PromotionAdminService promotions,
+            DynamicPricingService pricing,
+            MarketplaceService marketplace,
+            WarehouseService warehouses,
+            ReturnService returns
+    ) {
+        this.catalog = catalog;
+        this.inventory = inventory;
+        this.orders = orders;
+        this.audit = audit;
+        this.auditLogs = auditLogs;
+        this.promotions = promotions;
+        this.pricing = pricing;
+        this.marketplace = marketplace;
+        this.warehouses = warehouses;
+        this.returns = returns;
+    }
     @PostMapping("/products")
     public CatalogDtos.ProductResponse createProduct(@AuthenticationPrincipal AppUser admin, @Valid @RequestBody CatalogDtos.CreateProductRequest request, HttpServletRequest httpRequest) {
         CatalogDtos.ProductResponse response = catalog.createProduct(request); audit.log(admin, "CREATE_PRODUCT", "Product", response.id().toString(), null, response, httpRequest); return response;

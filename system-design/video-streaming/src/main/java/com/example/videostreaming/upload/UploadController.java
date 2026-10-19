@@ -2,19 +2,18 @@ package com.example.videostreaming.upload;
 
 import com.example.videostreaming.catalog.Video;
 import com.example.videostreaming.catalog.VideoRepository;
-import com.example.videostreaming.messaging.EventPublisher;
-import com.example.videostreaming.messaging.VideoEvents;
 import com.example.videostreaming.storage.ObjectStorageService;
 import com.example.videostreaming.storage.StorageProperties;
 import com.example.videostreaming.transcoding.TranscodingJob;
 import com.example.videostreaming.transcoding.TranscodingJobRepository;
+import com.example.videostreaming.transcoding.TranscodingOutboxService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Instant;
 import java.util.UUID;
 
 import static com.example.videostreaming.upload.UploadDtos.*;
@@ -84,20 +83,20 @@ public class UploadController {
      * Po zakończeniu uploadu publikuje event TranscodingRequested,
      * który trafia do kolejki obsługiwanej przez workery.
      */
-    private final EventPublisher publisher;
+    private final TranscodingOutboxService outbox;
 
     public UploadController(VideoRepository videos,
                             UploadRepository uploads,
                             TranscodingJobRepository jobs,
                             ObjectStorageService storage,
                             StorageProperties props,
-                            EventPublisher publisher) {
+                            TranscodingOutboxService outbox) {
         this.videos = videos;
         this.uploads = uploads;
         this.jobs = jobs;
         this.storage = storage;
         this.props = props;
-        this.publisher = publisher;
+        this.outbox = outbox;
     }
 
     /**
@@ -206,8 +205,9 @@ public class UploadController {
      * Transkodowanie wykonuje osobny worker.
      */
     @PostMapping("/{uploadId}/complete")
+    @Transactional
     public CompleteUploadResponse complete(@PathVariable UUID videoId,
-                                           @PathVariable UUID uploadId) {
+                                           @PathVariable UUID uploadId) throws Exception {
         Video video = videos.findById(videoId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Video not found"));
 
@@ -222,6 +222,22 @@ public class UploadController {
          */
         if (!upload.getVideo().getId().equals(video.getId())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Upload does not belong to video");
+        }
+
+        /*
+         * Retry tego samego requestu nie tworzy drugiego joba. Object key jest
+         * unikalny dla uploadu i pełni tu rolę naturalnego klucza idempotencji.
+         */
+        if (upload.getStatus() == UploadStatus.COMPLETED) {
+            TranscodingJob existing = jobs.findBySourceObjectKey(upload.getObjectKey())
+                    .orElseThrow(() -> new IllegalStateException("Completed upload has no transcoding job"));
+            return new CompleteUploadResponse(upload.getId(), video.getId(), "COMPLETED", existing.getStatus().name());
+        }
+
+        ObjectStorageService.ObjectMetadata metadata = storage.metadata(upload.getObjectKey());
+        if (metadata.size() != upload.getSizeBytes()) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "Uploaded object size differs from the declared size");
         }
 
         /*
@@ -263,15 +279,8 @@ public class UploadController {
          *
          * Wartość attempt=1 oznacza pierwszą próbę przetwarzania.
          */
-        publisher.publishTranscodingRequested(
-                new VideoEvents.TranscodingRequested(
-                        job.getId(),
-                        video.getId(),
-                        upload.getObjectKey(),
-                        1,
-                        Instant.now()
-                )
-        );
+        // Job i intencja publikacji powstają w jednej transakcji PostgreSQL.
+        outbox.enqueue(job);
 
         return new CompleteUploadResponse(
                 upload.getId(),

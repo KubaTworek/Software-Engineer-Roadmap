@@ -1,9 +1,6 @@
 package pl.jakubtworek.marketplace.integration.kafka;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
-import pl.jakubtworek.marketplace.integration.outbox.OutboxEventMapper;
-import pl.jakubtworek.marketplace.shared.events.ApplicationEventBus;
 
 import java.util.UUID;
 
@@ -47,23 +44,7 @@ public class DlqReplayService {
      *
      * Po odtworzeniu DomainEvent serwis przekazuje event do handlerów aplikacyjnych.
      */
-    private final ApplicationEventBus eventBus;
-
-    /**
-     * Mapper odtwarzający DomainEvent z technicznego OutboxEvent.
-     *
-     * DLQ przechowuje KafkaEnvelope, więc najpierw zamieniamy envelope na OutboxEvent,
-     * a następnie OutboxEvent na właściwy DomainEvent.
-     */
-    private final OutboxEventMapper outboxEventMapper;
-
-    /**
-     * Mapper zamieniający KafkaEnvelope na OutboxEvent.
-     *
-     * Dzięki temu możemy wykorzystać istniejący OutboxEventMapper do deserializacji
-     * konkretnego eventu domenowego.
-     */
-    private final KafkaEnvelopeMapper envelopeMapper = new KafkaEnvelopeMapper();
+    private final KafkaMessagePublisher publisher;
 
     /**
      * Konstruktor używany przez Springa.
@@ -72,10 +53,9 @@ public class DlqReplayService {
      * Nie tworzymy ręcznie OutboxEventMapper ani KafkaEnvelopeMapper, żeby uniknąć
      * niespójności konfiguracji i problemów z testowaniem.
      */
-    public DlqReplayService(DlqEventRepository dlqRepository, ApplicationEventBus eventBus, ObjectMapper objectMapper) {
+    public DlqReplayService(DlqEventRepository dlqRepository, KafkaMessagePublisher publisher) {
         this.dlqRepository = dlqRepository;
-        this.eventBus = eventBus;
-        this.outboxEventMapper = new OutboxEventMapper(objectMapper);
+        this.publisher = publisher;
     }
 
     /**
@@ -100,11 +80,12 @@ public class DlqReplayService {
                 ));
 
         try {
-            var domainEvent = outboxEventMapper.toDomainEvent(
-                    envelopeMapper.toOutboxEvent(dlqEvent.envelope())
-            );
-
-            eventBus.publish(domainEvent);
+            /*
+             * Replay wraca przez broker i tę samą ścieżkę listener -> lokalna
+             * transakcja -> marker -> commit offsetu. Bezpośrednie wywołanie event busa
+             * omijało group coordination, retry, obserwowalność i idempotencję.
+             */
+            publisher.publish(dlqEvent.topic(), dlqEvent.envelope().aggregateId().toString(), dlqEvent.envelope());
 
             dlqRepository.save(dlqEvent.markReplayed());
         } catch (Exception e) {

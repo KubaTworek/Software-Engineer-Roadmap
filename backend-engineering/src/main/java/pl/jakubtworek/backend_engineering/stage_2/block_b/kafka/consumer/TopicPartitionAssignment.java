@@ -10,4 +10,12 @@ public record TopicPartitionAssignment(
         String topic,
         int partition
 ) {
+    public TopicPartitionAssignment {
+        if (topic == null || topic.isBlank()) {
+            throw new IllegalArgumentException("Topic cannot be empty");
+        }
+        if (partition < 0) {
+            throw new IllegalArgumentException("Partition cannot be negative");
+        }
+    }
 }

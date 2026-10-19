@@ -1,10 +1,10 @@
 package pl.jakubtworek.booking.controller.performance;
 
-import org.springframework.data.domain.Page;
 import org.springframework.web.bind.annotation.*;
 import pl.jakubtworek.booking.dto.EventStatsResponse;
 import pl.jakubtworek.booking.dto.ExplainAnalyzeResponse;
 import pl.jakubtworek.booking.dto.KeysetReservationPageResponse;
+import pl.jakubtworek.booking.dto.OffsetPageResponse;
 import pl.jakubtworek.booking.dto.ReservationListItemResponse;
 import pl.jakubtworek.booking.entity.ReservationStatus;
 import pl.jakubtworek.booking.service.SqlPerformanceService;
@@ -70,17 +70,19 @@ public class SqlPerformanceController {
      * CREATE INDEX idx_reservation_org_status_created_at
      * ON reservations(organization_id, status, created_at DESC);
      *
-     * Zwraca Page, więc Spring Data zwykle wykonuje także zapytanie COUNT.
+     * Serwis używa Page, więc Spring Data zwykle wykonuje także zapytanie COUNT.
      * Przy bardzo dużych tabelach COUNT może być osobnym kosztem.
+     * Kontroler mapuje go na własny stabilny kontrakt zamiast serializować PageImpl.
      */
     @GetMapping("/api/organizations/{organizationId}/reservations")
-    public Page<ReservationListItemResponse> organizationReservations(
+    public OffsetPageResponse<ReservationListItemResponse> organizationReservations(
             @PathVariable UUID organizationId,
             @RequestParam ReservationStatus status,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size
     ) {
-        return sqlPerformanceService.organizationReservations(organizationId, status, page, size);
+        return OffsetPageResponse.from(
+                sqlPerformanceService.organizationReservations(organizationId, status, page, size));
     }
 
     /**
@@ -96,12 +98,13 @@ public class SqlPerformanceController {
      * Ten endpoint warto porównać z wariantem keyset.
      */
     @GetMapping("/api/customers/{customerId}/reservations")
-    public Page<ReservationListItemResponse> customerReservationsOffset(
+    public OffsetPageResponse<ReservationListItemResponse> customerReservationsOffset(
             @PathVariable UUID customerId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size
     ) {
-        return sqlPerformanceService.customerReservationsOffset(customerId, page, size);
+        return OffsetPageResponse.from(
+                sqlPerformanceService.customerReservationsOffset(customerId, page, size));
     }
 
     /**
@@ -119,10 +122,8 @@ public class SqlPerformanceController {
      * - lepsze wykorzystanie indeksu,
      * - brak kosztownego OFFSET.
      *
-     * Uwaga:
-     * aktualna metoda przekazuje do serwisu tylko afterCreatedAt, ignorując afterId.
-     * Jeśli sortowanie jest po createdAt desc, id desc, pełny cursor powinien
-     * zawierać oba pola.
+     * Obie części kursora są obowiązkowe razem. createdAt wyznacza pozycję
+     * w indeksie, a id rozstrzyga remis i zapobiega pominięciu rekordów.
      */
     @GetMapping("/api/customers/{customerId}/reservations/keyset")
     public KeysetReservationPageResponse customerReservationsKeyset(
@@ -131,7 +132,7 @@ public class SqlPerformanceController {
             @RequestParam(required = false) UUID afterId,
             @RequestParam(defaultValue = "50") int size
     ) {
-        return sqlPerformanceService.customerReservationsKeyset(customerId, afterCreatedAt, size);
+        return sqlPerformanceService.customerReservationsKeyset(customerId, afterCreatedAt, afterId, size);
     }
 
     /**

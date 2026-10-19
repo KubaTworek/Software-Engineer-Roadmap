@@ -16,6 +16,19 @@ public record RegisteredSchema(
         String schemaDefinition,
         Instant registeredAt
 ) {
+    public RegisteredSchema {
+        if (subject == null || subject.isBlank() || eventType == null || eventType.isBlank()) {
+            throw new IllegalArgumentException("Schema subject and event type cannot be empty");
+        }
+        if (version <= 0) {
+            throw new IllegalArgumentException("Schema version must be positive");
+        }
+        if (compatibilityMode == null || schemaDefinition == null || schemaDefinition.isBlank()
+                || registeredAt == null) {
+            throw new IllegalArgumentException("Schema metadata and definition are required");
+        }
+    }
+
     /**
      * Returns the registry subject name.
      *

@@ -19,6 +19,10 @@ public class StorageBlob {
     private long refCount;
     @Column(name = "encryption_key_id")
     private String encryptionKeyId;
+    @Column(name = "encrypted_data_key", columnDefinition = "TEXT")
+    private String encryptedDataKey;
+    @Column(name = "key_version")
+    private String keyVersion;
     @Column(name = "storage_class", nullable = false)
     private String storageClass;
     @Column(name = "created_at", nullable = false)
@@ -45,12 +49,28 @@ public class StorageBlob {
         this.updatedAt = Instant.now();
     }
 
+    public long decrementRefCount() {
+        if (refCount == 0) {
+            throw new IllegalStateException("Blob reference count is already zero");
+        }
+        refCount--;
+        updatedAt = Instant.now();
+        return refCount;
+    }
+
     public UUID getId() { return id; }
     public String getSha256() { return sha256; }
     public String getObjectKey() { return objectKey; }
     public long getSizeBytes() { return sizeBytes; }
     public long getRefCount() { return refCount; }
     public String getEncryptionKeyId() { return encryptionKeyId; }
+    public String getEncryptedDataKey() { return encryptedDataKey; }
+    public String getKeyVersion() { return keyVersion; }
+    public void rotateDataKeyEnvelope(String encryptedDataKey, String keyVersion) {
+        this.encryptedDataKey = encryptedDataKey;
+        this.keyVersion = keyVersion;
+        this.updatedAt = Instant.now();
+    }
     public String getStorageClass() { return storageClass; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

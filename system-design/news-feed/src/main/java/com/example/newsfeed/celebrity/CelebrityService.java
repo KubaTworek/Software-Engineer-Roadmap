@@ -1,11 +1,13 @@
 package com.example.newsfeed.celebrity;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.Clock;
 import java.util.Collection;
 import java.util.Set;
 import java.util.UUID;
@@ -63,16 +65,32 @@ public class CelebrityService {
     private final long threshold;
 
     /**
+     * Próg zejścia jest niższy od progu wejścia. Bez histerezy autor oscylujący
+     * wokół 100 000 obserwujących przełączałby strategię push/pull przy każdym
+     * follow/unfollow, generując kosztowne przebudowy i niespójne oczekiwania.
+     */
+    private final long demotionThreshold;
+    private final Clock clock;
+
+    /**
      * Wstrzyknięcie repozytoriów i progu celebrity z konfiguracji.
      */
+    @Autowired
     public CelebrityService(
             CelebrityAuthorRepository celebrityAuthorRepository,
             CelebrityPostRepository celebrityPostRepository,
-            @Value("${newsfeed.fanout.celebrity-threshold:100000}") long threshold
+            @Value("${newsfeed.fanout.celebrity-threshold:100000}") long threshold,
+            Clock clock
     ) {
         this.celebrityAuthorRepository = celebrityAuthorRepository;
         this.celebrityPostRepository = celebrityPostRepository;
         this.threshold = threshold;
+        this.demotionThreshold = Math.max(0, Math.round(threshold * 0.80));
+        this.clock = clock;
+    }
+
+    public CelebrityService(CelebrityAuthorRepository authors, CelebrityPostRepository posts, long threshold) {
+        this(authors, posts, threshold, Clock.systemUTC());
     }
 
     /**
@@ -95,24 +113,21 @@ public class CelebrityService {
          *
          * Drugi warunek chroni przed wielokrotnym zapisem tego samego autora.
          */
-        if (followerCount >= threshold && !celebrityAuthorRepository.existsById(authorId)) {
-            Instant now = Instant.now();
+        Instant now = clock.instant();
+        var current = celebrityAuthorRepository.findById(authorId);
 
-            /*
-             * Zapisujemy autora jako celebrity.
-             *
-             * followerCount zapisujemy jako snapshot,
-             * czyli informację, z jaką liczbą followersów autor został oznaczony.
-             */
-            celebrityAuthorRepository.save(
-                    new CelebrityAuthor(
-                            authorId,
-                            followerCount,
-                            now,
-                            now
-                    )
-            );
+        if (current.isEmpty() && followerCount >= threshold) {
+            celebrityAuthorRepository.save(new CelebrityAuthor(authorId, followerCount, now, now));
+            return;
         }
+
+        if (current.isPresent() && followerCount < demotionThreshold) {
+            celebrityAuthorRepository.delete(current.get());
+            celebrityPostRepository.deleteByAuthorId(authorId);
+            return;
+        }
+
+        current.ifPresent(author -> author.refreshFollowerCount(followerCount, now));
     }
 
     /**

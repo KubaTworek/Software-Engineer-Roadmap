@@ -41,6 +41,34 @@ services:
       timeout: 3s
       retries: 20
 
+  notification-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: notifications
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+    ports:
+      - "5436:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d notifications"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  payment-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: payments
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+    ports:
+      - "5437:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d payments"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   redis:
     image: redis:7-alpine
     ports:
@@ -48,12 +76,14 @@ services:
 
   rabbitmq:
     image: rabbitmq:3-management-alpine
+    command: ["sh", "-c", "rabbitmq-plugins enable --offline rabbitmq_prometheus && rabbitmq-server"]
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-guest}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-guest}
     ports:
       - "5672:5672"
       - "15672:15672"
+      - "15692:15692"
 
   prometheus:
     image: prom/prometheus:v2.55.1
@@ -79,7 +109,18 @@ services:
       - ./observability/tempo/tempo.yml:/etc/tempo.yml:ro
     ports:
       - "3200:3200"
+      - "4320:4318"
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.113.0
+    command: ["--config=/etc/otelcol/config.yml"]
+    volumes:
+      - ./observability/otel-collector.yml:/etc/otelcol/config.yml:ro
+    ports:
+      - "4317:4317"
       - "4318:4318"
+    depends_on:
+      - tempo
 
   jaeger:
     image: jaegertracing/all-in-one:1.62.0
@@ -115,7 +156,7 @@ services:
       dockerfile: catalog-service/Dockerfile
     environment:
       SERVER_PORT: 8081
-      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
+      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://otel-collector:4318/v1/traces
       MANAGEMENT_TRACING_SAMPLING_PROBABILITY: 1.0
       LOG_LEVEL: INFO
       SPRING_DATASOURCE_URL: jdbc:postgresql://catalog-db:5432/catalog
@@ -137,7 +178,7 @@ services:
       dockerfile: reservation-service/Dockerfile
     environment:
       SERVER_PORT: 8082
-      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
+      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://otel-collector:4318/v1/traces
       MANAGEMENT_TRACING_SAMPLING_PROBABILITY: 1.0
       LOG_LEVEL: INFO
       SPRING_DATASOURCE_URL: jdbc:postgresql://reservation-db:5432/reservation
@@ -159,7 +200,7 @@ services:
       dockerfile: order-service/Dockerfile
     environment:
       SERVER_PORT: 8083
-      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
+      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://otel-collector:4318/v1/traces
       MANAGEMENT_TRACING_SAMPLING_PROBABILITY: 1.0
       LOG_LEVEL: INFO
       SPRING_DATASOURCE_URL: jdbc:postgresql://order-db:5432/orders
@@ -187,13 +228,19 @@ services:
       dockerfile: payment-mock-service/Dockerfile
     environment:
       SERVER_PORT: 8084
-      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
+      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://otel-collector:4318/v1/traces
       MANAGEMENT_TRACING_SAMPLING_PROBABILITY: 1.0
       LOG_LEVEL: INFO
       PAYMENT_FAILURE_RATE: 0.0
       PAYMENT_MAX_DELAY_MS: 300
+      SPRING_DATASOURCE_URL: jdbc:postgresql://payment-db:5432/payments
+      SPRING_DATASOURCE_USERNAME: app
+      SPRING_DATASOURCE_PASSWORD: app
     ports:
       - "8084:8084"
+    depends_on:
+      payment-db:
+        condition: service_healthy
 
   notification-service:
     profiles: ["apps"]
@@ -202,15 +249,20 @@ services:
       dockerfile: notification-service/Dockerfile
     environment:
       SERVER_PORT: 8085
-      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
+      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://otel-collector:4318/v1/traces
       MANAGEMENT_TRACING_SAMPLING_PROBABILITY: 1.0
       LOG_LEVEL: INFO
       SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_DATASOURCE_URL: jdbc:postgresql://notification-db:5432/notifications
+      SPRING_DATASOURCE_USERNAME: app
+      SPRING_DATASOURCE_PASSWORD: app
     ports:
       - "8085:8085"
     depends_on:
       rabbitmq:
         condition: service_started
+      notification-db:
+        condition: service_healthy
 
   api-gateway:
     profiles: ["apps"]
@@ -219,7 +271,7 @@ services:
       dockerfile: api-gateway/Dockerfile
     environment:
       SERVER_PORT: 8080
-      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://tempo:4318/v1/traces
+      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://otel-collector:4318/v1/traces
       MANAGEMENT_TRACING_SAMPLING_PROBABILITY: 1.0
       LOG_LEVEL: INFO
       CATALOG_SERVICE_URL: http://catalog-service:8081
@@ -230,8 +282,10 @@ services:
       RATE_LIMIT_ANON_CAPACITY: 60
       RATE_LIMIT_ANON_REFILL_TOKENS: 60
       RATE_LIMIT_ANON_REFILL_PERIOD: 60s
-      RATE_LIMIT_API_KEY_CAPACITY: 600
-      RATE_LIMIT_API_KEY_REFILL_TOKENS: 600
+      # Lokalny profil k6 mierzy downstream, więc techniczny API key ma wysoki limit.
+      # Limit anonimowy nadal pozwala osobno obserwować kontrolowane odpowiedzi 429.
+      RATE_LIMIT_API_KEY_CAPACITY: 1000000
+      RATE_LIMIT_API_KEY_REFILL_TOKENS: 1000000
       RATE_LIMIT_API_KEY_REFILL_PERIOD: 60s
     ports:
       - "8080:8080"
@@ -258,6 +312,9 @@ services:
       NOTIFICATION_URL: http://notification-service:8085
       RABBITMQ_API_URL: http://rabbitmq:15672/api
       RABBITMQ_AUTH: guest:guest
+      # Testy przepustowości używają jawnej tożsamości technicznej. Ich celem jest
+      # pomiar usług; zachowanie 429 ma osobny scenariusz rate-limitera.
+      API_KEY: load-test
     depends_on:
       api-gateway:
         condition: service_started

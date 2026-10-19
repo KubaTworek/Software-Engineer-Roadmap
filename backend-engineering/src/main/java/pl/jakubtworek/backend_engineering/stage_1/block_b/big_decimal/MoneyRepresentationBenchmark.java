@@ -1,10 +1,13 @@
 package pl.jakubtworek.backend_engineering.stage_1.block_b.big_decimal;
 
 import org.openjdk.jmh.annotations.*;
+import pl.jakubtworek.backend_engineering.stage_1.block_b.benchmarking.BenchmarkDimension;
+import pl.jakubtworek.backend_engineering.stage_1.block_b.benchmarking.Measures;
 
 import java.math.BigDecimal;
 import java.util.concurrent.TimeUnit;
 
+@Measures(BenchmarkDimension.ALLOCATION)
 @BenchmarkMode(Mode.Throughput)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 @Warmup(iterations = 5, time = 1)

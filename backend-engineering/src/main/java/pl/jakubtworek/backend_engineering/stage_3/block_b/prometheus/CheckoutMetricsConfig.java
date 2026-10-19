@@ -1,5 +1,8 @@
 package pl.jakubtworek.backend_engineering.stage_3.block_b.prometheus;
 
+import io.micrometer.core.instrument.Meter;
+import io.micrometer.core.instrument.config.MeterFilter;
+import io.micrometer.core.instrument.distribution.DistributionStatisticConfig;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 

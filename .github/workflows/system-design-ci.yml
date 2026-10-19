@@ -1,0 +1,114 @@
+name: System Design CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "system-design/**"
+      - ".github/workflows/system-design-ci.yml"
+  push:
+    paths:
+      - "system-design/**"
+      - ".github/workflows/system-design-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  fast-tests:
+    name: Fast tests — ${{ matrix.system }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        system:
+          - chat-system
+          - ecommerce
+          - file-storage
+          - metrics-logging-system
+          - news-feed
+          - notification-system
+          - payment-system
+          - rate-limiter
+          - ride-sharing
+          - search-autocomplete
+          - url-shortener
+          - video-streaming
+    defaults:
+      run:
+        working-directory: system-design/${{ matrix.system }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Make Maven Wrapper executable
+        run: chmod +x mvnw
+      - name: Verify fast, infrastructure-independent tests
+        run: ./mvnw --batch-mode --no-transfer-progress verify
+      - name: Publish test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-${{ matrix.system }}
+          path: system-design/${{ matrix.system }}/**/target/surefire-reports/**
+          if-no-files-found: ignore
+
+  infrastructure-tests:
+    name: Infrastructure contract — ${{ matrix.system }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        system:
+          - chat-system
+          - ecommerce
+          - file-storage
+          - metrics-logging-system
+          - news-feed
+          - notification-system
+          - payment-system
+          - rate-limiter
+          - ride-sharing
+          - url-shortener
+          - video-streaming
+    defaults:
+      run:
+        working-directory: system-design/${{ matrix.system }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Make Maven Wrapper executable
+        run: chmod +x mvnw
+      - name: Verify contracts against Testcontainers
+        run: ./mvnw --batch-mode --no-transfer-progress -Pinfrastructure-tests verify
+      - name: Reject missing or skipped infrastructure contracts
+        shell: pwsh
+        run: ../../scripts/check-infrastructure-reports.ps1
+      - name: Publish infrastructure reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failsafe-${{ matrix.system }}
+          path: |
+            system-design/${{ matrix.system }}/**/target/failsafe-reports/**
+            system-design/${{ matrix.system }}/**/target/surefire-reports/**
+          if-no-files-found: ignore
+
+  repository-hygiene:
+    name: Repository hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Reject whitespace errors
+        run: git diff --check HEAD^ HEAD

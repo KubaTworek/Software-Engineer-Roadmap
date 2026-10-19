@@ -2,6 +2,7 @@ package pl.jakubtworek.booking.controller;
 
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import pl.jakubtworek.booking.dto.ReservationCreateRequest;
 import pl.jakubtworek.booking.dto.ReservationResponse;
@@ -87,6 +88,7 @@ public class ReservationController {
      */
     @PostMapping("/events/{eventId}/reservations")
     @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("@reservationSecurity.canCreate(authentication, #eventId, #request.customerEmail())")
     public ReservationResponse create(@PathVariable UUID eventId,
                                       @Valid @RequestBody ReservationCreateRequest request) {
         return reservationService.create(eventId, request);
@@ -107,6 +109,7 @@ public class ReservationController {
      * powinna zostać zwrócona odpowiedź konfliktu, np. HTTP 409.
      */
     @PostMapping("/reservations/{reservationId}/confirm")
+    @PreAuthorize("@reservationSecurity.canManage(authentication, #reservationId)")
     public ReservationResponse confirm(@PathVariable UUID reservationId) {
         return reservationService.confirm(reservationId);
     }
@@ -140,6 +143,7 @@ public class ReservationController {
      * - pozwolić klientowi odpytać status rezerwacji osobnym endpointem.
      */
     @PostMapping("/reservations/{reservationId}/confirm-async")
+    @PreAuthorize("@reservationSecurity.canManage(authentication, #reservationId)")
     public ReservationResponse confirmAsync(
             @PathVariable UUID reservationId,
             @RequestParam(defaultValue = "APPROVED") PaymentScenario paymentScenario
@@ -160,6 +164,7 @@ public class ReservationController {
      * - nie pozwolić na anulowanie rezerwacji w niepoprawnym stanie.
      */
     @PostMapping("/reservations/{reservationId}/cancel")
+    @PreAuthorize("@reservationSecurity.canManage(authentication, #reservationId)")
     public ReservationResponse cancel(@PathVariable UUID reservationId) {
         return reservationService.cancel(reservationId);
     }
@@ -177,6 +182,7 @@ public class ReservationController {
      * Brak rezerwacji o podanym ID powinien zostać zmapowany na HTTP 404.
      */
     @GetMapping("/reservations/{reservationId}")
+    @PreAuthorize("@reservationSecurity.canView(authentication, #reservationId)")
     public ReservationResponse get(@PathVariable UUID reservationId) {
         return reservationService.get(reservationId);
     }

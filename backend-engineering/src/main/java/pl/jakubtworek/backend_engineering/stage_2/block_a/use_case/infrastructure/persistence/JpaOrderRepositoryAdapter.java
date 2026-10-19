@@ -23,9 +23,7 @@ public final class JpaOrderRepositoryAdapter implements OrderRepository {
 
     @Override
     public Optional<Order> findById(OrderId id) {
-        throw new UnsupportedOperationException(
-                "Mapping from persistence entity to full aggregate omitted for brevity"
-        );
+        return jpaRepository.findById(id.value()).map(mapper::toDomain);
     }
 
     @Override

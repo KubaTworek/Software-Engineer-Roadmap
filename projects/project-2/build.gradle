@@ -1,7 +1,8 @@
 plugins {
     id 'java'
-    id 'org.springframework.boot' version '3.3.5'
+    id 'org.springframework.boot' version '4.0.3'
     id 'io.spring.dependency-management' version '1.1.6'
+    id 'com.google.protobuf' version '0.9.4'
 }
 
 group = 'pl.jakubtworek'
@@ -32,28 +33,54 @@ configurations {
 }
 
 dependencies {
-    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
-    implementation 'org.springframework.kafka:spring-kafka'
-    implementation 'org.flywaydb:flyway-core'
+    implementation 'org.springframework.boot:spring-boot-starter-kafka'
+    implementation 'org.springframework.boot:spring-boot-starter-graphql'
+    implementation 'org.springframework.boot:spring-boot-starter-websocket'
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
+    implementation 'org.springframework.boot:spring-boot-starter-flyway'
     implementation 'org.flywaydb:flyway-database-postgresql'
     implementation 'org.postgresql:postgresql'
-    implementation 'com.fasterxml.jackson.core:jackson-databind'
+    implementation 'tools.jackson.core:jackson-databind'
+    implementation 'io.grpc:grpc-netty-shaded:1.83.1'
+    implementation 'io.grpc:grpc-protobuf:1.83.1'
+    implementation 'io.grpc:grpc-stub:1.83.1'
+    compileOnly 'org.apache.tomcat:annotations-api:6.0.53'
 
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+    testImplementation 'org.springframework.boot:spring-boot-restclient'
     testImplementation 'org.springframework.kafka:spring-kafka-test'
+    testImplementation 'org.springframework.graphql:spring-graphql-test'
+    testImplementation 'io.grpc:grpc-inprocess:1.83.1'
+    testImplementation platform('org.testcontainers:testcontainers-bom:1.21.4')
     testImplementation 'org.testcontainers:junit-jupiter'
     testImplementation 'org.testcontainers:postgresql'
     testImplementation 'org.testcontainers:kafka'
+    testImplementation 'com.tngtech.archunit:archunit-junit5:1.3.0'
+}
+
+protobuf {
+    protoc { artifact = 'com.google.protobuf:protoc:3.25.8' }
+    plugins { grpc { artifact = 'io.grpc:protoc-gen-grpc-java:1.83.1' } }
+    generateProtoTasks { all()*.plugins { grpc {} } }
 }
 
 tasks.named('test') {
     useJUnitPlatform()
+}
+
+tasks.withType(JavaCompile).configureEach {
+    // W kompendium ostrzeżenia migracyjne są sygnałem utraty kontraktu, a nie
+    // szumem do ukrycia. CI kompiluje więc również testy z pełnym lintem.
+    options.compilerArgs += ['-Xlint:deprecation', '-Xlint:unchecked']
 }
 
 tasks.register('integrationTest', Test) {
@@ -64,4 +91,14 @@ tasks.register('integrationTest', Test) {
     classpath = sourceSets.integrationTest.runtimeClasspath
     shouldRunAfter test
     useJUnitPlatform()
+    useJUnitPlatform { excludeTags 'cdc' }
+}
+
+tasks.register('cdcIntegrationTest', Test) {
+    description = 'Runs the real PostgreSQL -> Debezium Connect -> Kafka CDC contract.'
+    group = 'verification'
+    testClassesDirs = sourceSets.integrationTest.output.classesDirs
+    classpath = sourceSets.integrationTest.runtimeClasspath
+    shouldRunAfter integrationTest
+    useJUnitPlatform { includeTags 'cdc' }
 }

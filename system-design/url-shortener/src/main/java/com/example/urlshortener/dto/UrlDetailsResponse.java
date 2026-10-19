@@ -12,6 +12,7 @@ public record UrlDetailsResponse(
     Instant expiresAt,
     Instant createdAt,
     Instant updatedAt,
+    long version,
     String blockedReason,
     Instant blockedAt
 ) {

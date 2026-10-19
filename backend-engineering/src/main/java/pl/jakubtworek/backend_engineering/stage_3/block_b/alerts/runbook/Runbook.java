@@ -39,6 +39,19 @@ public final class Runbook {
         if (this.firstActions.isEmpty()) {
             throw new IllegalArgumentException("runbook must contain at least one first action");
         }
+
+        for (int index = 0; index < this.firstActions.size(); index++) {
+            RunbookStep step = Objects.requireNonNull(
+                    this.firstActions.get(index),
+                    "firstActions must not contain null"
+            );
+            int expectedNumber = index + 1;
+            if (step.number() != expectedNumber) {
+                throw new IllegalArgumentException(
+                        "runbook steps must be numbered consecutively from 1; expected " + expectedNumber
+                );
+            }
+        }
     }
 
     public IncidentType incidentType() {
@@ -78,6 +91,7 @@ public final class Runbook {
 
         for (String value : values) {
             requireNonBlank(value, fieldName + " item");
+            requireSingleLine(value, fieldName + " item");
         }
 
         return List.copyOf(values);
@@ -88,5 +102,11 @@ public final class Runbook {
             throw new IllegalArgumentException(fieldName + " must not be blank");
         }
         return value;
+    }
+
+    private static void requireSingleLine(String value, String fieldName) {
+        if (value.indexOf('\n') >= 0 || value.indexOf('\r') >= 0) {
+            throw new IllegalArgumentException(fieldName + " must be a single line");
+        }
     }
 }

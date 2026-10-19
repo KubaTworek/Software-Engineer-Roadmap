@@ -35,7 +35,7 @@ Po znalezieniu `correlationId`:
 
 ## Reakcja
 
-- Jeżeli wolny jest Payment Service: sprawdź circuit breaker i degradację do `PAYMENT_PENDING`.
+- Jeżeli wolny jest Payment Service: sprawdź circuit breaker, `PAYMENT_UNKNOWN`, lookup i nasycenie bulkheadu.
 - Jeżeli wolna jest baza: sprawdź Hikari pool, liczbę aktywnych połączeń i wolne zapytania.
 - Jeżeli wolny jest Redis: sprawdź cache hit ratio i logi `Redis cache unavailable`.
 - Jeżeli problem dotyczy tylko jednego endpointu: ogranicz ruch albo dodaj cache/degradację.

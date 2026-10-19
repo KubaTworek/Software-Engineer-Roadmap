@@ -57,15 +57,19 @@ public class JdbcPaymentRepository implements PaymentRepository {
                     amount,
                     currency,
                     status,
+                    provider_operation_id,
+                    uncertainty_reason,
                     created_at,
                     updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, now(), now())
+                VALUES (?, ?, ?, ?, ?, ?, ?, now(), now())
                 ON CONFLICT (id) DO UPDATE SET
                     order_id = EXCLUDED.order_id,
                     amount = EXCLUDED.amount,
                     currency = EXCLUDED.currency,
                     status = EXCLUDED.status,
+                    provider_operation_id = EXCLUDED.provider_operation_id,
+                    uncertainty_reason = EXCLUDED.uncertainty_reason,
                     updated_at = now()
                 """,
                 payment.id().value(),
@@ -73,6 +77,8 @@ public class JdbcPaymentRepository implements PaymentRepository {
                 payment.amount().amount(),
                 payment.amount().currency().getCurrencyCode(),
                 payment.status().name()
+                , payment.providerOperationId()
+                , payment.uncertaintyReason()
         );
 
         return payment;
@@ -92,7 +98,9 @@ public class JdbcPaymentRepository implements PaymentRepository {
                             order_id,
                             amount,
                             currency,
-                            status
+                            status,
+                            provider_operation_id,
+                            uncertainty_reason
                         FROM payment.payments
                         WHERE order_id = ?
                         """,
@@ -101,7 +109,9 @@ public class JdbcPaymentRepository implements PaymentRepository {
                         rs.getObject("order_id", UUID.class),
                         rs.getBigDecimal("amount"),
                         rs.getString("currency"),
-                        rs.getString("status")
+                        rs.getString("status"),
+                        rs.getString("provider_operation_id"),
+                        rs.getString("uncertainty_reason")
                 ),
                 orderId
         );
@@ -119,7 +129,9 @@ public class JdbcPaymentRepository implements PaymentRepository {
                         row.amount(),
                         Currency.getInstance(row.currency())
                 ),
-                PaymentStatus.valueOf(row.status())
+                PaymentStatus.valueOf(row.status()),
+                row.providerOperationId(),
+                row.uncertaintyReason()
         );
         return Optional.of(payment);
     }
@@ -135,7 +147,9 @@ public class JdbcPaymentRepository implements PaymentRepository {
             UUID orderId,
             java.math.BigDecimal amount,
             String currency,
-            String status
+            String status,
+            String providerOperationId,
+            String uncertaintyReason
     ) {
     }
 }

@@ -3,6 +3,8 @@ package pl.jakubtworek.backend_engineering.stage_3.block_b.tracing;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.context.Scope;
 
+import java.util.Objects;
+
 /**
  * Represents a started span and its context scope.
  *
@@ -15,8 +17,8 @@ public final class SpanScope implements AutoCloseable {
     private boolean closed;
 
     public SpanScope(Span span, Scope scope) {
-        this.span = span;
-        this.scope = scope;
+        this.span = Objects.requireNonNull(span, "span must not be null");
+        this.scope = Objects.requireNonNull(scope, "scope must not be null");
     }
 
     public Span span() {
@@ -24,7 +26,7 @@ public final class SpanScope implements AutoCloseable {
     }
 
     @Override
-    public void close() {
+    public synchronized void close() {
         if (!closed) {
             try {
                 scope.close();

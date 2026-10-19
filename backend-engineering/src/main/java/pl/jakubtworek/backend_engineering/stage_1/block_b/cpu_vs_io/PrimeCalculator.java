@@ -27,7 +27,8 @@ public final class PrimeCalculator {
             return false;
         }
 
-        for (int divisor = 2; divisor * divisor <= value; divisor++) {
+        // Division avoids integer overflow for candidates close to Integer.MAX_VALUE.
+        for (int divisor = 2; divisor <= value / divisor; divisor++) {
             if (value % divisor == 0) {
                 return false;
             }

@@ -1,4 +1,20 @@
-# Case 8 — Lock contention: `synchronized` vs `AtomicLong` vs `LongAdder`
+# lock contention
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** lock contention.
+> - **Typowy błąd:** Dodawanie workerów do sekcji, którą i tak serializuje jeden lock.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** `AtomicCounter` = `correct`.
+> - **Granica:** Wynik eksperymentu opisuje tę maszynę i workload; nie jest uniwersalną liczbą produkcyjną.
+<!-- material-card:end -->
+
+## Case 8 — Lock contention: `synchronized` vs `AtomicLong` vs `LongAdder`
+
+
 
 ## Wprowadzenie
 
@@ -32,7 +48,7 @@ W rzeczywistości:
 
 ---
 
-# Dlaczego współdzielony licznik jest trudny
+## Dlaczego współdzielony licznik jest trudny
 
 Problem polega na tym, że:
 
@@ -56,7 +72,7 @@ I właśnie tutaj zaczynają się kompromisy wydajnościowe.
 
 ---
 
-# `synchronized` — klasyczny monitor JVM
+## `synchronized` — klasyczny monitor JVM
 
 Najbardziej klasyczne rozwiązanie:
 
@@ -88,7 +104,7 @@ Przy wysokiej kontencji:
 
 ---
 
-# Monitor contention
+## Monitor contention
 
 Jeżeli wiele wątków konkuruje o ten sam monitor:
 - część z nich zostaje zablokowana,
@@ -110,7 +126,7 @@ Czas jest tracony na:
 
 ---
 
-# `AtomicLong` — lock-free, ale nie contention-free
+## `AtomicLong` — lock-free, ale nie contention-free
 
 `AtomicLong` wygląda atrakcyjnie, ponieważ:
 - nie używa monitorów,
@@ -134,7 +150,7 @@ To oznacza:
 
 ---
 
-# Problem CAS contention
+## Problem CAS contention
 
 Przy dużej liczbie rdzeni:
 - wszystkie wątki nadal walczą o tę samą lokalizację pamięci.
@@ -154,7 +170,7 @@ Dlatego:
 
 ---
 
-# Cache coherence i shared memory
+## Cache coherence i shared memory
 
 To bardzo ważny aspekt.
 
@@ -172,7 +188,7 @@ To właśnie dlatego:
 
 ---
 
-# `LongAdder` — inna filozofia
+## `LongAdder` — inna filozofia
 
 `LongAdder` został zaprojektowany specjalnie dla:
 - wysokiej częstotliwości aktualizacji,
@@ -192,7 +208,7 @@ To podejście nazywa się często:
 
 ---
 
-# Dlaczego `LongAdder` skaluje się lepiej
+## Dlaczego `LongAdder` skaluje się lepiej
 
 Zamiast:
 
@@ -218,7 +234,7 @@ W efekcie:
 
 ---
 
-# Dlaczego `LongAdder` nie jest zawsze lepszy
+## Dlaczego `LongAdder` nie jest zawsze lepszy
 
 To bardzo ważne.
 
@@ -244,7 +260,7 @@ Dlatego:
 
 ---
 
-# `LongAdder` a consistency
+## `LongAdder` a consistency
 
 `AtomicLong` daje:
 - pojedynczą spójną wartość atomową.
@@ -270,7 +286,7 @@ może być niewystarczające.
 
 ---
 
-# Dlaczego problem rośnie wraz z liczbą rdzeni
+## Dlaczego problem rośnie wraz z liczbą rdzeni
 
 Na małej liczbie wątków:
 - różnice bywają minimalne.
@@ -292,7 +308,7 @@ I właśnie wtedy:
 
 ---
 
-# JFR i contention profiling
+## JFR i contention profiling
 
 Ten case najlepiej analizować przez:
 ## JFR
@@ -316,7 +332,7 @@ W JFR warto obserwować:
 
 ---
 
-# CAS też może być bottleneckiem
+## CAS też może być bottleneckiem
 
 To bardzo częste nieporozumienie.
 
@@ -338,7 +354,7 @@ Dlatego:
 
 ---
 
-# False sharing
+## False sharing
 
 W zaawansowanych scenariuszach pojawia się również:
 ## false sharing
@@ -352,7 +368,7 @@ czyli sytuacja, w której:
 
 ---
 
-# Najważniejsza intuicja praktyczna
+## Najważniejsza intuicja praktyczna
 
 Najbardziej praktyczny wniosek brzmi:
 
@@ -364,7 +380,7 @@ I właśnie dlatego:
 
 ---
 
-# Najważniejsze wnioski
+## Najważniejsze wnioski
 
 Najbardziej użyteczny model mentalny wygląda tak:
 

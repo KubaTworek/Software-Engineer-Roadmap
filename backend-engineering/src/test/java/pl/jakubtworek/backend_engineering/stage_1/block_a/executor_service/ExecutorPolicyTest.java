@@ -1,9 +1,11 @@
 package pl.jakubtworek.backend_engineering.stage_1.block_a.executor_service;
 
 import org.junit.jupiter.api.Test;
-import pl.jakubtworek.backend_engineering.stage_1.block_a.executor_service.ExecutorConfigurations;
-
-import java.util.concurrent.*;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -23,7 +25,7 @@ class ExecutorPolicyTest {
      * new tasks should be rejected.
      */
     @Test
-    void abortPolicy_shouldRejectWhenQueueFull() {
+    void abortPolicyShouldRejectWhenQueueIsFull() throws InterruptedException {
 
         ThreadPoolExecutor executor =
                 ExecutorConfigurations.boundedAbortPolicy(
@@ -32,17 +34,19 @@ class ExecutorPolicyTest {
                         1  // queue capacity
                 );
 
-        // 1️⃣ Occupy the single worker thread
-        executor.execute(() -> sleep(500));
+        CountDownLatch workerStarted = new CountDownLatch(1);
+        CountDownLatch releaseWorker = new CountDownLatch(1);
+        try {
+            executor.execute(blockingTask(workerStarted, releaseWorker));
+            assertTrue(workerStarted.await(1, TimeUnit.SECONDS));
+            executor.execute(() -> { }); // fills the only queue slot
 
-        // 2️⃣ Fill the queue
-        executor.execute(() -> sleep(500));
-
-        // 3️⃣ Now pool=1 busy, queue=1 full → next must reject
-        assertThrows(RejectedExecutionException.class,
-                () -> executor.execute(() -> sleep(100)));
-
-        executor.shutdown();
+            assertThrows(RejectedExecutionException.class,
+                    () -> executor.execute(() -> { }));
+        } finally {
+            releaseWorker.countDown();
+            shutdown(executor);
+        }
     }
 
     /**
@@ -52,7 +56,7 @@ class ExecutorPolicyTest {
      * This creates natural backpressure.
      */
     @Test
-    void callerRunsPolicy_shouldApplyBackpressure() {
+    void callerRunsPolicyShouldExecuteRejectedTaskOnSubmittingThread() throws InterruptedException {
 
         ThreadPoolExecutor executor =
                 ExecutorConfigurations.boundedCallerRunsPolicy(
@@ -61,28 +65,49 @@ class ExecutorPolicyTest {
                         1
                 );
 
-        // Occupy worker
-        executor.execute(() -> sleep(500));
+        CountDownLatch workerStarted = new CountDownLatch(1);
+        CountDownLatch releaseWorker = new CountDownLatch(1);
+        AtomicReference<Thread> executionThread = new AtomicReference<>();
+        Thread submittingThread = Thread.currentThread();
+        try {
+            executor.execute(blockingTask(workerStarted, releaseWorker));
+            assertTrue(workerStarted.await(1, TimeUnit.SECONDS));
+            executor.execute(() -> { }); // fills the only queue slot
 
-        // Fill queue
-        executor.execute(() -> sleep(500));
+            executor.execute(() -> executionThread.set(Thread.currentThread()));
 
-        long start = System.currentTimeMillis();
-
-        // This task should run in calling thread
-        executor.execute(() -> sleep(200));
-
-        long duration = System.currentTimeMillis() - start;
-
-        assertTrue(duration >= 200,
-                "CallerRunsPolicy should block producer thread");
-
-        executor.shutdown();
+            assertSame(submittingThread, executionThread.get(),
+                    "CallerRunsPolicy should execute work synchronously on the producer thread");
+        } finally {
+            releaseWorker.countDown();
+            shutdown(executor);
+        }
     }
 
-    private void sleep(long ms) {
-        try {
-            Thread.sleep(ms);
-        } catch (InterruptedException ignored) {}
+    @Test
+    void shouldRejectInvalidPoolConfiguration() {
+        assertThrows(IllegalArgumentException.class,
+                () -> ExecutorConfigurations.boundedAbortPolicy(0, 1, 1));
+        assertThrows(IllegalArgumentException.class,
+                () -> ExecutorConfigurations.boundedAbortPolicy(2, 1, 1));
+        assertThrows(IllegalArgumentException.class,
+                () -> ExecutorConfigurations.boundedAbortPolicy(1, 1, 0));
+    }
+
+    private static Runnable blockingTask(CountDownLatch started, CountDownLatch release) {
+        return () -> {
+            started.countDown();
+            try {
+                release.await();
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+            }
+        };
+    }
+
+    private static void shutdown(ThreadPoolExecutor executor) throws InterruptedException {
+        executor.shutdownNow();
+        assertTrue(executor.awaitTermination(1, TimeUnit.SECONDS),
+                "Executor should terminate after the test releases its worker");
     }
 }

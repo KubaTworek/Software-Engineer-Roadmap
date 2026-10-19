@@ -29,6 +29,15 @@ public interface JpaFeedInboxRepository extends JpaRepository<JpaFeedInboxEntity
     @Modifying
     void deleteByPostId(UUID postId);
 
+    @Modifying
+    void deleteByUserIdAndAuthorId(UUID userId, UUID authorId);
+
+    @Modifying
+    void deleteByUserId(UUID userId);
+
+    @Modifying
+    long deleteByCreatedAtBefore(Instant cutoff);
+
     @Query("SELECT f FROM JpaFeedInboxEntity f " +
             "WHERE f.userId = :userId " +
             "ORDER BY f.createdAt DESC, f.postId DESC")

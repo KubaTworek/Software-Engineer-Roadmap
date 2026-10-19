@@ -6,6 +6,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 
 import java.time.Duration;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -27,6 +28,7 @@ public final class HttpMetricsRecorder {
     public HttpMetricsRecorder(MeterRegistry meterRegistry, String serviceName) {
         this.meterRegistry = Objects.requireNonNull(meterRegistry, "meterRegistry must not be null");
         this.serviceName = requireNonBlank(serviceName, "serviceName");
+        MetricCardinalityGuard.validateLabelValue(MetricLabels.SERVICE, this.serviceName);
     }
 
     /**
@@ -35,6 +37,7 @@ public final class HttpMetricsRecorder {
      * The returned scope must be closed when request processing finishes.
      */
     public InflightRequestScope startInflightRequest(RouteTemplate route, String method) {
+        Objects.requireNonNull(route, "route must not be null");
         String normalizedMethod = normalizeMethod(method);
         String key = route.value() + "|" + normalizedMethod;
 
@@ -71,6 +74,9 @@ public final class HttpMetricsRecorder {
             int statusCode,
             Duration duration
     ) {
+        Objects.requireNonNull(route, "route must not be null");
+        validateStatusCode(statusCode);
+        validateDuration(duration);
         String normalizedMethod = normalizeMethod(method);
         String statusCodeLabel = String.valueOf(statusCode);
 
@@ -95,11 +101,24 @@ public final class HttpMetricsRecorder {
     }
 
     private static String normalizeMethod(String method) {
-        String value = requireNonBlank(method, "method").toUpperCase();
+        String value = requireNonBlank(method, "method").toUpperCase(Locale.ROOT);
 
         MetricCardinalityGuard.validateLabelValue(MetricLabels.METHOD, value);
 
         return value;
+    }
+
+    private static void validateStatusCode(int statusCode) {
+        if (statusCode < 100 || statusCode > 599) {
+            throw new IllegalArgumentException("statusCode must be between 100 and 599");
+        }
+    }
+
+    private static void validateDuration(Duration duration) {
+        Objects.requireNonNull(duration, "duration must not be null");
+        if (duration.isNegative()) {
+            throw new IllegalArgumentException("duration must not be negative");
+        }
     }
 
     private static String requireNonBlank(String value, String fieldName) {
@@ -124,7 +143,7 @@ public final class HttpMetricsRecorder {
         }
 
         @Override
-        public void close() {
+        public synchronized void close() {
             if (!closed) {
                 gaugeValue.decrementAndGet();
                 closed = true;

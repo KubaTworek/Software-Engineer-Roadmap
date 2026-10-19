@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package backend.engineering.product.v1;
+
+option java_multiple_files = true;
+option java_package = "pl.jakubtworek.backend_engineering.stage_2.block_a.grpc.runtime";
+
+service ProductQuery {
+  rpc GetProduct(ProductRequest) returns (ProductReply);
+}
+
+message ProductRequest {
+  string product_id = 1;
+}
+
+message ProductReply {
+  string product_id = 1;
+  string name = 2;
+  int64 version = 3;
+  string traceparent = 4;
+}

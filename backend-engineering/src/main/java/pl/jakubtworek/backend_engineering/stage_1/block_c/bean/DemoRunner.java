@@ -1,12 +1,14 @@
 package pl.jakubtworek.backend_engineering.stage_1.block_c.bean;
 
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 /**
  * Executes application logic after Spring startup.
  */
 @Component
+@Profile("demo")
 public class DemoRunner implements CommandLineRunner {
 
     private final PaymentService paymentService;

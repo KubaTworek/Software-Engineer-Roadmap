@@ -9,18 +9,18 @@ Ta wersja rozszerza Etap 3 o warstwę ML/optimization i szkielet multi-region ac
 - `demand-prediction-service` — prognoza popytu per miasto / H3 cell.
 - `driver-positioning-service` — rekomendacje relokacji kierowców.
 - `dynamic-pricing-service` — dynamic pricing oparty o live supply/demand i prognozę popytu.
-- `region-control-plane` — home-region routing, health regionów i tryb active-active dla wybranych komponentów.
+- `region-control-plane` — stabilny home-region routing oraz model lease z rosnącym fencing tokenem.
 - `core-api` — dodany endpoint proxy `/api/v1/optimization/*` i migracja audytu predykcji/region routing.
 
 ## Uwagi produkcyjne
 
-Modele ML są tu świadomie deterministycznymi baseline'ami, nie prawdziwymi modelami uczonymi offline. To właściwy etap architektoniczny: kontrakty, feature ingestion, audyt predykcji, integracje i fallbacki są ważniejsze niż dokładność modelu demonstracyjnego.
+Modele ML są tu świadomie deterministycznymi baseline'ami, nie prawdziwymi modelami uczonymi offline. Typowany `DemandForecast`, ograniczone okna czasowe i guardraile wyników pokazują kontrakt inferencji bez udawania kompletnego MLOps. Kontrakty, feature ingestion, audyt predykcji, integracje i fallbacki są ważniejsze niż dokładność modelu demonstracyjnego.
 
 Docelowo baseline'y należy zastąpić modelem serwowanym przez np. MLflow/Seldon/KServe, a feature store przez Feast/Tecton albo własny feature pipeline.
 
 ## Multi-region
 
-Wersja developerska zawiera `region-control-plane` i opcjonalny `docker-compose.multi-region.yml`. Nie jest to pełna replikacja baz danych ani MirrorMaker 2. Wskazuje jednak miejsca, w których trzeba dodać:
+Wersja developerska zawiera `region-control-plane` i opcjonalny `docker-compose.multi-region.yml`. Lease i epoch są przechowywane in-memory: test dowodzi reguły fencing, ale nie konsensusu. Nie jest to pełna replikacja baz danych ani MirrorMaker 2. Wskazuje jednak miejsca, w których trzeba dodać:
 
 - globalny routing DNS/GSLB,
 - multi-region Kafka replication,

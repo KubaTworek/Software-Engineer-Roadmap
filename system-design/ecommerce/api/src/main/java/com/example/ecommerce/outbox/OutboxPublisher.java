@@ -7,6 +7,9 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import java.time.Clock;
+import java.time.Duration;
+import io.micrometer.observation.annotation.Observed;
 
 /**
  * Worker odpowiedzialny za publikowanie eventów zapisanych w tabeli outbox.
@@ -59,6 +62,7 @@ public class OutboxPublisher {
      * To ważne dla monitoringu integracji asynchronicznych.
      */
     private final BusinessMetrics metrics;
+    private final Clock clock;
 
     /**
      * Constructor injection.
@@ -67,10 +71,12 @@ public class OutboxPublisher {
      */
     public OutboxPublisher(
             OutboxEventRepository events,
-            BusinessMetrics metrics
+            BusinessMetrics metrics,
+            Clock clock
     ) {
         this.events = events;
         this.metrics = metrics;
+        this.clock = clock;
     }
 
     /**
@@ -88,7 +94,9 @@ public class OutboxPublisher {
      */
     @Scheduled(fixedDelayString = "${app.outbox.fixed-delay-ms:5000}")
     @Transactional
+    @Observed(name = "ecommerce.outbox.publish", contextualName = "outbox publish batch")
     public void publishPendingEvents() {
+        long startedAt = System.nanoTime();
         /*
          * Pobieramy maksymalnie 50 najstarszych eventów w statusie NEW.
          *
@@ -98,8 +106,14 @@ public class OutboxPublisher {
          * Sortowanie po ID daje prostą kolejność FIFO:
          * starsze eventy są publikowane przed nowszymi.
          */
-        for (OutboxEvent event : events.findTop50ByStatusOrderByIdAsc(OutboxEventStatus.NEW)) {
+        var now = clock.instant();
+        for (OutboxEvent event : events.claimPublishableBatch(now, now.minusSeconds(60), 50)) {
             try {
+                // Lock z repozytorium i przejście do PROCESSING sprawiają, że dwie
+                // instancje nie publikują równolegle tego samego rekordu. Nadal jest
+                // to delivery at-least-once: awaria po brokerze, ale przed commitem,
+                // może spowodować ponowienie i konsument musi być idempotentny.
+                event.claim(now);
                 /*
                  * Mock publikacji eventu.
                  *
@@ -144,6 +158,7 @@ public class OutboxPublisher {
                  * - ręczny reprocess z panelu admina.
                  */
                 event.markFailed(ex.getMessage());
+                metrics.outboxFailed(event.getStatus() == OutboxEventStatus.DEAD);
 
                 log.warn(
                         "OUTBOX_PUBLISH_FAILED eventId={}, error={}",
@@ -152,5 +167,6 @@ public class OutboxPublisher {
                 );
             }
         }
+        metrics.recordOutboxPublish(Duration.ofNanos(System.nanoTime() - startedAt));
     }
 }

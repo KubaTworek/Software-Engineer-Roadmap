@@ -11,12 +11,14 @@ import java.util.UUID;
 public class JpaFeedInboxEntity {
 
     @Id
+    @Column(name = "user_id", nullable = false)
     private UUID userId;
 
     @Id
+    @Column(name = "post_id", nullable = false)
     private UUID postId;
 
-    @Column(nullable = false)
+    @Column(name = "author_id", nullable = false)
     private UUID authorId;
 
     @Column(nullable = false)
@@ -25,10 +27,10 @@ public class JpaFeedInboxEntity {
     @Column(nullable = false, length = 50)
     private String source;
 
-    @Column(nullable = false)
+    @Column(name = "shard_id", nullable = false)
     private int shardId;
 
-    @Column(nullable = false)
+    @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
     protected JpaFeedInboxEntity() {

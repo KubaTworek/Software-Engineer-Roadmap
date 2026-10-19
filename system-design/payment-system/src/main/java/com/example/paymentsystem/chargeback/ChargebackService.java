@@ -4,6 +4,7 @@ import com.example.paymentsystem.ledger.LedgerService;
 import com.example.paymentsystem.payment.Payment;
 import com.example.paymentsystem.payment.PaymentException;
 import com.example.paymentsystem.payment.PaymentRepository;
+import com.example.paymentsystem.audit.AuditService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -49,15 +50,18 @@ public class ChargebackService {
      * Jeżeli chargeback jest przegrany, trzeba zaksięgować realne obciążenie merchanta.
      */
     private final LedgerService ledgerService;
+    private final AuditService audit;
 
     public ChargebackService(
             ChargebackRepository chargebackRepository,
             PaymentRepository paymentRepository,
-            LedgerService ledgerService
+            LedgerService ledgerService,
+            AuditService audit
     ) {
         this.chargebackRepository = chargebackRepository;
         this.paymentRepository = paymentRepository;
         this.ledgerService = ledgerService;
+        this.audit = audit;
     }
 
     /**
@@ -77,14 +81,23 @@ public class ChargebackService {
         Payment payment = paymentRepository.findByIdForUpdate(paymentId)
                 .orElseThrow(() -> new PaymentException("Payment not found"));
 
+        long exposedAmount = payment.getCapturedAmount() - payment.getRefundedAmount();
+        if (request.amount() <= 0 || request.amount() > exposedAmount) {
+            throw new PaymentException("Chargeback amount exceeds captured funds not already refunded");
+        }
+
         payment.openChargeback();
 
-        return chargebackRepository.save(new Chargeback(
+        Chargeback chargeback = chargebackRepository.save(new Chargeback(
                 paymentId,
+                request.providerDisputeId(),
                 request.amount(),
                 payment.getCurrency(),
                 request.reason()
         ));
+        audit.record("operator", "CHARGEBACK_OPENED", "CHARGEBACK", chargeback.getChargebackId().toString(),
+                "providerDisputeId=" + request.providerDisputeId());
+        return chargeback;
     }
 
     /**
@@ -119,6 +132,7 @@ public class ChargebackService {
                 chargeback.getAmount(),
                 chargeback.getCurrency()
         );
+        audit.record("operator", "CHARGEBACK_LOST", "CHARGEBACK", chargebackId.toString(), null);
 
         return chargeback;
     }
@@ -145,6 +159,7 @@ public class ChargebackService {
 
         payment.winChargeback();
         chargeback.win();
+        audit.record("operator", "CHARGEBACK_WON", "CHARGEBACK", chargebackId.toString(), null);
 
         return chargeback;
     }

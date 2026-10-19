@@ -25,7 +25,7 @@ public class SecurityAspect {
     /**
      * Simulates security check before service execution.
      */
-    @Before("execution(* demo.aop.service.*.*(..))")
+    @Before("@within(org.springframework.stereotype.Service)")
     public void authorize() {
 
         System.out.println(

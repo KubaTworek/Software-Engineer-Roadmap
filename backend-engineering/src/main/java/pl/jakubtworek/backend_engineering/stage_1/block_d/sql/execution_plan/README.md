@@ -1,6 +1,22 @@
-# Plan wykonania zapytania jako źródło prawdy
+# execution plan
 
-# Wprowadzenie
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** execution plan.
+> - **Typowy błąd:** Ocenianie planu wyłącznie po cost bez rzeczywistych rows, loops i buffers.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** brak jawnej roli w nazwach klas; intencję przykładu określają opis i test, nie sam brak prefiksu.
+> - **Granica:** Model i H2 sprawdzają logikę; blokady, plan zapytania i zachowanie silnika potwierdza dopiero odpowiedni profil infrastrukturalny.
+<!-- material-card:end -->
+
+## Plan wykonania zapytania jako źródło prawdy
+
+
+
+## Wprowadzenie
 
 Jednym z największych błędów podczas optymalizacji SQL jest podejmowanie decyzji wyłącznie na podstawie:
 - intuicji,
@@ -24,7 +40,7 @@ Dlatego:
 
 ---
 
-# EXPLAIN vs EXPLAIN ANALYZE
+## EXPLAIN vs EXPLAIN ANALYZE
 
 ## EXPLAIN
 
@@ -67,13 +83,13 @@ Powody:
 
 ---
 
-# Sequential Scan vs Index Scan
+## Sequential Scan vs Index Scan
 
 Jednym z pierwszych elementów planu, na które należy patrzeć, jest typ skanu tabeli.
 
 ---
 
-# Sequential Scan (Seq Scan)
+## Sequential Scan (Seq Scan)
 
 ```text
 Seq Scan on orders
@@ -88,7 +104,7 @@ Koszt rośnie liniowo wraz z rozmiarem tabeli.
 
 ---
 
-# Przykład
+## Przykład
 
 ```sql
 SELECT *
@@ -109,7 +125,7 @@ Przy milionach rekordów oznacza to:
 
 ---
 
-# Index Scan
+## Index Scan
 
 Po dodaniu indeksu:
 
@@ -132,7 +148,7 @@ Bitmap Index Scan
 
 ---
 
-# Co to oznacza?
+## Co to oznacza?
 
 Baza:
 1. traversuje strukturę B-Tree,
@@ -146,7 +162,7 @@ Dzięki temu:
 
 ---
 
-# Ważna uwaga
+## Ważna uwaga
 
 Seq Scan nie zawsze jest błędem.
 
@@ -162,7 +178,7 @@ Dlatego:
 
 ---
 
-# Filter vs Index Cond
+## Filter vs Index Cond
 
 Jednym z najważniejszych elementów planu jest różnica pomiędzy:
 
@@ -171,7 +187,7 @@ Jednym z najważniejszych elementów planu jest różnica pomiędzy:
 
 ---
 
-# Index Cond
+## Index Cond
 
 ```text
 Index Cond: (user_id = 123)
@@ -186,7 +202,7 @@ Oznacza:
 
 ---
 
-# Filter
+## Filter
 
 ```text
 Filter: (total_amount > 1000)
@@ -205,7 +221,7 @@ Duża liczba Filter bardzo często oznacza:
 
 ---
 
-# Sort jako kosztowna operacja
+## Sort jako kosztowna operacja
 
 Jednym z najdroższych elementów planu może być:
 
@@ -215,7 +231,7 @@ Sort
 
 ---
 
-# Problem
+## Problem
 
 Jeżeli query zawiera:
 
@@ -231,7 +247,7 @@ a baza nie posiada odpowiedniego indeksu, PostgreSQL musi:
 
 ---
 
-# Dlaczego Sort jest kosztowny?
+## Dlaczego Sort jest kosztowny?
 
 Sortowanie jest:
 - CPU-intensive,
@@ -242,7 +258,7 @@ Przy dużych datasetach Sort może być jedną z najdroższych operacji.
 
 ---
 
-# Rozwiązanie
+## Rozwiązanie
 
 Tworzenie indeksów wspierających jednocześnie:
 - WHERE,
@@ -264,13 +280,13 @@ W planie:
 
 ---
 
-# Nested Loop vs Hash Join vs Merge Join
+## Nested Loop vs Hash Join vs Merge Join
 
 Podczas analizy JOIN-ów należy patrzeć na algorytm łączenia tabel.
 
 ---
 
-# Nested Loop
+## Nested Loop
 
 Nested Loop działa dobrze dla:
 - małych tabel,
@@ -287,7 +303,7 @@ na dużych tabelach może być katastrofalne.
 
 ---
 
-# Dlaczego?
+## Dlaczego?
 
 Dla każdego rekordu:
 - tabela B jest skanowana ponownie.
@@ -299,7 +315,7 @@ To może prowadzić do:
 
 ---
 
-# Hash Join
+## Hash Join
 
 Hash Join zwykle działa dobrze dla:
 - większych datasetów,
@@ -311,7 +327,7 @@ PostgreSQL:
 
 ---
 
-# Merge Join
+## Merge Join
 
 Merge Join działa dobrze gdy:
 - dane są posortowane,
@@ -319,7 +335,7 @@ Merge Join działa dobrze gdy:
 
 ---
 
-# Nie istnieje najlepszy JOIN
+## Nie istnieje najlepszy JOIN
 
 Wybór zależy od:
 - rozmiaru danych,
@@ -330,7 +346,7 @@ Wybór zależy od:
 
 ---
 
-# Estimated Rows vs Actual Rows
+## Estimated Rows vs Actual Rows
 
 Jednym z najważniejszych elementów planu są:
 
@@ -341,7 +357,7 @@ actual rows=...
 
 ---
 
-# Problem błędnych estymacji
+## Problem błędnych estymacji
 
 Przykład:
 
@@ -364,7 +380,7 @@ Jeżeli estymacje są błędne, optimizer może:
 
 ---
 
-# Przyczyny błędnych estymacji
+## Przyczyny błędnych estymacji
 
 - nieaktualne statystyki,
 - skewed data,
@@ -373,7 +389,7 @@ Jeżeli estymacje są błędne, optimizer może:
 
 ---
 
-# Rozwiązania
+## Rozwiązania
 
 ## ANALYZE
 
@@ -391,13 +407,13 @@ SET STATISTICS 1000;
 
 ---
 
-# OFFSET Pagination jako anty-pattern
+## OFFSET Pagination jako anty-pattern
 
 Bardzo częsty problem wydajnościowy API.
 
 ---
 
-# OFFSET
+## OFFSET
 
 ```sql
 SELECT *
@@ -411,7 +427,7 @@ Na pierwszy rzut oka wygląda niewinnie.
 
 ---
 
-# Problem
+## Problem
 
 PostgreSQL musi:
 1. znaleźć rekordy,
@@ -424,7 +440,7 @@ Koszt rośnie liniowo wraz z OFFSET.
 
 ---
 
-# Duży OFFSET
+## Duży OFFSET
 
 ```text
 OFFSET 100000
@@ -435,7 +451,7 @@ może być bardzo kosztowny.
 
 ---
 
-# Keyset Pagination
+## Keyset Pagination
 
 Znacznie lepsze rozwiązanie.
 
@@ -449,7 +465,7 @@ LIMIT 50;
 
 ---
 
-# Dlaczego jest szybsze?
+## Dlaczego jest szybsze?
 
 Baza:
 - nie musi pomijać rekordów,
@@ -462,7 +478,7 @@ To:
 
 ---
 
-# Gdzie używać keyset pagination?
+## Gdzie używać keyset pagination?
 
 - duże API,
 - infinite scroll,
@@ -471,7 +487,7 @@ To:
 
 ---
 
-# Execution Time jako finalna metryka
+## Execution Time jako finalna metryka
 
 Każda optymalizacja powinna kończyć się porównaniem:
 
@@ -482,7 +498,7 @@ Każda optymalizacja powinna kończyć się porównaniem:
 
 ---
 
-# Nie optymalizuj „na oko”
+## Nie optymalizuj „na oko”
 
 Najlepszą praktyką jest dokumentowanie:
 - rodzaju skanu,
@@ -499,7 +515,7 @@ Dopiero wtedy można realnie ocenić:
 
 ---
 
-# Najważniejsza zasada
+## Najważniejsza zasada
 
 > Nie zgaduj. Sprawdzaj plan wykonania.
 
@@ -511,3 +527,17 @@ To właśnie plan wykonania pokazuje:
 - które operacje dominują runtime.
 
 Bez EXPLAIN ANALYZE optymalizacja SQL bardzo często zamienia się w zgadywanie zamiast inżynierii.
+
+## Wykonywalny dowód na PostgreSQL
+
+Test infrastrukturalny uruchamia `EXPLAIN (ANALYZE, BUFFERS)` na rzeczywistym
+PostgreSQL i sprawdza obecność indeksu w planie. Asercja nie wiąże się z konkretnym
+czasem wykonania ani kosztem planera — te wartości zależą od danych i środowiska.
+
+```powershell
+.\mvnw.cmd --batch-mode --no-transfer-progress -Pinfrastructure-tests "-Dtest=PostgresSqlLaboratoryTest" test
+```
+
+Mały zbiór danych może skłonić planner do poprawnego sequential scan. Sam brak
+`Index Scan` nie jest błędem; błędem jest decyzja bez porównania planu, liczby
+wierszy, selektywności i odczytanych buforów.

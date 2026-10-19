@@ -3,7 +3,10 @@ package com.example.autocomplete.personalization;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
+import com.example.autocomplete.privacy.QueryPrivacyService;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import java.time.Duration;
 
 /**
  * In-memory store historii wyszukiwań w ramach sesji.
@@ -34,11 +37,19 @@ public class SearchHistoryStore {
      * Wartość:
      * - kolejka ostatnich query z tej sesji.
      *
-     * ConcurrentHashMap zabezpiecza dostęp do mapy przy wielu requestach równolegle.
-     * Sama ArrayDeque nie jest thread-safe, dlatego operacje na konkretnej kolejce
-     * są synchronizowane niżej.
+     * Caffeine nakłada granicę liczby sesji i retencję 30 minut. Kluczem nie jest surowy
+     * sessionId, lecz jego stabilny HMAC, a zapytanie przechodzi redakcję PII. Sama
+     * ArrayDeque nie jest thread-safe, dlatego operacje na kolejce są synchronizowane.
      */
-    private final Map<String, Deque<String>> bySession = new ConcurrentHashMap<>();
+    private final Cache<String, Deque<String>> bySession = Caffeine.newBuilder()
+            .maximumSize(100_000)
+            .expireAfterAccess(Duration.ofMinutes(30))
+            .build();
+    private final QueryPrivacyService privacy;
+
+    public SearchHistoryStore(QueryPrivacyService privacy) {
+        this.privacy = privacy;
+    }
 
     /**
      * Zapisuje query do historii danej sesji.
@@ -65,10 +76,8 @@ public class SearchHistoryStore {
          *
          * Jeśli to pierwsze query w tej sesji, tworzymy nową kolejkę.
          */
-        Deque<String> deque = bySession.computeIfAbsent(
-                sessionId,
-                k -> new ArrayDeque<>()
-        );
+        String protectedSessionId = privacy.hashUserId("session:" + sessionId);
+        Deque<String> deque = bySession.asMap().computeIfAbsent(protectedSessionId, k -> new ArrayDeque<>());
 
         /*
          * Synchronizujemy dostęp do kolejki konkretnej sesji.
@@ -84,14 +93,15 @@ public class SearchHistoryStore {
              * Dzięki temu historia nie ma duplikatów, a powtórzone query
              * zostanie przesunięte na początek jako najświeższe.
              */
-            deque.remove(query);
+            String safeQuery = privacy.redactPii(query);
+            deque.remove(safeQuery);
 
             /*
              * Dodajemy query na początek.
              *
              * Początek kolejki oznacza najnowsze zapytania.
              */
-            deque.addFirst(query);
+            deque.addFirst(safeQuery);
 
             /*
              * Trzymamy maksymalnie 20 ostatnich zapytań w sesji.
@@ -114,7 +124,8 @@ public class SearchHistoryStore {
      * którą ktoś mógłby przypadkowo zmodyfikować poza tym komponentem.
      */
     public List<String> recentSessionQueries(String sessionId) {
-        Deque<String> deque = bySession.get(sessionId);
+        if (sessionId == null || sessionId.isBlank()) return List.of();
+        Deque<String> deque = bySession.getIfPresent(privacy.hashUserId("session:" + sessionId));
 
         /*
          * Brak historii dla sesji oznacza pustą listę,

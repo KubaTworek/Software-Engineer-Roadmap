@@ -4,6 +4,7 @@ import com.example.autocomplete.model.IndexedSuggestion;
 import com.example.autocomplete.model.Suggestion;
 import com.example.autocomplete.service.CanonicalKeyGenerator;
 import com.example.autocomplete.service.TextNormalizer;
+import com.example.autocomplete.fuzzy.EditDistance;
 
 import java.util.*;
 
@@ -65,6 +66,8 @@ public class SuggestionTrieIndex implements AutocompleteIndex {
      * powinny reprezentować tę samą sugestię logiczną.
      */
     private final CanonicalKeyGenerator keyGenerator;
+    private final EditDistance editDistance;
+    private final List<FuzzyEntry> fuzzyEntries = new ArrayList<>();
 
     /**
      * Maksymalna liczba kandydatów przechowywana w jednym węźle Trie.
@@ -134,9 +137,21 @@ public class SuggestionTrieIndex implements AutocompleteIndex {
             CanonicalKeyGenerator keyGenerator,
             int maxCandidatesPerNode
     ) {
+        this(version, suggestions, normalizer, keyGenerator, new EditDistance(), maxCandidatesPerNode);
+    }
+
+    public SuggestionTrieIndex(
+            String version,
+            List<Suggestion> suggestions,
+            TextNormalizer normalizer,
+            CanonicalKeyGenerator keyGenerator,
+            EditDistance editDistance,
+            int maxCandidatesPerNode
+    ) {
         this.version = version;
         this.normalizer = normalizer;
         this.keyGenerator = keyGenerator;
+        this.editDistance = editDistance;
         this.maxCandidatesPerNode = maxCandidatesPerNode;
 
         /*
@@ -162,6 +177,27 @@ public class SuggestionTrieIndex implements AutocompleteIndex {
          * Po tym kroku indeks jest gotowy do obsługi candidates().
          */
         build(deduped);
+    }
+
+    @Override
+    public List<Suggestion> fuzzyCandidates(String rawQuery, int maxDistance, int candidateLimit) {
+        String query = normalizer.normalize(rawQuery);
+        if (query.length() < 3 || query.length() > 40 || candidateLimit < 1) return List.of();
+
+        Map<String, Suggestion> matches = new LinkedHashMap<>();
+        // To celowo ograniczony fallback, nie pełny skan dużego korpusu. Dla dużego
+        // indeksu rolę tę przejąłby FST z fuzzy automatonem, BK-tree lub search engine.
+        fuzzyEntries.stream().limit(5_000).forEach(entry -> {
+            String comparable = entry.variant().substring(0, Math.min(entry.variant().length(), query.length()));
+            if (editDistance.boundedLevenshtein(query, comparable, maxDistance) <= maxDistance) {
+                matches.putIfAbsent(keyGenerator.canonicalKey(entry.suggestion().displayText()), entry.suggestion());
+            }
+        });
+        return matches.values().stream()
+                .sorted(Comparator.comparingInt(Suggestion::popularity).reversed()
+                        .thenComparing(Suggestion::displayText))
+                .limit(candidateLimit)
+                .toList();
     }
 
     /**
@@ -343,11 +379,14 @@ public class SuggestionTrieIndex implements AutocompleteIndex {
              * Jedna sugestia może więc być odnaleziona wieloma ścieżkami.
              */
             for (String variant : variants) {
+                fuzzyEntries.add(new FuzzyEntry(variant, s));
                 insert(variant, indexed);
                 indexedVariantsCount++;
             }
         }
     }
+
+    private record FuzzyEntry(String variant, Suggestion suggestion) {}
 
     /**
      * Wstawia jeden wariant tekstowy do Trie.

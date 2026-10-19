@@ -52,12 +52,25 @@ class MessageServiceTest {
         UUID clientMessageId = UUID.randomUUID();
 
         SendMessageResult first = messageService.sendMessageWithMetadata(alice.getId(), conversation.id(), new SendMessageRequest(clientMessageId, "hello", List.of()));
-        SendMessageResult second = messageService.sendMessageWithMetadata(alice.getId(), conversation.id(), new SendMessageRequest(clientMessageId, "hello again", List.of()));
+        SendMessageResult second = messageService.sendMessageWithMetadata(alice.getId(), conversation.id(), new SendMessageRequest(clientMessageId, "hello", List.of()));
 
         assertThat(first.duplicate()).isFalse();
         assertThat(second.duplicate()).isTrue();
         assertThat(second.message().id()).isEqualTo(first.message().id());
         assertThat(second.message().body()).isEqualTo("hello");
+    }
+
+    @Test
+    void sameClientMessageIdWithDifferentPayloadIsAConflict() {
+        AppUser alice = TestUsers.create(userRepository, "alice_conflict");
+        AppUser bob = TestUsers.create(userRepository, "bob_conflict");
+        ConversationResponse conversation = conversationService.createDirectConversation(alice.getId(), new CreateDirectConversationRequest(bob.getId()));
+        UUID key = UUID.randomUUID();
+        messageService.sendMessage(alice.getId(), conversation.id(), new SendMessageRequest(key, "original", List.of()));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> messageService.sendMessage(
+                alice.getId(), conversation.id(), new SendMessageRequest(key, "changed", List.of())))
+                .isInstanceOf(pl.jakubtworek.chatsystem.common.ConflictException.class);
     }
 
     @Test
@@ -86,6 +99,35 @@ class MessageServiceTest {
 
         assertThat(page.items()).hasSize(2);
         assertThat(page.hasMore()).isTrue();
-        assertThat(page.nextBefore()).isNotNull();
+        assertThat(page.nextBeforeSequence()).isNotNull();
+    }
+
+    @Test
+    void editAndDeletePreserveSequenceAndExposeTombstoneDuringReconnect() {
+        AppUser alice = TestUsers.create(userRepository, "alice_mutation");
+        AppUser bob = TestUsers.create(userRepository, "bob_mutation");
+        ConversationResponse conversation = conversationService.createDirectConversation(
+                alice.getId(), new CreateDirectConversationRequest(bob.getId()));
+        MessageResponse original = messageService.sendMessage(alice.getId(), conversation.id(),
+                new SendMessageRequest(UUID.randomUUID(), "draft", List.of()));
+
+        MessageResponse edited = messageService.editMessage(alice.getId(), conversation.id(), original.id(),
+                new EditMessageRequest("final text"));
+        MessageResponse deleted = messageService.deleteMessage(alice.getId(), conversation.id(), original.id());
+        List<MessageResponse> reconnect = messageService.getMessagesSince(bob.getId(), "bob-phone",
+                conversation.id(), 0, 20);
+
+        assertThat(edited.sequenceNumber()).isEqualTo(original.sequenceNumber());
+        assertThat(edited.revision()).isEqualTo(2);
+        assertThat(edited.editedAt()).isNotNull();
+        assertThat(deleted.sequenceNumber()).isEqualTo(original.sequenceNumber());
+        assertThat(deleted.revision()).isEqualTo(3);
+        assertThat(deleted.body()).isNull();
+        assertThat(deleted.deletedAt()).isNotNull();
+        assertThat(reconnect).singleElement().satisfies(message -> {
+            assertThat(message.id()).isEqualTo(original.id());
+            assertThat(message.body()).isNull();
+            assertThat(message.deletedAt()).isNotNull();
+        });
     }
 }

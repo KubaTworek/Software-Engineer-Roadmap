@@ -1,16 +1,18 @@
 package pl.jakubtworek.marketplace.integration.outbox;
 
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Component;
 import pl.jakubtworek.marketplace.integration.contracts.OrderPlacedContractMapper;
-import pl.jakubtworek.marketplace.inventory.domain.StockReservationFailed;
-import pl.jakubtworek.marketplace.inventory.domain.StockReserved;
-import pl.jakubtworek.marketplace.ordering.domain.OrderCancelled;
-import pl.jakubtworek.marketplace.ordering.domain.OrderConfirmed;
-import pl.jakubtworek.marketplace.ordering.domain.OrderPlaced;
-import pl.jakubtworek.marketplace.payment.domain.PaymentRejected;
-import pl.jakubtworek.marketplace.payment.domain.PaymentReserved;
+import pl.jakubtworek.marketplace.integration.contracts.OrderCancelledIntegrationEvent;
+import pl.jakubtworek.marketplace.integration.contracts.OrderConfirmedIntegrationEvent;
+import pl.jakubtworek.marketplace.integration.contracts.PaymentRejectedIntegrationEvent;
+import pl.jakubtworek.marketplace.integration.contracts.PaymentReservedIntegrationEvent;
+import pl.jakubtworek.marketplace.integration.contracts.PaymentReleasedIntegrationEvent;
+import pl.jakubtworek.marketplace.integration.contracts.StockReleasedIntegrationEvent;
+import pl.jakubtworek.marketplace.integration.contracts.PaymentReleaseRequestedIntegrationEvent;
+import pl.jakubtworek.marketplace.integration.contracts.StockReleaseRequestedIntegrationEvent;
+import pl.jakubtworek.marketplace.integration.contracts.StockReservationFailedIntegrationEvent;
+import pl.jakubtworek.marketplace.integration.contracts.StockReservedIntegrationEvent;
 import pl.jakubtworek.marketplace.shared.kernel.DomainEvent;
 
 import java.time.Instant;
@@ -79,19 +81,20 @@ public class OutboxEventMapper {
      * mapper odrzuci go jako nieobsługiwany.
      */
     private final Map<String, Class<? extends DomainEvent>> eventTypes = Map.of(
-            "OrderPlaced", OrderPlaced.class,
-            "OrderCancelled", OrderCancelled.class,
-            "OrderConfirmed", OrderConfirmed.class,
-            "PaymentReserved", PaymentReserved.class,
-            "PaymentRejected", PaymentRejected.class,
-            "StockReserved", StockReserved.class,
-            "StockReservationFailed", StockReservationFailed.class
+            "OrderCancelled", OrderCancelledIntegrationEvent.class,
+            "OrderConfirmed", OrderConfirmedIntegrationEvent.class,
+            "PaymentReserved", PaymentReservedIntegrationEvent.class,
+            "PaymentRejected", PaymentRejectedIntegrationEvent.class,
+            "PaymentReleaseRequested", PaymentReleaseRequestedIntegrationEvent.class,
+            "PaymentReleased", PaymentReleasedIntegrationEvent.class,
+            "StockReserved", StockReservedIntegrationEvent.class,
+            "StockReleaseRequested", StockReleaseRequestedIntegrationEvent.class,
+            "StockReleased", StockReleasedIntegrationEvent.class,
+            "StockReservationFailed", StockReservationFailedIntegrationEvent.class
     );
 
     public OutboxEventMapper(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper.copy()
-                .findAndRegisterModules()
-                .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        this.objectMapper = objectMapper;
 
         this.orderPlacedContractMapper = new OrderPlacedContractMapper(this.objectMapper);
     }

@@ -34,4 +34,14 @@ public class CelebrityAuthor {
     public UUID getAuthorId() {
         return authorId;
     }
+
+    public long getFollowerCount() {
+        return followerCount;
+    }
+
+    /** Snapshot progu jest odświeżany także wtedy, gdy autor nadal jest celebrytą. */
+    public void refreshFollowerCount(long followerCount, Instant now) {
+        this.followerCount = followerCount;
+        this.updatedAt = now;
+    }
 }

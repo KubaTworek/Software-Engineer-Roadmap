@@ -1,4 +1,20 @@
-# DDD taktyczne – agregaty, encje, Value Objects, repozytoria, serwisy i zdarzenia domenowe
+# ddd tactic
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `praktyka-produkcyjna`
+> - **Uczy:** ddd tactic.
+> - **Typowy błąd:** Zmiana stanu agregatu z pominięciem metody chroniącej jego niezmiennik.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** `InMemoryOrderRepository` = `simulation`; `DomainEventPublisher` = `production-boundary`, `MessageBrokerDomainEventPublisher` = `production-boundary`, `OutboxPublisher` = `production-boundary`.
+> - **Granica:** Test granicy modułu lub lokalnej transakcji nie gwarantuje atomowości między procesami ani zgodności niezależnie wdrażanych klientów.
+<!-- material-card:end -->
+
+## DDD taktyczne – agregaty, encje, Value Objects, repozytoria, serwisy i zdarzenia domenowe
+
+
 
 ## Wprowadzenie
 
@@ -16,7 +32,7 @@ Najważniejszą ideą jest umieszczenie logiki biznesowej w modelu domenowym, a 
 
 ---
 
-# Encje
+## Encje
 
 Encja jest obiektem posiadającym tożsamość oraz cykl życia. Encje mogą zmieniać swój stan w czasie, ale nadal pozostają tym samym obiektem domenowym.
 
@@ -41,7 +57,7 @@ To właśnie encja powinna odpowiadać za zmianę swojego stanu.
 
 ---
 
-# Anemic Domain Model
+## Anemic Domain Model
 
 Jednym z najczęstszych problemów jest anemiczny model domenowy.
 
@@ -66,7 +82,7 @@ DDD zakłada, że logika biznesowa powinna znajdować się możliwie blisko dany
 
 ---
 
-# Value Objects
+## Value Objects
 
 Value Object reprezentuje wartość, a nie byt posiadający własną tożsamość.
 
@@ -103,7 +119,7 @@ DDD promuje zasadę:
 
 ---
 
-# Korzyści z Value Objects
+## Korzyści z Value Objects
 
 Value Objects:
 - zmniejszają coupling,
@@ -122,7 +138,7 @@ Dzięki temu logika finansowa nie jest rozproszona po systemie.
 
 ---
 
-# Agregaty
+## Agregaty
 
 Agregat jest jedną z najważniejszych koncepcji taktycznego DDD.
 
@@ -146,7 +162,7 @@ Nie zapisujemy `OrderLine` osobno przez repozytorium.
 
 ---
 
-# Aggregate Root
+## Aggregate Root
 
 Aggregate Root kontroluje:
 - modyfikacje stanu,
@@ -174,7 +190,7 @@ order.markAsPaid();
 
 ---
 
-# Invariants biznesowe
+## Invariants biznesowe
 
 Invariant to reguła biznesowa, która zawsze musi być spełniona.
 
@@ -188,7 +204,7 @@ To agregat odpowiada za ochronę invariantów.
 
 ---
 
-# Granica transakcji
+## Granica transakcji
 
 Jedna z najważniejszych zasad DDD mówi:
 > Jedna transakcja powinna obejmować maksymalnie jeden agregat.
@@ -208,7 +224,7 @@ DDD zakłada, że koordynacja między agregatami powinna odbywać się przez:
 
 ---
 
-# Małe agregaty
+## Małe agregaty
 
 Jednym z najczęstszych błędów jest tworzenie ogromnych agregatów.
 
@@ -227,7 +243,7 @@ To szczególnie ważne w mikroserwisach i systemach o dużym ruchu.
 
 ---
 
-# Referencje między agregatami
+## Referencje między agregatami
 
 Agregaty nie powinny przechowywać bezpośrednich referencji do innych agregatów.
 
@@ -251,7 +267,7 @@ To jedna z najważniejszych praktyk DDD.
 
 ---
 
-# Repozytoria
+## Repozytoria
 
 Repozytorium jest abstrakcją persystencji agregatów.
 
@@ -281,7 +297,7 @@ entityManager.persist(order);
 
 ---
 
-# Repozytorium nie jest DAO
+## Repozytorium nie jest DAO
 
 Repozytorium nie powinno być:
 - wrapperem na SQL,
@@ -298,7 +314,7 @@ Raportowanie oraz projekcje odczytowe powinny być realizowane przez:
 
 ---
 
-# Zdarzenia domenowe
+## Zdarzenia domenowe
 
 Domain Event reprezentuje fakt biznesowy, który już się wydarzył.
 
@@ -316,7 +332,7 @@ Zdarzenia:
 
 ---
 
-# Publikacja zdarzeń
+## Publikacja zdarzeń
 
 Najczęściej agregat:
 - zapisuje event lokalnie,
@@ -334,7 +350,7 @@ Agregat jedynie mówi:
 
 ---
 
-# Eventual Consistency
+## Eventual Consistency
 
 Zdarzenia domenowe prowadzą do eventual consistency.
 
@@ -351,7 +367,7 @@ To fundamentalna różnica między monolitem a architekturą event-driven.
 
 ---
 
-# Serwisy domenowe
+## Serwisy domenowe
 
 Nie każda logika biznesowa pasuje do jednej encji.
 
@@ -374,7 +390,7 @@ Jeżeli logika naturalnie należy do agregatu, powinna pozostać w agregacie.
 
 ---
 
-# Serwisy aplikacyjne
+## Serwisy aplikacyjne
 
 Application Service:
 - orkiestruje przypadek użycia,
@@ -398,7 +414,7 @@ To bardzo ważne rozdzielenie:
 
 ---
 
-# CQRS i read models
+## CQRS i read models
 
 Repozytoria agregatów nie nadają się do:
 - raportów,
@@ -424,7 +440,7 @@ To rozdziela:
 
 ---
 
-# Outbox Pattern
+## Outbox Pattern
 
 Jednym z największych problemów event-driven architecture jest atomowość:
 - zapis danych,
@@ -449,7 +465,7 @@ To standard nowoczesnych architektur DDD.
 
 ---
 
-# Punkty bólu modular monolith
+## Punkty bólu modular monolith
 
 Modular monolith rozwiązuje wiele problemów organizacyjnych, ale nie eliminuje wszystkich ograniczeń.
 
@@ -471,7 +487,7 @@ To sygnał, że:
 
 ---
 
-# Typowe błędy
+## Typowe błędy
 
 ## Zbyt duże agregaty
 
@@ -506,7 +522,7 @@ Encje zamieniają się w DTO zamiast reprezentować domenę.
 
 ---
 
-# Podejście ewolucyjne
+## Podejście ewolucyjne
 
 Najlepsze rezultaty daje:
 - mały agregat,
@@ -524,7 +540,7 @@ Najważniejsze jest utrzymanie:
 
 ---
 
-# Podsumowanie
+## Podsumowanie
 
 Taktyczne DDD dostarcza narzędzi do implementacji modelu biznesowego w sposób spójny i skalowalny. Encje reprezentują byty posiadające tożsamość, Value Objects opisują wartości, agregaty chronią invariants biznesowe, repozytoria abstrahują persystencję, a zdarzenia domenowe umożliwiają luźne powiązanie między kontekstami.
 

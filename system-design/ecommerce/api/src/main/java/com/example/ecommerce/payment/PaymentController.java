@@ -2,6 +2,11 @@ package com.example.ecommerce.payment;
 
 import com.example.ecommerce.payment.dto.PaymentDtos;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.prepost.PreAuthorize;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.example.ecommerce.common.ApiException;
+import jakarta.validation.Validator;
+import java.util.stream.Collectors;
 
 /**
  * REST controller odpowiedzialny za testową obsługę płatności.
@@ -34,6 +39,9 @@ public class PaymentController {
      * znajduje się w PaymentService.
      */
     private final PaymentService payments;
+    private final PaymentWebhookVerifier webhookVerifier;
+    private final ObjectMapper objectMapper;
+    private final Validator validator;
 
     /**
      * Constructor injection.
@@ -41,8 +49,45 @@ public class PaymentController {
      * PaymentController potrzebuje tylko PaymentService,
      * bo nie powinien samodzielnie zmieniać statusów płatności ani zamówień.
      */
-    public PaymentController(PaymentService payments) {
+    public PaymentController(
+            PaymentService payments,
+            PaymentWebhookVerifier webhookVerifier,
+            ObjectMapper objectMapper,
+            Validator validator
+    ) {
         this.payments = payments;
+        this.webhookVerifier = webhookVerifier;
+        this.objectMapper = objectMapper;
+        this.validator = validator;
+    }
+
+    /**
+     * Produkcyjna granica callbacka PSP. Najpierw weryfikujemy podpis surowego
+     * body i okno czasowe, dopiero później deserializujemy niezaufane dane.
+     */
+    @PostMapping("/webhooks/provider")
+    public PaymentDtos.PaymentResponse providerWebhook(
+            @RequestHeader("X-Webhook-Timestamp") long timestamp,
+            @RequestHeader("X-Webhook-Signature") String signature,
+            @RequestBody byte[] body
+    ) {
+        webhookVerifier.verify(body, timestamp, signature);
+        try {
+            PaymentDtos.ProviderWebhookEvent event = objectMapper.readValue(
+                    body, PaymentDtos.ProviderWebhookEvent.class);
+            var violations = validator.validate(event);
+            if (!violations.isEmpty()) {
+                String fields = violations.stream()
+                        .map(violation -> violation.getPropertyPath() + " " + violation.getMessage())
+                        .collect(Collectors.joining(", "));
+                throw ApiException.badRequest("Invalid payment webhook: " + fields);
+            }
+            return payments.handleProviderEvent(event);
+        } catch (ApiException known) {
+            throw known;
+        } catch (Exception malformed) {
+            throw ApiException.badRequest("Payment webhook body is not valid JSON");
+        }
     }
 
     /**
@@ -65,6 +110,7 @@ public class PaymentController {
      * To jest testowy odpowiednik pozytywnego webhooka od operatora płatności.
      */
     @PostMapping("/{paymentId}/mock-success")
+    @PreAuthorize("hasRole('ADMIN')")
     public PaymentDtos.PaymentResponse mockSuccess(@PathVariable Long paymentId) {
         return payments.mockSuccess(paymentId);
     }
@@ -86,6 +132,7 @@ public class PaymentController {
      * albo provider płatności odrzucił transakcję.
      */
     @PostMapping("/{paymentId}/mock-failure")
+    @PreAuthorize("hasRole('ADMIN')")
     public PaymentDtos.PaymentResponse mockFailure(@PathVariable Long paymentId) {
         return payments.mockFailure(paymentId);
     }

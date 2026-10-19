@@ -1,8 +1,37 @@
-Współbieżne przetwarzanie zadań w Javie -- notatka techniczna
-==================================================
+# executor service
 
-Wprowadzenie
-------------
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** executor service.
+> - **Typowy błąd:** Nieograniczona kolejka zadań i brak jawnego zamknięcia executora.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=ExecutorPolicyTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** brak jawnej roli w nazwach klas; intencję przykładu określają opis i test, nie sam brak prefiksu.
+> - **Granica:** Test kontroluje wybrany przeplot w JVM; pojedyncze uruchomienie nie dowodzi wszystkich zachowań dopuszczonych przez JMM ani wydajności pod obciążeniem.
+<!-- material-card:end -->
+
+## ExecutorService i kontrola przeciążenia
+
+
+
+## Mapa przykładu
+
+- `ExecutorConfigurations` porównuje pule fixed/cached oraz ograniczone kolejki z `AbortPolicy` i `CallerRunsPolicy`.
+- `TaskProcessor` oddziela logikę zadania od strategii wykonania; nie przejmuje własności przekazanego executora.
+- `ExecutorExperiment` odpowiada za pełny lifecycle tworzonych pul.
+- `ExecutorPolicyTest` nasyca pulę za pomocą latchy, bez zależności od arbitralnego `Thread.sleep`.
+
+Z katalogu `backend-engineering` uruchom:
+
+```shell
+mvn --batch-mode --no-transfer-progress -Dtest=ExecutorPolicyTest test
+```
+
+Własność executora powinna być jednoznaczna: komponent, który tworzy pulę, odpowiada również za `shutdown`, oczekiwanie na zakończenie i ewentualne `shutdownNow`.
+
+## Wprowadzenie
 
 Współczesne systemy backendowe są projektowane z założeniem równoległego przetwarzania wielu zadań. Obsługa zapytań HTTP, komunikacja z bazą danych, przetwarzanie wiadomości z kolejek czy wykonywanie operacji asynchronicznych wymaga wykorzystania wielu wątków. Kluczowym problemem nie jest jednak samo uruchamianie równoległych operacji, lecz **kontrolowanie sposobu, w jaki są one wykonywane**.
 

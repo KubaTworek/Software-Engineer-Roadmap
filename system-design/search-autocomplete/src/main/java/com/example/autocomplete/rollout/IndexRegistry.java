@@ -4,6 +4,10 @@ import com.example.autocomplete.index.AutocompleteIndex;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
+import java.time.Instant;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.HexFormat;
 
 /**
  * Centralny rejestr indeksów autocomplete dostępnych w aplikacji.
@@ -49,6 +53,7 @@ public class IndexRegistry {
      * Po aktywacji nowego indeksu zapamiętujemy starą wersję tutaj.
      */
     private String previousVersion;
+    private final Map<String, IndexDeployment> deployments = new LinkedHashMap<>();
 
     /**
      * Rejestruje nową wersję indeksu w pamięci aplikacji.
@@ -60,7 +65,15 @@ public class IndexRegistry {
      * przełączyć ruch przez activate().
      */
     public synchronized void register(AutocompleteIndex index) {
+        if (index == null || index.version() == null || index.version().isBlank()) {
+            throw new IllegalArgumentException("Index and version are required");
+        }
+        if (index.stats().suggestions() < 1) {
+            throw new IllegalArgumentException("Cannot register empty index");
+        }
         indexes.put(index.version(), index);
+        deployments.put(index.version(), new IndexDeployment(
+                index.version(), checksum(index), index.stats().suggestions(), Instant.now()));
 
         /*
          * Pierwszy indeks musi zostać ustawiony jako aktywny,
@@ -89,6 +102,7 @@ public class IndexRegistry {
             throw new IllegalArgumentException("Unknown index version: " + version);
         }
 
+        if (Objects.equals(activeVersion, version)) return;
         previousVersion = activeVersion;
         activeVersion = version;
     }
@@ -158,6 +172,12 @@ public class IndexRegistry {
         return List.copyOf(indexes.keySet());
     }
 
+    public synchronized IndexDeployment activeDeployment() {
+        IndexDeployment deployment = deployments.get(activeVersion);
+        if (deployment == null) throw new IllegalStateException("No active deployment");
+        return deployment;
+    }
+
     /**
      * Zwraca nazwę aktualnie aktywnej wersji indeksu.
      *
@@ -170,5 +190,17 @@ public class IndexRegistry {
      */
     public synchronized String activeVersion() {
         return activeVersion;
+    }
+
+    private String checksum(AutocompleteIndex index) {
+        try {
+            var stats = index.stats();
+            String material = stats.version() + ":" + stats.suggestions() + ":"
+                    + stats.indexedVariants() + ":" + stats.trieNodes() + ":" + stats.maxPopularity();
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(material.getBytes(StandardCharsets.UTF_8))).substring(0, 16);
+        } catch (Exception exception) {
+            throw new IllegalStateException("Cannot checksum index metadata", exception);
+        }
     }
 }

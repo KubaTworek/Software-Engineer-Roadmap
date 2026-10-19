@@ -30,7 +30,8 @@ public class FullTextIndexService {
             int used = 0;
             for (String term : terms) {
                 if (used++ >= properties.getMaxTermsPerLog()) break;
-                IndexKey key = new IndexKey(tenantId, safe(log.getService()), safe(log.getLevel()).toUpperCase(Locale.ROOT), bucket, term);
+                IndexKey key = new IndexKey(tenantId, log.getEventId(), safe(log.getService()),
+                        safe(log.getLevel()).toUpperCase(Locale.ROOT), bucket, term);
                 aggregate.computeIfAbsent(key, ignored -> new TermStats()).add(safe(log.getTraceId()));
             }
         }
@@ -57,7 +58,8 @@ public class FullTextIndexService {
         return v == null ? "" : v;
     }
 
-    public record IndexKey(String tenantId, String service, String level, Instant bucketStart, String term) {
+    public record IndexKey(String tenantId, String eventId, String service, String level,
+                           Instant bucketStart, String term) {
     }
 
     public static class TermStats {

@@ -75,6 +75,15 @@ public class JdbcStockRepository implements StockRepository {
      */
     @Override
     public Optional<StockItem> findByProductId(UUID productId) {
+        return find(productId, false);
+    }
+
+    @Override
+    public Optional<StockItem> findByProductIdForUpdate(UUID productId) {
+        return find(productId, true);
+    }
+
+    private Optional<StockItem> find(UUID productId, boolean lock) {
         return jdbcTemplate.query("""
                         SELECT
                             product_id,
@@ -82,6 +91,7 @@ public class JdbcStockRepository implements StockRepository {
                             reserved_quantity
                         FROM inventory.stock_items
                         WHERE product_id = ?
+                        """ + (lock ? " FOR UPDATE" : "") + """
                         """,
                 rs -> {
                     if (!rs.next()) {

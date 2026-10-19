@@ -1,0 +1,8 @@
+app:
+  media:
+    minio:
+      endpoint: ${CHAT_MINIO_ENDPOINT:http://localhost:9000}
+      access-key: ${CHAT_MINIO_ACCESS_KEY:minioadmin}
+      secret-key: ${CHAT_MINIO_SECRET_KEY:minioadmin}
+      quarantine-bucket: chat-quarantine
+      clean-bucket: chat-clean

@@ -1,13 +1,14 @@
 package com.ridesharing.mvp.driver;
 
 import com.ridesharing.mvp.auth.AuthenticatedUser;
-import com.ridesharing.mvp.location.LocationService;
+import com.ridesharing.mvp.location.DriverLocationPort;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import java.time.Instant;
 
 /**
  * Kontroler endpointów kierowcy zalogowanego jako DRIVER.
@@ -44,7 +45,7 @@ public class DriverController {
      * LocationService powinien zapisywać bieżącą pozycję w Redis GEO / cache live-state,
      * a nie jako każdy punkt GPS w relacyjnej bazie.
      */
-    private final LocationService locationService;
+    private final DriverLocationPort locationService;
 
     /**
      * Tworzy albo aktualizuje profil kierowcy.
@@ -96,13 +97,10 @@ public class DriverController {
                                @Valid @RequestBody LocationRequest request) {
         var driver = driverService.getByUser(principal.user());
 
-        locationService.updateDriverLocation(
-                driver,
-                request.lat(),
-                request.lng(),
-                request.heading(),
-                request.speed()
-        );
+        locationService.update(driver, new DriverLocationPort.LocationUpdate(
+                request.cityId(), request.lat(), request.lng(), request.heading(), request.speed(),
+                request.accuracyMeters(), request.sequence(), request.recordedAt()
+        ));
     }
 
     /**
@@ -142,9 +140,13 @@ public class DriverController {
      * Te pola mogą później poprawić ETA, matching i wykrywanie podejrzanych skoków GPS.
      */
     public record LocationRequest(
+            @NotBlank String cityId,
             @DecimalMin("-90.0") @DecimalMax("90.0") double lat,
             @DecimalMin("-180.0") @DecimalMax("180.0") double lng,
             double heading,
-            double speed
+            double speed,
+            @PositiveOrZero double accuracyMeters,
+            @PositiveOrZero long sequence,
+            @NotNull Instant recordedAt
     ) {}
 }

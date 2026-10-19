@@ -35,6 +35,12 @@ public final class AlertmanagerConfig {
         this.repeatInterval = requireNonBlank(repeatInterval, "repeatInterval");
         this.routes = List.copyOf(Objects.requireNonNull(routes, "routes must not be null"));
         this.receivers = List.copyOf(Objects.requireNonNull(receivers, "receivers must not be null"));
+        if (this.groupBy.isEmpty()) throw new IllegalArgumentException("groupBy must not be empty");
+        if (this.receivers.isEmpty()) throw new IllegalArgumentException("receivers must not be empty");
+        if (!this.receivers.contains(this.defaultReceiver)) throw new IllegalArgumentException("defaultReceiver must be declared in receivers");
+        for (AlertmanagerRoute route : this.routes) {
+            if (!this.receivers.contains(route.receiver())) throw new IllegalArgumentException("route receiver must be declared: " + route.receiver());
+        }
     }
 
     public static AlertmanagerConfig checkoutDefault() {

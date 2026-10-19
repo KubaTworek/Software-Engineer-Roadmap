@@ -6,11 +6,13 @@ import com.example.ecommerce.cart.CartItem;
 import com.example.ecommerce.common.ApiException;
 import com.example.ecommerce.order.dto.OrderDtos;
 import com.example.ecommerce.outbox.OutboxService;
+import com.example.ecommerce.inventory.InventoryService;
+import com.example.ecommerce.pricing.MoneyPolicy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.time.Instant;
+import java.time.Clock;
 import java.util.List;
 import java.util.Map;
 
@@ -52,16 +54,25 @@ public class OrderService {
      * - fulfillment.
      */
     private final OutboxService outbox;
+    private final InventoryService inventory;
+    private final Clock clock;
+    private final MoneyPolicy money;
 
     /**
      * Constructor injection.
      */
     public OrderService(
             CustomerOrderRepository orders,
-            OutboxService outbox
+            OutboxService outbox,
+            InventoryService inventory,
+            Clock clock,
+            MoneyPolicy money
     ) {
         this.orders = orders;
         this.outbox = outbox;
+        this.inventory = inventory;
+        this.clock = clock;
+        this.money = money;
     }
 
     /**
@@ -96,10 +107,13 @@ public class OrderService {
          * lineTotal zwykle oznacza:
          * unitPriceSnapshot * quantity
          */
+        String currency = money.requireSingleCurrency(cart.getItems().stream()
+                .map(CartItem::getCurrency).toList());
         BigDecimal subtotal = cart.getItems()
                 .stream()
                 .map(CartItem::lineTotal)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+        subtotal = money.normalize(subtotal, currency);
 
         /*
          * Stały koszt dostawy dla MVP.
@@ -107,7 +121,7 @@ public class OrderService {
          * W produkcyjnym systemie shipping powinien być liczony przez osobny moduł,
          * zależnie od kraju, metody dostawy, wagi, gabarytów, koszyka i promocji.
          */
-        BigDecimal shipping = BigDecimal.valueOf(15);
+        BigDecimal shipping = money.normalize(BigDecimal.valueOf(15), currency);
 
         /*
          * Total to suma produktów i dostawy.
@@ -120,7 +134,7 @@ public class OrderService {
          * - dynamic pricing,
          * - opłaty marketplace.
          */
-        BigDecimal total = subtotal.add(shipping);
+        BigDecimal total = money.normalize(subtotal.add(shipping), currency);
 
         /*
          * Waluta jest brana z pierwszej pozycji koszyka.
@@ -130,10 +144,6 @@ public class OrderService {
          * CheckoutService wcześniej powinien blokować pusty koszyk,
          * więc fallback PLN jest głównie zabezpieczeniem technicznym.
          */
-        String currency = cart.getItems().isEmpty()
-                ? "PLN"
-                : cart.getItems().get(0).getCurrency();
-
         /*
          * Tworzymy zamówienie w statusie początkowym.
          *
@@ -144,7 +154,7 @@ public class OrderService {
          * odpornego na kolizje i zgodnego z wymaganiami biznesowymi.
          */
         CustomerOrder order = new CustomerOrder(
-                "ORD-" + Instant.now().toEpochMilli(),
+                "ORD-" + clock.instant().toEpochMilli() + "-" + java.util.UUID.randomUUID().toString().substring(0, 8),
                 user,
                 subtotal,
                 shipping,
@@ -331,6 +341,11 @@ public class OrderService {
          * Zmiana statusu jest zamknięta w encji CustomerOrder.
          */
         order.cancel();
+
+        // Anulowanie i zwolnienie stocku należą do tej samej lokalnej transakcji.
+        // Event pozostaje informacją dla downstreamów, a nie mechanizmem
+        // wymaganym do zachowania podstawowego invariant inventory.
+        inventory.releaseReservations(orderId);
 
         /*
          * Event OrderCancelled.

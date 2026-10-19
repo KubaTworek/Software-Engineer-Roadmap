@@ -1,5 +1,7 @@
 package com.example.urlshortener.edge;
 
+import java.util.ArrayList;
+import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -91,6 +93,7 @@ public class EdgeProperties {
      * </p>
      */
     private String internalToken = "local-edge-token";
+    private List<String> previousInternalTokens = new ArrayList<>();
 
     /**
      * Wartość nagłówka {@code Cache-Control} ustawiana na odpowiedziach redirectu.
@@ -172,6 +175,11 @@ public class EdgeProperties {
      */
     public void setInternalToken(String internalToken) {
         this.internalToken = internalToken;
+    }
+
+    public List<String> getPreviousInternalTokens() { return List.copyOf(previousInternalTokens); }
+    public void setPreviousInternalTokens(List<String> tokens) {
+        this.previousInternalTokens = tokens == null ? new ArrayList<>() : new ArrayList<>(tokens);
     }
 
     /**

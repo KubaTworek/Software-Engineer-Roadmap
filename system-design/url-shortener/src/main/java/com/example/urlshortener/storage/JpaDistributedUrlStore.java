@@ -247,7 +247,8 @@ public class JpaDistributedUrlStore implements DistributedUrlStore {
                 entity.getStatus(),
                 entity.getExpiresAt(),
                 regionProperties.getRegionId(),
-                entity.getUpdatedAt()
+                entity.getUpdatedAt(),
+                entity.getVersion()
         );
     }
 }

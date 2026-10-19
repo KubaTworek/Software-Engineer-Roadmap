@@ -2,7 +2,7 @@ package pl.jakubtworek.marketplace.ordering.application;
 
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
-import pl.jakubtworek.marketplace.inventory.domain.StockReservationFailed;
+import pl.jakubtworek.marketplace.integration.contracts.StockReservationFailedIntegrationEvent;
 import pl.jakubtworek.marketplace.ordering.domain.OrderId;
 import pl.jakubtworek.marketplace.shared.events.DomainEventHandler;
 
@@ -22,7 +22,7 @@ import pl.jakubtworek.marketplace.shared.events.DomainEventHandler;
  * Dzięki temu Inventory nie musi znać statusów zamówienia ani logiki procesu order fulfillment.
  */
 @Component
-public class RejectOrderOnStockReservationFailedHandler implements DomainEventHandler<StockReservationFailed> {
+public class RejectOrderOnStockReservationFailedHandler implements DomainEventHandler<StockReservationFailedIntegrationEvent> {
 
     /**
      * Port repozytorium zamówień.
@@ -42,8 +42,8 @@ public class RejectOrderOnStockReservationFailedHandler implements DomainEventHa
      * StockReservationFailed.
      */
     @Override
-    public Class<StockReservationFailed> eventType() {
-        return StockReservationFailed.class;
+    public Class<StockReservationFailedIntegrationEvent> eventType() {
+        return StockReservationFailedIntegrationEvent.class;
     }
 
     /**
@@ -60,7 +60,7 @@ public class RejectOrderOnStockReservationFailedHandler implements DomainEventHa
      */
     @Override
     @Transactional
-    public void handle(StockReservationFailed event) {
+    public void handle(StockReservationFailedIntegrationEvent event) {
         var order = repository.findById(OrderId.of(event.orderId()))
                 .orElseThrow();
 

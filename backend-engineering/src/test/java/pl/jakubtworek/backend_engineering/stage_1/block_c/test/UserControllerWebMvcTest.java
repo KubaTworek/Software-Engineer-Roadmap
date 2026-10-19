@@ -3,14 +3,13 @@ package pl.jakubtworek.backend_engineering.stage_1.block_c.test;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
-import pl.jakubtworek.backend_engineering.stage_1.block_c.test.User;
-import pl.jakubtworek.backend_engineering.stage_1.block_c.test.UserController;
-import pl.jakubtworek.backend_engineering.stage_1.block_c.test.UserService;
-
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /**
@@ -42,6 +41,7 @@ public class UserControllerWebMvcTest {
     private UserService userService;
 
     @Test
+    @WithMockUser
     void shouldReturnUserJson() throws Exception {
 
         User user = new User("John");
@@ -68,6 +68,7 @@ public class UserControllerWebMvcTest {
     }
 
     @Test
+    @WithMockUser
     void shouldReturnValidationError() throws Exception {
 
         /**
@@ -83,6 +84,7 @@ public class UserControllerWebMvcTest {
         mockMvc.perform(
                         org.springframework.test.web.servlet.request.MockMvcRequestBuilders
                                 .post("/users")
+                                .with(csrf())
                                 .contentType("application/json")
                                 .content(invalidJson)
                 )
@@ -91,5 +93,7 @@ public class UserControllerWebMvcTest {
                  * Validation should return 400 BAD REQUEST.
                  */
                 .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(userService);
     }
 }

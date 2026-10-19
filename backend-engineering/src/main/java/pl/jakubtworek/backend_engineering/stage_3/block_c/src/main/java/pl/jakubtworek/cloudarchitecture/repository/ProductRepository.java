@@ -1,6 +1,6 @@
-package pl.jakubtworek.backend_engineering.stage_3.block_c.src.main.java.pl.jakubtworek.cloudarchitecture.repository;
+package pl.jakubtworek.cloudarchitecture.repository;
 
-import com.example.cloudarchitecture.entity.ProductEntity;
+import pl.jakubtworek.cloudarchitecture.entity.ProductEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 /**

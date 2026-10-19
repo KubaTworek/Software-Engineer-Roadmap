@@ -1,6 +1,354 @@
 # Chat System — System Design
 
+<!-- reading-guide:start -->
+## Ścieżki czytania
+
+| Cel czytania | Punkt wejścia |
+| --- | --- |
+| Teoria i model problemu | [Fundamenty teoretyczne systemu czatu](#fundamenty-teoretyczne-systemu-czatu) |
+| Implementacja i jej dowody | [Jak czytać to laboratorium](#jak-czytać-to-laboratorium) |
+| Uruchomienie i eksperymenty | [38. Testowanie](#38-testowanie) |
+| Ograniczenia i scenariusze awarii | [42. Kompromisy projektowe](#42-kompromisy-projektowe) |
+
+Wspólne mechanizmy i ich testy znajdziesz w [indeksie pojęć backend-engineering](../../backend-engineering/README.md#globalny-indeks-pojęć). Tutaj śledź ich konsekwencje dla opisywanego systemu.
+Diagramy docelowe i warianty rozwoju czytaj razem z mapą implementacji; sam opis architektury nie oznacza, że wszystkie jej komponenty są uruchamiane w laboratorium.
+<!-- reading-guide:end -->
+
+## Zacznij tutaj
+
+MinIO w laboratorium jest budowany z [oficjalnego commitu 0d7408fc9969](https://github.com/minio/minio/tree/0d7408fc9969caf07de6a8c3a84f9fbb10a6739e)
+przez [docker/minio.Dockerfile](docker/minio.Dockerfile), ponieważ poprzedni obraz
+rejestru stał się niedostępny. Testcontainers (jeśli dany test używa MinIO) i Compose
+korzystają z lokalnego przepisu budowania; nie jest potrzebne logowanie do Quay.
+Pierwszy build wymaga dostępu do GitHub, rejestru obrazów bazowych i modułów Go,
+trwa dłużej oraz potrzebuje więcej pamięci niż samo pobranie obrazu. Warstwy
+kompilacji są cache'owane przez Docker. W tym systemie obraz buduje Testcontainers;
+lokalny stack Compose nie zawiera osobnej usługi MinIO.
+To przypięta wersja edukacyjna, nie rekomendacja bezpieczeństwa dla produkcji;
+licencja AGPL jest dołączana do obrazu w `/licenses/minio/LICENSE`.
+
+| Pytanie | Odpowiedź |
+| --- | --- |
+| Najważniejszy niezmiennik | Wiadomość zaakceptowana przez system ma dokładnie jedną pozycję w porządku danej konwersacji, a jej treść i załączniki są dostępne wyłącznie aktualnie uprawnionym użytkownikom. |
+| Krytyczny przepływ | Autoryzacja uczestnika → zapis wiadomości i outboxa → publikacja → dostarczenie realtime → potwierdzenie odczytu. |
+| Rekomendowany test | `.\mvnw.cmd verify` sprawdza kontrakty aplikacyjne, a `.\mvnw.cmd -Pinfrastructure-tests verify` uruchamia PostgreSQL, Kafkę i MinIO przez Testcontainers. |
+| Świadome ograniczenia | Realtime nadal używa prostego brokera STOMP, presence korzysta ze współdzielonej bazy zamiast Redis Cluster, a multi-region jest deterministyczną symulacją. System nie obiecuje globalnego porządku między konwersacjami ani pełnego wdrożenia hyperscale. |
+
 Kompleksowy projekt systemu czatu obsługującego rozmowy 1:1, rozmowy grupowe, wiadomości w czasie rzeczywistym, historię konwersacji, presence, potwierdzenia odczytu, załączniki, wyszukiwanie i powiadomienia push.
+
+## Jak czytać to laboratorium
+
+README opisuje zarówno **uruchamialny model referencyjny**, jak i **docelową architekturę dużej skali**. Te dwie warstwy są celowo rozdzielone:
+
+- kod dowodzi lokalnych niezmienników na PostgreSQL/H2 i pokazuje granice transportu, storage oraz asynchronicznych konsumentów;
+- sekcje projektowe wyjaśniają, kiedy te granice należy zastąpić Redisem, brokerem, object storage, indeksem wyszukiwania lub osobnymi gatewayami;
+- nazwanie technologii w diagramie nie oznacza, że jej semantyka została zasymulowana przez klasę in-memory;
+- H2 służy szybkiemu feedbackowi, a profil Testcontainers potwierdza zachowanie zależne od blokad i składni PostgreSQL.
+
+### Mapa wykonywalnych gwarancji
+
+| Problem | Niezmiennik / kontrakt | Mechanizm w kodzie | Test, od którego warto zacząć |
+| --- | --- | --- | --- |
+| Kolejność | jedna, rosnąca `sequence_number` w obrębie konwersacji | blokada konwersacji i unikalny `(conversation_id, sequence_number)` | `PostgreSqlChatInfrastructureIT.concurrentWritersReceiveGaplessConversationSequence` |
+| Retry klienta | ten sam klucz i payload zwraca ten sam wynik; inny payload daje `409` | `(conversation, sender, client_message_id)` oraz fingerprint komendy | `MessageServiceTest.sendMessageIsDeduplicatedByClientMessageId` |
+| Rozmowa 1:1 | para użytkowników ma najwyżej jedną aktywną rozmowę direct | kanoniczny `direct_key`, blokady użytkowników w stałej kolejności, constraint | `PostgreSqlChatInfrastructureIT.canonicalDirectKeyPreventsTwoConversationsForOppositeRequests` |
+| Historia i reconnect | kursor nie pomija wiadomości o identycznym czasie | kursor `sequence_number`, osobny monotoniczny cursor urządzenia | `MessageServiceTest.editAndDeletePreserveSequenceAndExposeTombstoneDuringReconnect` |
+| Edycja/usunięcie | mutacja nie zmienia miejsca w historii; delete jest tombstone'em | `revision`, `edited_at`, `deleted_at` | ten sam test reconnectu |
+| Outbox | wielu publisherów nie claimuje tego samego rekordu; handler ma własny inbox | `FOR UPDATE SKIP LOCKED`, lease claimu, `outbox_handler_deliveries` | `PostgreSqlChatInfrastructureIT.skipLockedClaimsEachOutboxRecordOnceAcrossWorkers` |
+| Presence | disconnect jednego urządzenia nie wyłącza drugiego; utracony disconnect wygasa | lease per sesja, heartbeat i TTL we współdzielonej bazie | `PresenceLeaseServiceTest.userGoesOfflineOnlyAfterLastDeviceDisconnects` |
+| Załącznik | capability jest jednorazowe, zawartość jest weryfikowana, odczyt wymaga membershipu | statusy `UPLOAD_PENDING → SCANNING → READY`, checksum i ACL wiadomości | `AttachmentServiceTest` |
+| Realtime ACL | nie istnieje publiczny topic pozwalający zachować dostęp po usunięciu z grupy | fan-out do prywatnych kolejek na podstawie aktualnego membershipu | `WebSocketSecurityTest` |
+| Temporalne ACL | ponowne dołączenie nie przywraca starej historii, search ani plików | `membership_epoch`, `joined_sequence`, aktywny zakres ACL | `TemporalMembershipTest` |
+| Handshake przeglądarki | długowieczny JWT nie trafia do URL; ticket jest krótki i jednorazowy | hash ticketu, TTL, binding do Origin i atomowe consume | `WebSocketTicketServiceTest` |
+| Search | indeks jest projekcją, nie źródłem prawdy ani autorytetem ACL | idempotentny upsert/delete, rebuild i kontrola membershipu przy query | `TemporalMembershipTest` |
+| Slow consumer | trwały event nie jest po cichu usuwany, a efemeryczny stan może być koaleskowany | ograniczony bufor i reconnect+catch-up | `RealtimeFlowControlTest` |
+| Retencja | fizyczny delete czeka na tombstone, kursory urządzeń, backup retention i legal hold | deterministyczna polityka oraz tracker propagacji | `MessageRetentionPolicyTest` |
+| Multi-region | stary leader nie zapisze po failoverze, replika nie łamie read-your-writes | epoch/fencing i minimum observed sequence | `MultiRegionConversationTest` |
+| Broker i object storage | broker zachowuje porządek klucza i redelivery, quarantine jest oddzielone od clean | adaptery Kafka/MinIO i prawdziwe kontenery | `KafkaEventBusIT`, `MinioObjectStorageIT` |
+
+### Uruchamianie
+
+Wymagane są Java 21 oraz Docker tylko dla testów infrastrukturalnych.
+
+```powershell
+# szybka pętla: migracje na H2 i testy kontraktów aplikacji
+.\mvnw.cmd clean verify
+
+# PostgreSQL, Kafka i MinIO: kontrakty zależne od infrastruktury
+.\mvnw.cmd -Pinfrastructure-tests verify
+
+# lokalny PostgreSQL i narzędzia obserwowalności
+docker compose up -d postgres prometheus grafana
+$env:CHAT_JWT_SECRET = "replace-with-at-least-32-random-characters"
+$env:CHAT_DB_PASSWORD = "chat"
+.\mvnw.cmd spring-boot:run "-Dspring-boot.run.profiles=postgres"
+```
+
+Sekret JWT nie ma wartości domyślnej: uruchomienie bez `CHAT_JWT_SECRET` ma zakończyć się błędem (fail-closed). Profil `test` ustawia wyłącznie sekret testowy. PostgreSQL używa zmiennych `CHAT_DB_URL`, `CHAT_DB_USER` i `CHAT_DB_PASSWORD`; lokalne wartości pokazuje `docker-compose.yml`.
+
+Profile można łączyć, np. `postgres,kafka,minio`. `kafka` wymaga
+`CHAT_KAFKA_BOOTSTRAP_SERVERS`, publikuje outbox do `chat-domain-events` i wyłącza
+lokalny worker kolejki. `minio` wymaga `CHAT_MINIO_ENDPOINT`,
+`CHAT_MINIO_ACCESS_KEY` i `CHAT_MINIO_SECRET_KEY`; tworzy oddzielne buckety
+`chat-quarantine` oraz `chat-clean`. Profil infrastrukturalny uruchamia te
+zależności automatycznie w izolowanych kontenerach, więc do weryfikacji nie trzeba
+utrzymywać lokalnych serwerów.
+
+### Semantyka implementacji w skrócie
+
+- ACK `message.sent` znaczy: wiadomość i event outbox zostały trwale zapisane. Nie znaczy „odbiorca dostał” ani „przeczytał”.
+- Porządek jest totalny **tylko wewnątrz jednej konwersacji**. Nie istnieje sensowny porządek globalny wszystkich czatów.
+- Dostarczenie realtime jest best-effort. Źródłem prawdy jest historia i sync po `sequence_number`.
+- Read receipt jest stanem użytkownika, a cursor synchronizacji jest stanem urządzenia. Te pojęcia rozwiązują inne problemy.
+- Aktywna epoka członkostwa widzi wiadomości od swojego `joined_sequence`. Ponowne dołączenie tworzy nową epokę i nie przywraca starej historii, search ani plików.
+- Usunięcie wiadomości tworzy tombstone synchronizowany z urządzeniami. Model retencji pokazuje, kiedy wolno przejść do fizycznego wymazania po uwzględnieniu urządzeń, backupów i legal hold.
+- Presence jest wskazówką UX, nie podstawą autoryzacji ani rozliczeń.
+- Upload kończy request w `SCANNING`; osobny worker czyta wyłącznie quarantine, sprawdza sygnaturę i checksum, a potem promuje do clean albo odrzuca. MinIO wykonuje te same granice co adapter lokalny; pełny antywirus/CDR i presigned upload pozostają granicą produkcyjną.
+
+## Fundamenty teoretyczne systemu czatu
+
+### Czat jako uporządkowany log, a nie kolekcja requestów
+
+Najbardziej użyteczny model mentalny traktuje każdą konwersację jak osobny,
+rosnący log zdarzeń. Polecenie klienta nie staje się wiadomością tylko dlatego,
+że dotarło przez HTTP lub WebSocket. Najpierw musi zostać:
+
+1. uwierzytelnione i autoryzowane;
+2. zidentyfikowane kluczem idempotencji;
+3. umieszczone w porządku konkretnej konwersacji;
+4. trwale zapisane razem z intencją publikacji;
+5. dopiero potem rozpropagowane do urządzeń i projekcji.
+
+Z tego modelu wynika kilka ważnych konsekwencji:
+
+- WebSocket jest kanałem niskiego opóźnienia, ale nie źródłem prawdy;
+- reconnect jest normalną ścieżką protokołu, nie wyjątkowym recovery;
+- lista rozmów, unread count, search i push są projekcjami logu;
+- duplikat transportowy nie może oznaczać drugiej operacji biznesowej;
+- kolejność odbioru pakietów nie musi być kolejnością zaakceptowaną przez system.
+
+W implementacji `sequence_number` jest pozycją w logu rozmowy, `created_at`
+metadanym prezentacyjnym, a `client_message_id` identyfikatorem komendy klienta.
+Te trzy wartości nie są zamienne.
+
+### Cztery płaszczyzny systemu
+
+Architekturę łatwiej analizować po odpowiedzialnościach niż po nazwach usług:
+
+| Płaszczyzna | Odpowiedzialność | Wymagana gwarancja | Typowa awaria |
+| --- | --- | --- | --- |
+| Command plane | przyjęcie `send/edit/delete/read`, auth i rate limiting | komenda zaakceptowana najwyżej raz biznesowo | timeout klienta po poprawnym commitcie |
+| Durable data plane | historia, membership, sekwencja i outbox | zapis wiadomości oraz intencji publikacji jest atomowy | konflikt, rollback, utrata primary |
+| Delivery plane | WebSocket, push i reconnect sync | at-least-once plus deduplikacja | disconnect, reorder, slow consumer |
+| Projection plane | inbox, unread, search, analytics | eventual consistency i możliwość odbudowy | lag, poison event, nieaktualny indeks |
+
+Podział pokazuje, dlaczego nie należy uzależniać sukcesu wysłania wiadomości od
+działania push providera lub indeksu wyszukiwania. Awaria projekcji może obniżyć
+jakość produktu, ale nie powinna cofać trwałego zapisu historii.
+
+### Niezmienniki ważniejsze niż komponenty
+
+Technologia może się zmienić, natomiast niezmienniki definiują poprawność:
+
+- aktywny `DIRECT` istnieje najwyżej raz dla danej pary użytkowników;
+- każda zaakceptowana wiadomość ma jedną, niezmienną pozycję w konwersacji;
+- retry tej samej komendy nie tworzy drugiego skutku;
+- ponowne użycie klucza z innym payloadem jest konfliktem, nie duplikatem;
+- użytkownik nie czyta, publikuje ani pobiera pliku bez obowiązującego membershipu;
+- usunięcie jest widoczne także dla urządzenia, które było offline;
+- cursor urządzenia i stan `READ` nigdy nie cofają się;
+- efekt asynchroniczny może wykonać się więcej niż raz, dlatego konsument musi być idempotentny.
+
+Test architektury powinien dowodzić konkretnego niezmiennika. Sam status `200`,
+liczba wywołań mocka albo wysokie coverage nie dowodzą poprawności czatu.
+
+### Porządek, czas i przyczynowość
+
+W systemie rozproszonym istnieje kilka różnych pojęć kolejności:
+
+- **wall-clock order** — kolejność timestampów; podatna na clock skew i remisy;
+- **arrival order** — kolejność dotarcia do konkretnej instancji; zmienia się przy retry;
+- **commit order** — kolejność zaakceptowana przez source of truth;
+- **causal order** — odpowiedź powinna następować po wiadomości, na którą odpowiada;
+- **total order** — każdą parę elementów da się jednoznacznie porównać.
+
+Laboratorium zapewnia total order w obrębie jednej konwersacji przez sekwencję.
+Nie zapewnia total order między rozmowami, ponieważ nie daje on wartości
+produktowej proporcjonalnej do kosztu globalnej koordynacji. Jeżeli wiadomość ma
+pole `reply_to`, sama sekwencja porządkuje zapis, ale aplikacja nadal powinna
+sprawdzić, czy rodzic istnieje i należy do tej samej rozmowy.
+
+Lamport clock potrafi zachować relację „happened-before”, ale nie mówi, ile czasu
+upłynęło. Vector clock wykrywa współbieżność, lecz jego rozmiar rośnie z liczbą
+uczestników/replik. W typowym czacie prostszy sequencer per partycja jest bardziej
+praktyczny niż wystawianie klientom pełnej przyczynowości systemu.
+
+### Delivery semantics od komendy do ekranu odbiorcy
+
+„Exactly once” nie jest jedną gwarancją. Trzeba wskazać granicę:
+
+```text
+klient -> API -> baza -> outbox -> broker -> gateway -> urządzenie -> UI
+```
+
+Każde przejście ma własny ACK i własne okno awarii:
+
+- odpowiedź API potwierdza commit, ale może zaginąć w sieci;
+- ACK brokera nie dowodzi dostarczenia do urządzenia;
+- wysłanie ramki WebSocket nie dowodzi przetworzenia przez aplikację klienta;
+- `DELIVERED` jest deklaracją klienta, a `READ` deklaracją interfejsu użytkownika;
+- push jest jedynie sygnałem pobudzającym aplikację do synchronizacji.
+
+Dlatego realistyczny kontrakt to trwały zapis + at-least-once delivery +
+idempotencja na każdej granicy. Jeżeli zewnętrzny provider nie wspiera klucza
+idempotencji, nie da się usunąć okna „efekt wykonany, lecz ACK utracony”.
+
+### Membership jako dane temporalne
+
+Pytanie „czy użytkownik należy do rozmowy?” jest często niewystarczające. Dla
+historii potrzebna jest polityka temporalna:
+
+- członek widzi całą historię;
+- członek widzi wiadomości od `joined_sequence`;
+- po opuszczeniu zachowuje historię do `left_sequence`;
+- ban natychmiast odbiera także dostęp do plików i realtime;
+- ponowne dołączenie tworzy nową epokę membershipu.
+
+Implementacja przechowuje `(joined_sequence, left_sequence, membership_epoch)`.
+Odczyt historii, projekcja search i ACL załącznika używają aktywnej epoki oraz
+dolnej granicy sekwencji. Po ponownym dołączeniu powstaje nowy rekord, a nie
+reaktywacja starego. Laboratorium wybiera politykę „historia od dołączenia”;
+produkt może świadomie wybrać inną, ale musi stosować ją jednolicie we wszystkich
+projekcjach i kanałach dostępu.
+
+### CAP, PACELC i wybór spójności
+
+Podczas partycji sieciowej nie da się jednocześnie zagwarantować pełnej
+dostępności każdego zapisu oraz jednego silnie spójnego porządku rozmowy.
+System może:
+
+- odrzucić/odroczyć zapis bez właściciela partycji i zachować porządek;
+- zaakceptować zapis w wielu regionach, a później rozwiązywać konflikty;
+- przypisać rozmowę do home regionu i kierować tam komendy.
+
+PACELC przypomina, że kompromis istnieje także bez awarii: silna koordynacja
+zwiększa latency. Dla wiadomości zwykle wybiera się silny porządek w obrębie
+partycji rozmowy, a eventual consistency dla presence, search, push, unread i
+analityki. Użytkownik powinien dostać read-your-writes z lokalnego ACK lub historii,
+nawet gdy pozostałe projekcje jeszcze się nie zaktualizowały.
+
+### Hot conversations, fan-out i backpressure
+
+Średnie RPS ukrywa problem aktywnego kanału. Jedna rozmowa może stać się hot
+partition niezależnie od całkowitego ruchu systemu. Sekwencjonowanie per rozmowa
+tworzy naturalny punkt serializacji, więc należy mierzyć:
+
+- zapisy/s dla najgorętszej konwersacji, nie tylko globalnie;
+- czas oczekiwania na lock/sequencer;
+- fan-out = liczba wiadomości × liczba aktywnych odbiorców/urządzeń;
+- rozmiar kolejki per gateway i opóźnienie najwolniejszego klienta;
+- koszt odbudowy stanu po reconnect stormie.
+
+Backpressure musi kończyć się kontrolowaną decyzją. Dla trwałych wiadomości można
+odrzucić nowe komendy `429/503`, opóźnić publikację lub przełączyć klienta na
+sync. Dla typing/presence lepiej dropować i koaleskować stare aktualizacje.
+Nieograniczona kolejka jedynie zamienia przeciążenie w zużycie pamięci i długi,
+nieprzewidywalny latency tail.
+
+### Wieloregionowość
+
+Najprostszy poprawny model przypisuje konwersację do home regionu:
+
+```text
+conversation_id -> region/shard -> sequencer + message store
+```
+
+Odczyty mogą korzystać z replik, ale read-your-writes wymaga session tokenu,
+odczytu z primary albo oczekiwania, aż replika osiągnie wymaganą sekwencję.
+Failover regionu musi rozstrzygnąć, kto jest nowym właścicielem; dwóch aktywnych
+właścicieli może nadać tę samą sekwencję lub rozszczepić historię. Epoch/fencing
+token chroni wtedy przed zapisami starego leadera.
+
+Active-active bez właściciela jest możliwe, lecz wymaga jawnej strategii konfliktu
+i zwykle osłabia prosty total order. Dla większości produktów czatowych home
+region + asynchroniczna replikacja jest łatwiejszy do wyjaśnienia, przetestowania
+i operowania.
+
+### Failure matrix
+
+| Awaria | Co może zobaczyć klient | Mechanizm odzyskania | Czego mechanizm nie gwarantuje |
+| --- | --- | --- | --- |
+| timeout po commitcie | wiadomość nadal `sending` | retry z tym samym `client_message_id` | brak ponownego requestu klienta |
+| restart publishera | opóźniony realtime/push | outbox i odzyskanie wygasłego claimu | zerowe opóźnienie |
+| awaria handlera | część projekcji opóźniona | retry, inbox per konsument, DLQ operacyjne | exactly-once zewnętrznego efektu bez wsparcia providera |
+| zerwany WebSocket | luka na ekranie | sync po ostatniej sekwencji urządzenia | zachowanie efemerycznego typing |
+| utracony DISCONNECT | chwilowo błędne ONLINE | lease presence i TTL | presence jako źródło autoryzacji |
+| lag repliki | brak świeżej wiadomości w odczycie | primary/session token/minimum sequence | natychmiastowa spójność dowolnej repliki |
+| wolny odbiorca | rosnący bufor gatewaya | limit, drop efemerycznych eventów, reconnect+sync | dostarczenie każdej ramki realtime |
+| niedostępny storage plików | wiadomość bez dostępnego pliku | retry/placeholder/reconciliation | atomowość SQL z zewnętrznym object storage |
+
+### Prywatność, retencja i E2EE
+
+Szyfrowanie TLS i encryption at rest chronią inne granice niż end-to-end
+encryption. Przy E2EE serwer nie zna treści, więc traci możliwość klasycznego
+wyszukiwania, moderacji, generowania preview i łatwego odzyskania historii na
+nowym urządzeniu. Dochodzą identity keys, prekeys, rotacja urządzeń, forward
+secrecy, group key management i weryfikacja urządzeń.
+
+Retencja również nie kończy się na `DELETE FROM messages`. Trzeba uwzględnić:
+
+- cache i lokalne kopie urządzeń;
+- indeks wyszukiwania i analitykę;
+- załączniki, miniatury oraz CDN;
+- repliki i backupy z okresem wygaśnięcia;
+- legal hold kolidujący z normalną polityką usuwania;
+- audit trail, który nie powinien kopiować treści wiadomości.
+
+Dlatego tombstone dla synchronizacji, usunięcie logiczne, anonimizacja oraz
+fizyczne wymazanie są osobnymi etapami lifecycle danych.
+
+### Od teorii do wykonywalnych granic
+
+Poniższe mechanizmy są częścią modelu referencyjnego, a nie wyłącznie diagramu:
+
+1. **Temporal membership.** Członkostwo jest przedziałem w logu rozmowy. `joined_sequence`
+   określa pierwszą widoczną pozycję, `left_sequence` zamyka poprzednią epokę,
+   a `membership_epoch` pozwala ponownie dodać tę samą osobę bez reaktywowania
+   historycznego ACL. Ten sam warunek obowiązuje historię, search i pliki.
+2. **WebSocket ticket.** Uwierzytelniony REST wydaje 256-bitowe capability z TTL.
+   Baza przechowuje SHA-256, nie surowy sekret. Handshake wiąże ticket z `Origin`
+   i zużywa go pod blokadą, więc replay nie otwiera drugiego połączenia. JWT w
+   query pozostaje wyłącznie opt-in fallbackiem developerskim.
+3. **Broker.** Profil `kafka` publikuje kopertę outboxa do prawdziwej Kafki,
+   a `KafkaDomainEventConsumer` uruchamia handlery przez ich trwałe inboxy.
+   Kluczem partycji jest `conversationId`, dzięki czemu kolejność dotyczy jednej
+   rozmowy. Brak commitu offsetu powoduje redelivery; handler nadal potrzebuje
+   inboxu/idempotencji, bo broker nie zapewnia exactly-once efektu biznesowego.
+4. **Object storage.** Adapter lokalny i MinIO implementują identyczny kontrakt:
+   upload trafia do quarantine, request kończy się w `SCANNING`, worker weryfikuje
+   zawartość, a dopiero promotion do clean umożliwia download. Metadata SQL i blob
+   nie tworzą jednej transakcji, więc stan `SCANNING` pełni rolę retryowalnego
+   checkpointu, a reconciliation musi naprawiać osierocone obiekty.
+5. **Search projection.** `message_search_documents` jest materializowaną,
+   odbudowywalną projekcją. Create/edit wykonują idempotentny upsert, delete usuwa
+   dokument, a rebuild czyta source of truth. Indeks zwraca kandydatów, natomiast
+   autoryzacja zawsze wraca do temporalnego membershipu.
+6. **Backpressure.** Bufor połączenia ma stałą pojemność. Typing/presence są
+   koaleskowane, bo reprezentują najnowszy stan. Trwała wiadomość nie może zostać
+   po cichu usunięta: przepełnienie wymusza reconnect i catch-up z logu. Bulkhead
+   ogranicza równoległe odczyty po awarii, a backoff z jitterem rozprasza storm.
+7. **Retencja.** Tombstone pozostaje do końca okna synchronizacji. Fizyczny delete
+   wymaga minięcia grace period, potwierdzenia odpowiednich cursorów, wygaśnięcia
+   retencji backupu i braku legal hold. Osobny tracker ujawnia, czy usunięcie dotarło
+   do primary, search, cache, object storage i analytics.
+8. **Multi-region.** Symulacja stosuje single-writer per conversation. Każdy
+   failover zwiększa epoch/fencing token, więc stary region nie zapisze mimo
+   split-brain. Odczyt z repliki przyjmuje minimalną zaobserwowaną sekwencję i
+   odrzuca odpowiedź, jeżeli replika nie spełnia jeszcze read-your-writes.
+
+Te mechanizmy celowo oddzielają **safety** od **liveness**. Fencing, ACL i
+unikalność chronią poprawność nawet kosztem odrzucenia operacji. Retry, reconnect,
+rebuild i reconciliation przywracają postęp, ale nie mogą omijać warunków safety.
 
 ---
 
@@ -595,7 +943,9 @@ Dla dużej skali lepsza będzie Cassandra, ScyllaDB, DynamoDB albo partycjonowan
 
 Model pod główny access pattern:
 
-> Pobierz wiadomości z danej konwersacji, posortowane malejąco po czasie.
+> Pobierz wiadomości z danej konwersacji, posortowane po stabilnej sekwencji tej konwersacji.
+
+Uruchamialna implementacja PostgreSQL przechowuje `sequence_number`, `revision`, `edited_at` i `deleted_at`. Constraint `(conversation_id, sequence_number)` jest ostatnią linią obrony, a licznik jest alokowany pod blokadą rekordu konwersacji. Czas pozostaje metadanym prezentacyjnym, nie kursorem porządku.
 
 Przykład dla Cassandry/ScyllaDB:
 
@@ -727,7 +1077,8 @@ PATCH /conversations/{conversationId}/members/{userId}
 
 ```http
 POST /conversations/{conversationId}/messages
-GET /conversations/{conversationId}/messages?before={cursor}&limit=50
+GET /conversations/{conversationId}/messages?beforeSequence={cursor}&limit=50
+GET /conversations/{conversationId}/messages/sync?afterSequence={cursor}&limit=50
 PATCH /conversations/{conversationId}/messages/{messageId}
 DELETE /conversations/{conversationId}/messages/{messageId}
 ```
@@ -752,6 +1103,7 @@ Odpowiedź:
   "client_message_id": "client-generated-uuid",
   "conversation_id": "conv_123",
   "sender_id": "user_1",
+  "sequence_number": 42,
   "type": "text",
   "body": "Hello!",
   "created_at": "2026-06-05T12:00:00Z",
@@ -759,7 +1111,7 @@ Odpowiedź:
 }
 ```
 
-`client_message_id` jest ważny, bo pozwala obsłużyć retry bez duplikowania wiadomości.
+`client_message_id` jest ważny, bo pozwala obsłużyć retry bez duplikowania wiadomości. Klucz ma scope `(conversation_id, sender_id, client_message_id)`. Serwer przechowuje też fingerprint kanonicznej komendy: ponowienie identycznego payloadu jest sukcesem idempotentnym, ale użycie tego samego klucza dla innej treści zwraca konflikt zamiast milcząco zaakceptować niejednoznaczność.
 
 ### 8.6 Read Receipts
 
@@ -806,12 +1158,31 @@ Odpowiedź:
 
 ## 9. WebSocket Protocol
 
-Połączenie:
+Połączenie klienta nieprzeglądarkowego może użyć nagłówka:
 
 ```text
 wss://chat.example.com/ws
 Authorization: Bearer <token>
 ```
+
+Przeglądarka nie pozwala ustawić dowolnego nagłówka podczas natywnego handshake
+WebSocket. Dlatego klient wywołuje `POST /api/websocket-tickets` z JWT w nagłówku
+REST, otrzymuje krótko żyjący ticket, a następnie łączy się z
+`/ws?ticket=...`. Ticket ma 256 bitów losowości, w bazie istnieje wyłącznie jego
+hash, jest związany z `Origin` i może zostać zużyty tylko raz. Dzięki temu URL nie
+zawiera długowiecznego JWT. Opcja `app.websocket.allow-query-token=true` istnieje
+wyłącznie jako jawny fallback developerski. Przykład wykonuje bezpieczny flow w
+`examples/websocket-test-client.html`.
+
+Po połączeniu klient subskrybuje:
+
+```text
+/user/queue/conversations/{conversationId}  # message/receipt/typing/presence
+/user/queue/messages                        # prywatny ACK wysłania
+/user/queue/errors                          # błędy komend STOMP
+```
+
+Klient wysyła komendy na `/app/messages.send`, `/app/messages.delivered`, `/app/messages.read`, `/app/typing.start`, `/app/typing.stop` oraz okresowo `/app/presence.heartbeat`. Publiczne topiki rozmów są celowo niedostępne.
 
 ### Eventy od klienta do serwera
 
@@ -874,6 +1245,7 @@ Authorization: Bearer <token>
     "message_id": "msg_123",
     "conversation_id": "conv_123",
     "sender_id": "user_1",
+    "sequence_number": 42,
     "body": "Hello",
     "created_at": "2026-06-05T12:00:00Z"
   }
@@ -938,8 +1310,8 @@ Authorization: Bearer <token>
    - zapisuje event do outboxa lub publikuje do Kafka.
 5. Message Service zwraca ACK do Client A.
 6. Event MessageCreated trafia do Message Routera.
-7. Router sprawdza aktywne połączenia odbiorców.
-8. WebSocket Gateway wysyła message.created do Client B.
+7. Router pobiera aktualny membership i sprawdza aktywne połączenia odbiorców.
+8. WebSocket Gateway wykonuje fan-out do prywatnych kolejek członków.
 9. Client B odsyła delivered/read.
 10. Receipts Service aktualizuje status.
 ```
@@ -972,11 +1344,13 @@ Rozwiązanie:
 
 ```sql
 message_deduplication (
+  conversation_id UUID,
   sender_id UUID,
   client_message_id UUID,
   message_id UUID,
   created_at TIMESTAMP,
-  PRIMARY KEY (sender_id, client_message_id)
+  command_fingerprint CHAR(64),
+  PRIMARY KEY (conversation_id, sender_id, client_message_id)
 )
 ```
 
@@ -1018,11 +1392,12 @@ Dobre praktyczne rozwiązanie.
 
 Message ID zawiera czas i jest prawie monotoniczne.
 
-Rekomendacja:
+Rekomendacja tego projektu:
 
-- dla MVP: server timestamp + UUID,
-- dla większej skali: Snowflake ID lub TimeUUID,
-- dla bardzo dużych grup: sequence per conversation z partycjonowaniem.
+- PostgreSQL/MVP: sekwencja per konwersacja, alokowana transakcyjnie;
+- większa skala: pojedynczy właściciel partycji/leader sekwencjonujący zapisy albo identyfikator monotoniczny w obrębie partycji;
+- Snowflake/TimeUUID pomaga w sortowaniu i unikalności, lecz sam nie daje bezlukowego porządku zgodnego z akceptacją komend;
+- dla bardzo aktywnego kanału koszt hot row trzeba świadomie zamienić na większą przepustowość i słabszą gwarancję.
 
 ---
 
@@ -1048,36 +1423,33 @@ Nie należy obiecywać czystego exactly-once, bo przy systemach rozproszonych je
 
 ## 14. Synchronizacja po reconnect
 
-Klient powinien przechowywać:
+Uruchamialny wariant przechowuje cursor **per urządzenie i konwersacja**:
 
 ```text
-last_seen_event_id
-last_received_message_id per conversation
+device_id
+last_received_sequence per conversation
 ```
 
 Po reconnect:
 
 ```http
-GET /sync?since_event_id=evt_123
+GET /api/conversations/{conversationId}/messages/sync?afterSequence=41&limit=100
+X-Device-Id: phone-a
 ```
 
 Odpowiedź:
 
 ```json
 {
-  "events": [
+  "messages": [
     {
-      "event_id": "evt_124",
-      "type": "message.created",
-      "payload": {}
-    },
-    {
-      "event_id": "evt_125",
-      "type": "message.read",
-      "payload": {}
+      "id": "message-uuid",
+      "sequence_number": 42,
+      "revision": 3,
+      "deleted_at": "2026-06-05T12:01:00Z"
     }
   ],
-  "next_cursor": "evt_125"
+  "next_after_sequence": 42
 }
 ```
 
@@ -1090,7 +1462,7 @@ Jeżeli klient był offline zbyt długo, backend może odpowiedzieć:
 }
 ```
 
-Wtedy klient pobiera listę konwersacji i najnowsze wiadomości ponownie.
+Wtedy klient pobiera listę konwersacji i najnowsze wiadomości ponownie. Tombstone jest zwykłym elementem synchronizacji: urządzenie offline dowiaduje się o usunięciu bez zmiany pozycji wiadomości w strumieniu. Cursor urządzenia jest monotoniczny — starszy ACK nie może go cofnąć.
 
 ---
 
@@ -1175,7 +1547,7 @@ Rekomendacja:
 
 ## 16. Presence i typing indicator
 
-Presence nie powinien być zapisywany przy każdym heartbeat do głównej bazy.
+Presence nie powinien być źródłem prawdy dla autoryzacji. W dużej skali heartbeat trafia do Redis/kv-store z TTL. Laboratorium używa współdzielonej tabeli lease'ów, aby wykonać tę samą semantykę bez udawania integracji z Redisem.
 
 ### Presence
 
@@ -1185,9 +1557,9 @@ Redis:
 SET presence:user_123 online EX 30
 ```
 
-Heartbeat co 10 sekund.
+Heartbeat aplikacyjny (`SEND /app/presence.heartbeat`) co około 15–20 sekund odnawia lease konkretnej sesji. Sam heartbeat TCP/STOMP może nie przejść przez kod aplikacji.
 
-Jeżeli TTL wygaśnie, użytkownik jest offline.
+Jeżeli TTL wygaśnie i użytkownik nie ma innej aktywnej sesji, użytkownik jest offline. Disconnect jednego telefonu nie może wyłączyć presence laptopa. Utracony disconnect jest naprawiany przez cykliczne czyszczenie wygasłych lease'ów.
 
 ### Typing indicator
 
@@ -1238,23 +1610,35 @@ Pliki powinny iść do object storage:
 
 ```text
 Client -> Backend: request upload URL
-Backend -> Client: pre-signed URL
-Client -> Object Storage: upload file
+Backend -> Client: krótko żyjące jednorazowe capability
+Client -> Object Storage / adapter lokalny: upload do quarantine
+Backend -> Client: SCANNING (request nie czeka na skaner)
+Scanner -> quarantine: odczyt i walidacja
+Scanner -> clean: promotion albo REJECTED/BLOCKED
 Client -> Backend: send message with attachment_id
 Backend -> Message DB: save message
 ```
 
 ### Bezpieczeństwo plików
 
-Należy dodać:
+Implementacja wykonuje:
+
+- limit metadanych i realnego payloadu,
+- jednorazowy token w nagłówku `X-Upload-Token`, usuwany przed skanowaniem,
+- asynchroniczne sprawdzenie magic bytes/text oraz checksum SHA-256,
+- fizycznie oddzielone strefy quarantine i clean w adapterze lokalnym oraz MinIO,
+- statusy `UPLOAD_PENDING`, `SCANNING`, `READY`, `REJECTED`, `BLOCKED`,
+- odczyt przez właściciela albo aktualnego członka rozmowy zawierającej plik.
+
+Granica produkcyjna nadal wymaga:
 
 - limit rozmiaru pliku,
-- MIME type validation,
-- skan antywirusowy,
+- pełnej detekcji typu i ochrony przed polyglot files,
+- zewnętrznego silnika antywirusowego/CDR podłączonego do istniejącego workera,
 - generowanie miniaturek,
 - blokowanie podejrzanych plików,
 - krótkotrwałe signed download URLs,
-- kontrolę dostępu przy pobieraniu.
+- signed download URL wydawanego dopiero po kontroli dostępu.
 
 ---
 
@@ -1280,7 +1664,13 @@ Indeks:
 }
 ```
 
-Przy wyszukiwaniu trzeba sprawdzić, czy użytkownik ma dostęp do danej konwersacji. Nie wolno ufać samemu indeksowi.
+Laboratorium zawiera `message_search_documents` jako małą projekcję SQL o tej
+samej semantyce co zewnętrzny indeks. Handler zdarzeń wykonuje upsert dla create i
+edit oraz delete dokumentu dla tombstone'a. `rebuild()` odtwarza całość z tabeli
+`messages`; produkcyjnie powinien używać keyset pagination, checkpointu, aliasu
+indeksu i atomowego przełączenia po zakończeniu backfillu. Przy query projekcja
+sprawdza aktywną epokę membershipu i `joined_sequence`. Nie wolno ufać samemu
+indeksowi ani kopiować do niego ACL jako jedynego źródła autoryzacji.
 
 ---
 
@@ -1429,14 +1819,21 @@ outbox_events (
   id UUID PRIMARY KEY,
   event_type VARCHAR NOT NULL,
   payload JSONB NOT NULL,
+  status VARCHAR NOT NULL,
+  attempts INT NOT NULL,
+  claimed_at TIMESTAMP,
+  claimed_by VARCHAR,
+  next_attempt_at TIMESTAMP,
   created_at TIMESTAMP,
   published_at TIMESTAMP
 )
 ```
 
-Osobny worker publikuje eventy do Kafka i oznacza je jako opublikowane.
+Osobny publisher claimuje gotowe rekordy przez `FOR UPDATE SKIP LOCKED`, zapisuje właściciela i czas claimu, a potem przekazuje je do wykonywalnej granicy brokera. Wygasły claim wraca do retry; exponential backoff ogranicza gorącą pętlę awarii.
 
-To daje dużo większą niezawodność.
+Każdy handler ma inbox `outbox_handler_deliveries(event_id, handler_name)`. Gdy pierwszy handler zakończy się sukcesem, a drugi zawiedzie, retry nie wykonuje pierwszego ponownie. Nie usuwa to ostatniego okna awarii: skutek wykonany w zewnętrznym providerze może nastąpić tuż przed zapisem inboxa. Dlatego zewnętrzny adapter również powinien używać stabilnego `event_id` jako klucza idempotencji.
+
+Lokalna kolejka znika po restarcie, ale rekord `ENQUEUED` ma lease i zostanie odzyskany. Docelowy broker zastępuje `InMemoryQueueEventBus`, nie tabelę outbox ani idempotencję konsumenta.
 
 ---
 
@@ -1512,6 +1909,10 @@ Czy konwersacja nie jest zablokowana?
 Czy nadawca nie jest zablokowany przez odbiorcę?
 ```
 
+Realtime stosuje tę samą zasadę. Klient subskrybuje prywatną kolejkę `/user/queue/conversations/{conversationId}`. Serwer wylicza odbiorców z aktualnego membershipu przy publikacji; publiczne `/topic/conversations/*` jest odrzucane fail-closed. Dzięki temu stara subskrypcja nie zachowuje dostępu po usunięciu użytkownika z grupy.
+
+JWT dla handshake jest przyjmowany z `Authorization: Bearer ...`. Token w query stringu jest domyślnie wyłączony, ponieważ URL trafia do logów proxy, historii i telemetryki. Można go jawnie włączyć tylko dla kontrolowanego klienta przez `app.websocket.allow-query-token=true`.
+
 ### Dane
 
 - Hasła tylko jako hash, np. Argon2id lub bcrypt.
@@ -1544,11 +1945,12 @@ Model:
 
 ```text
 user_id -> device_id -> websocket_connection_id
+user_id + device_id + conversation_id -> last_received_sequence
 ```
 
 Wiadomość do użytkownika online trzeba wysłać do wszystkich aktywnych urządzeń.
 
-Read receipt powinien być per użytkownik, niekoniecznie per urządzenie, chyba że produkt wymaga dokładniejszej semantyki.
+Read receipt jest per użytkownik, natomiast cursor reconnectu jest per urządzenie. Telefon może być zsynchronizowany do sekwencji 120, laptop do 115, a wspólny `READ` może już wskazywać 118. Złączenie tych stanów w jedną kolumnę powodowałoby utratę wiadomości albo cofanie potwierdzeń.
 
 ---
 
@@ -1580,7 +1982,9 @@ failed
 
 ### Edycja
 
-Nie należy nadpisywać wiadomości bez śladu, jeżeli produkt wymaga audytu.
+Implementacja pozwala edytować wyłącznie nadawcy, zwiększa `revision`, ustawia `edited_at`, zachowuje `sequence_number` i publikuje `message.edited` przez outbox. Przedstawiony model zachowuje bieżący stan, ale nie pełną historię poprzednich treści.
+
+Jeżeli produkt wymaga audytu lub moderacji, należy dodać append-only:
 
 Można przechowywać:
 
@@ -1604,11 +2008,13 @@ deleted_at != null
 body = null albo body ukryte
 ```
 
-Zalecane.
+Tak działa laboratorium: `body` jest czyszczone, `deleted_at` i nowa rewizja pozostają, a `message.deleted` trafia do outboxa. Tombstone musi pozostać co najmniej tak długo, jak maksymalne okno sync; inaczej długo nieaktywne urządzenie mogłoby odtworzyć usuniętą treść z lokalnego cache.
 
 #### Hard delete
 
 Fizyczne usunięcie, potrzebne np. dla wymagań prywatności, ale bardziej skomplikowane przy replikach, backupach i search indexie.
+
+Hard delete jest workflow obejmującym bazę, attachmenty, indeks, cache, analitykę i retencję backupów. Nie należy zastępować nim tombstone'a w gorącej ścieżce synchronizacji.
 
 ---
 
@@ -1727,6 +2133,14 @@ Odbiorca ją przeczytał.
 
 Nie należy traktować delivered/read jako krytycznie spójnych danych. Mogą przyjść z opóźnieniem.
 
+### Granice spójności
+
+- zapis wiadomości, przydzielenie sekwencji, receipts początkowe i outbox są jedną transakcją;
+- publikacja realtime, push i search są asynchroniczne i co najmniej jednokrotne;
+- `last_message` jest aktualizowane tylko przez wyższą sekwencję, więc opóźniony zapis nie cofa listy rozmów;
+- presence i typing są efemeryczne oraz mogą chwilowo kłamać;
+- membership jest sprawdzany zarówno przy komendzie, jak i przy fan-oucie/odczycie pliku.
+
 ---
 
 ## 34. Disaster recovery
@@ -1739,6 +2153,9 @@ Wymagane:
 - odtwarzalny Kafka topic albo outbox,
 - snapshoty OpenSearch nie jako jedyne źródło prawdy,
 - runbooki awaryjne.
+
+Wykonywalny punkt startowy dla outbox backlogu, reconnect stormu, presence,
+storage i konfliktów sekwencji znajduje się w [`ops/RUNBOOK.md`](ops/RUNBOOK.md).
 
 RPO/RTO dla sensownego systemu:
 
@@ -1807,6 +2224,8 @@ Przykładowe alerty:
 ---
 
 ## 36. Deployment
+
+Obecny artefakt to jeden modularny monolit Spring Boot. `Dockerfile` uruchamia właściwy `chat-system-0.1.0.jar` jako użytkownik bez uprawnień roota. `docker-compose.yml` służy lokalnie do PostgreSQL i telemetryki; diagram poniżej przedstawia możliwy kierunek wydzielenia komponentów, a nie aktualny manifest wdrożeniowy.
 
 ### Propozycja infrastruktury
 
@@ -1878,6 +2297,19 @@ Dla Message Service i Conversation Service warto mieć testy kontraktowe, bo wie
 - upload załącznika,
 - read receipts,
 - push notification flow.
+
+W repozytorium są dwie pętle:
+
+```powershell
+.\mvnw.cmd clean verify
+.\mvnw.cmd -Pinfrastructure-tests verify
+```
+
+Pierwsza jest szybka i używa H2. Druga uruchamia przez Testcontainers PostgreSQL
+17, Kafkę i MinIO. Jest obowiązkowa po zmianie locków, constraintów, migracji,
+partycjonowania eventów albo granicy quarantine/clean. Test H2 nie jest dowodem
+zachowania `SKIP LOCKED`, izolacji PostgreSQL, redelivery brokera ani semantyki
+object storage.
 
 ### Load tests
 
@@ -2166,7 +2598,7 @@ Najważniejsze decyzje:
 - wiadomość uznajemy za wysłaną dopiero po trwałym zapisie,
 - WebSocket służy do real-time, REST do historii i synchronizacji,
 - idempotencja przez `client_message_id`,
-- presence i typing tylko w Redis z TTL,
+- presence i typing jako dane efemeryczne z TTL (w laboratorium współdzielony lease SQL, docelowo Redis),
 - załączniki przez pre-signed URL,
 - event-driven flow dla powiadomień, search i inbox updates,
 - outbox pattern dla niezawodności,

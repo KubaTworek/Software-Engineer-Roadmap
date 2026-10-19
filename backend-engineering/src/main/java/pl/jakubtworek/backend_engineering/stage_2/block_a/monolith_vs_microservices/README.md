@@ -1,4 +1,20 @@
-# Monolit vs. mikroserwisy – kryteria wyboru i koszty
+# monolith vs microservices
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `praktyka-produkcyjna`
+> - **Uczy:** monolith vs microservices.
+> - **Typowy błąd:** Podział na procesy bez niezależnej własności danych i wdrożeń.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** brak jawnej roli w nazwach klas; intencję przykładu określają opis i test, nie sam brak prefiksu.
+> - **Granica:** Test granicy modułu lub lokalnej transakcji nie gwarantuje atomowości między procesami ani zgodności niezależnie wdrażanych klientów.
+<!-- material-card:end -->
+
+## Monolit vs. mikroserwisy – kryteria wyboru i koszty
+
+
 
 ## Wprowadzenie
 

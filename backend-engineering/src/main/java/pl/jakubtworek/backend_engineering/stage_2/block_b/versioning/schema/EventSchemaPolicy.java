@@ -17,11 +17,18 @@ public class EventSchemaPolicy {
             String eventType,
             List<SchemaChange> changes
     ) {
+        if (eventType == null || eventType.isBlank()) {
+            throw new IllegalArgumentException("Event type cannot be empty");
+        }
+        if (changes == null) {
+            throw new IllegalArgumentException("Schema changes cannot be null");
+        }
+
         for (SchemaChange change : changes) {
             if (change.changeType() == SchemaChangeType.FIELD_REMOVED) {
                 return SchemaCompatibilityResult.failure(
                         CompatibilityMode.BACKWARD,
-                        "Field removal in event " + eventType + " is not isAllowed without migration."
+                        "Field removal in event " + eventType + " is not allowed without migration."
                 );
             }
 

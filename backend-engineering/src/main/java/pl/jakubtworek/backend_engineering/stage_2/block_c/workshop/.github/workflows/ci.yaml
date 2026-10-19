@@ -22,7 +22,9 @@ jobs:
           cache: maven
 
       - name: Run tests
-        run: mvn -B test
+        run: |
+          chmod +x backend-engineering/mvnw
+          backend-engineering/mvnw -B -f backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_c/workshop/pom.xml verify
 
   build:
     needs: test
@@ -44,7 +46,8 @@ jobs:
 
       - uses: docker/build-push-action@v6
         with:
-          context: .
+          context: backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_c/workshop
+          file: backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_c/docker/Dockerfile
           push: ${{ github.ref == 'refs/heads/main' }}
           tags: ghcr.io/${{ github.repository }}:${{ github.sha }}
           cache-from: type=gha

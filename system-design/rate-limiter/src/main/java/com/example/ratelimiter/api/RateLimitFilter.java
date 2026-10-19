@@ -1,11 +1,10 @@
 package com.example.ratelimiter.api;
 
-import com.example.ratelimiter.config.RateLimiterProperties;
 import com.example.ratelimiter.core.RateLimitDecision;
 import com.example.ratelimiter.core.RateLimiterEngine;
 import com.example.ratelimiter.core.RequestContext;
-import com.example.ratelimiter.security.ApiKeyHasher;
 import com.example.ratelimiter.security.ClientIpResolver;
+import com.example.ratelimiter.security.RequestIdentityResolver;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -66,7 +65,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
      * Dlatego do RequestContext trafia hash, np. SHA-256,
      * a nie oryginalny sekret klienta.
      */
-    private final ApiKeyHasher apiKeyHasher;
+    private final RequestIdentityResolver identities;
 
     /**
      * Konfiguracja aplikacji Rate Limitera.
@@ -79,18 +78,14 @@ public class RateLimitFilter extends OncePerRequestFilter {
      *
      * Dzięki temu nazwy headerów nie są zaszyte na sztywno w kodzie.
      */
-    private final RateLimiterProperties properties;
-
     public RateLimitFilter(
             RateLimiterEngine engine,
             ClientIpResolver clientIpResolver,
-            ApiKeyHasher apiKeyHasher,
-            RateLimiterProperties properties
+            RequestIdentityResolver identities
     ) {
         this.engine = engine;
         this.clientIpResolver = clientIpResolver;
-        this.apiKeyHasher = apiKeyHasher;
-        this.properties = properties;
+        this.identities = identities;
     }
 
     /**
@@ -153,14 +148,15 @@ public class RateLimitFilter extends OncePerRequestFilter {
          * Dzięki temu RateLimiterEngine nie musi znać szczegółów Servlet API.
          * Dostaje czysty model domenowy i na nim pracuje.
          */
+        RequestIdentityResolver.Identity identity = identities.resolve(request);
         RequestContext ctx = new RequestContext(
                 request.getMethod(),
                 request.getRequestURI(),
                 clientIpResolver.resolve(request),
-                apiKeyHasher.sha256(request.getHeader(properties.getSecurity().getApiKeyHeader())),
-                request.getHeader(properties.getSecurity().getUserHeader()),
-                request.getHeader(properties.getSecurity().getTenantHeader()),
-                defaultPlan(request.getHeader(properties.getSecurity().getPlanHeader())),
+                identity.apiKeyHash(),
+                identity.userId(),
+                identity.tenantId(),
+                identity.plan(),
                 System.currentTimeMillis()
         );
 
@@ -195,6 +191,15 @@ public class RateLimitFilter extends OncePerRequestFilter {
         response.setHeader("X-RateLimit-Limit", String.valueOf(decision.limit()));
         response.setHeader("X-RateLimit-Remaining", String.valueOf(decision.remaining()));
         response.setHeader("X-RateLimit-Rule-Count", String.valueOf(decision.ruleDecisions().size()));
+        // Standardowe nazwy ułatwiają klientom migrację ze starszych nagłówków X-*.
+        response.setHeader("RateLimit-Limit", String.valueOf(decision.limit()));
+        response.setHeader("RateLimit-Remaining", String.valueOf(decision.remaining()));
+        // Reset ma znaczenie tylko wtedy, gdy limiter zna czas ponownego
+        // dopuszczenia. Wysyłanie zera dla requestu allowed sugerowałoby pełne
+        // odnowienie bucketu "teraz", czego agregat wielu polityk nie gwarantuje.
+        if (decision.retryAfterSeconds() > 0) {
+            response.setHeader("RateLimit-Reset", String.valueOf(decision.retryAfterSeconds()));
+        }
 
         /*
          * Jeśli RateLimiterEngine odrzucił request,
@@ -209,10 +214,12 @@ public class RateLimitFilter extends OncePerRequestFilter {
         if (!decision.allowed()) {
             response.setStatus(429);
             response.setHeader("Retry-After", String.valueOf(decision.retryAfterSeconds()));
-            response.setContentType("application/json");
+            response.setContentType("application/problem+json");
 
             response.getWriter().write(
-                    "{\"error\":\"rate_limit_exceeded\",\"retryAfterSeconds\":"
+                    "{\"type\":\"urn:problem:rate-limit-exceeded\","
+                            + "\"title\":\"Rate limit exceeded\",\"status\":429,"
+                            + "\"error\":\"rate_limit_exceeded\",\"retryAfterSeconds\":"
                             + decision.retryAfterSeconds()
                             + "}"
             );
@@ -238,7 +245,4 @@ public class RateLimitFilter extends OncePerRequestFilter {
      * To bezpieczne domyślne zachowanie:
      * brak informacji o planie nie powinien oznaczać wyższego limitu.
      */
-    private String defaultPlan(String plan) {
-        return plan == null || plan.isBlank() ? "FREE" : plan;
-    }
 }

@@ -1,10 +1,8 @@
 package pl.jakubtworek.chatsystem.outbox;
 
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Worker odpowiedzialny za publikowanie nieobsłużonych eventów z outboxa.
@@ -27,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Component
 public class OutboxPublisher {
+    private final String workerId = java.lang.management.ManagementFactory.getRuntimeMXBean().getName();
 
     /**
      * Repozytorium outbox_events.
@@ -35,7 +34,7 @@ public class OutboxPublisher {
      * które jeszcze nie zostały przekazane do kolejki
      * i nie przekroczyły maksymalnej liczby prób.
      */
-    private final OutboxEventRepository repository;
+    private final OutboxClaimService claims;
 
     /**
      * Lokalna abstrakcja kolejki/event busa.
@@ -61,12 +60,12 @@ public class OutboxPublisher {
     private final int maxAttempts;
 
     public OutboxPublisher(
-            OutboxEventRepository repository,
+            OutboxClaimService claims,
             EventBus eventBus,
             @Value("${app.outbox.batch-size:100}") int batchSize,
             @Value("${app.outbox.max-attempts:5}") int maxAttempts
     ) {
-        this.repository = repository;
+        this.claims = claims;
         this.eventBus = eventBus;
         this.batchSize = batchSize;
         this.maxAttempts = maxAttempts;
@@ -87,7 +86,6 @@ public class OutboxPublisher {
      * na jednej instancji, jeśli poprzedni przebieg się opóźni.
      */
     @Scheduled(fixedDelayString = "${app.outbox.publish-delay-ms:500}")
-    @Transactional
     public void publishPendingEvents() {
 
         /*
@@ -98,10 +96,9 @@ public class OutboxPublisher {
          * - nieprzekroczone maxAttempts,
          * - najlepiej uporządkowane po createdAt/id.
          */
-        var events = repository.findPublishable(
-                maxAttempts,
-                PageRequest.of(0, batchSize)
-        );
+        // claim() kończy własną transakcję przed kontaktem z brokerem. Consumer
+        // nigdy nie zobaczy eventu szybciej niż baza zatwierdzi stan ENQUEUED.
+        var events = claims.claim(maxAttempts, batchSize, workerId);
 
         for (OutboxEvent event : events) {
 
@@ -114,16 +111,17 @@ public class OutboxPublisher {
              * W bardziej zaawansowanej wersji warto rozróżnić stany:
              * NEW, ENQUEUED, PROCESSING, PUBLISHED, FAILED.
              */
-            event.markEnqueued();
-            repository.save(event);
-
             /*
              * Przekazujemy event do EventBus.
              *
              * Od tego momentu dalsza obsługa jest asynchroniczna:
              * WebSocket delivery, push notifications, search indexing itd.
              */
-            eventBus.enqueue(event);
+            try {
+                eventBus.enqueue(event);
+            } catch (RuntimeException ex) {
+                claims.publicationFailed(event.getId(), ex.getMessage());
+            }
         }
     }
 }

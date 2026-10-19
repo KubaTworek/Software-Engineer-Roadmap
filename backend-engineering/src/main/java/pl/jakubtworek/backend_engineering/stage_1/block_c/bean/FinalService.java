@@ -16,9 +16,8 @@ public class FinalService {
      * by CGLIB proxy.
      */
 
-    // final
     @Transactional
-    public void test() {
+    public final void test() {
 
         System.out.println("Will not be proxied correctly");
     }

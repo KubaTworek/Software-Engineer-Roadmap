@@ -3,6 +3,8 @@ package com.example.ratelimiter.core;
 import com.example.ratelimiter.config.RateLimiterProperties;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
+import io.micrometer.observation.Observation;
+import io.micrometer.observation.ObservationRegistry;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
@@ -73,15 +75,21 @@ public class RedisTokenBucketLimiter {
      * który jest częścią Redis key.
      */
     private final RateLimiterProperties properties;
+    private final RedisAvailabilityGate availability;
+    private final ObservationRegistry observations;
 
     public RedisTokenBucketLimiter(
             StringRedisTemplate redis,
             MeterRegistry meterRegistry,
-            RateLimiterProperties properties
+            RateLimiterProperties properties,
+            RedisAvailabilityGate availability,
+            ObservationRegistry observations
     ) throws Exception {
         this.redis = redis;
         this.meterRegistry = meterRegistry;
         this.properties = properties;
+        this.availability = availability;
+        this.observations = observations;
 
         /*
          * Skrypt token_bucket.lua jest ładowany z resources.
@@ -158,7 +166,6 @@ public class RedisTokenBucketLimiter {
              * - capacity,
              * - refillTokensPerSecond,
              * - cost,
-             * - timestampMs,
              * - ttlSeconds.
              *
              * Skrypt powinien:
@@ -169,15 +176,16 @@ public class RedisTokenBucketLimiter {
              * - ustawić TTL,
              * - zwrócić decyzję.
              */
-            List<?> result = redis.execute(
-                    script,
-                    List.of(key),
-                    String.valueOf(rule.getCapacity()),
-                    String.valueOf(rule.getRefillTokensPerSecond()),
-                    String.valueOf(rule.getCost()),
-                    String.valueOf(ctx.timestampMs()),
-                    String.valueOf(ttlSeconds)
-            );
+            List<?> result = Observation.createNotStarted("rate-limiter.redis", observations)
+                    .lowCardinalityKeyValue("rule.type", rule.getType().name().toLowerCase())
+                    .observe(() -> availability.call(() -> redis.execute(
+                            script,
+                            List.of(key),
+                            String.valueOf(rule.getCapacity()),
+                            String.valueOf(rule.getRefillTokensPerSecond()),
+                            String.valueOf(rule.getCost()),
+                            String.valueOf(ttlSeconds)
+                    )));
 
             /*
              * Oczekiwany wynik Lua:
@@ -200,13 +208,13 @@ public class RedisTokenBucketLimiter {
             long retryAfter = Long.parseLong(result.get(3).toString());
 
             /*
-             * Metryka decyzji z Redisa per reguła.
-             *
-             * Pozwala zobaczyć, które reguły najczęściej blokują requesty.
+             * Metryka używa skończonego typu reguły. Dynamiczne ruleId trafia
+             * do logu/trace, ale jako tag metryki tworzyłoby serię dla każdej
+             * polityki i pozwalało control plane wywołać cardinality explosion.
              */
             meterRegistry.counter(
                     "rate_limiter.redis.decisions",
-                    "rule", rule.getId(),
+                    "rule.type", rule.getType().name().toLowerCase(),
                     "decision", allowed ? "allowed" : "denied"
             ).increment();
 

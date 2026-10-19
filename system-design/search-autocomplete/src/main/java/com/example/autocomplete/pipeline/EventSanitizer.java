@@ -14,7 +14,7 @@ public class EventSanitizer {
     public QueryEvent sanitize(QueryEvent event) {
         return new QueryEvent(
                 privacyService.hashUserId(event.userId()),
-                event.sessionId(),
+                privacyService.hashUserId("session:" + event.sessionId()),
                 privacyService.redactPii(event.query()),
                 event.locale(),
                 event.country(),

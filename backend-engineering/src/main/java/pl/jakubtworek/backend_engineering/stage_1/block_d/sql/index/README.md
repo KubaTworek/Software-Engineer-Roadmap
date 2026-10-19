@@ -1,6 +1,22 @@
-# Indeksy SQL — Szczegółowe Podsumowanie
+# index
 
-# Wprowadzenie
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** index.
+> - **Typowy błąd:** Dodanie indeksu bez sprawdzenia selektywności, kolejności kolumn i kosztu zapisów.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** brak jawnej roli w nazwach klas; intencję przykładu określają opis i test, nie sam brak prefiksu.
+> - **Granica:** Model i H2 sprawdzają logikę; blokady, plan zapytania i zachowanie silnika potwierdza dopiero odpowiedni profil infrastrukturalny.
+<!-- material-card:end -->
+
+## Indeksy SQL — Szczegółowe Podsumowanie
+
+
+
+## Wprowadzenie
 
 Indeksy w relacyjnych bazach danych są jednym z najważniejszych mechanizmów optymalizacji wydajności, ale jednocześnie należą do najczęściej błędnie rozumianych elementów projektowania systemów bazodanowych.
 
@@ -13,7 +29,7 @@ Oznacza to, że indeks pomaga tylko wtedy, gdy:
 
 ---
 
-# Indeksy B-Tree
+## Indeksy B-Tree
 
 Najczęściej używanym typem indeksu w systemach OLTP jest indeks B-Tree.
 
@@ -31,7 +47,7 @@ Dane są uporządkowane według klucza indeksu, dzięki czemu baza może bardzo 
 
 ---
 
-# Zapytania dobrze współpracujące z B-Tree
+## Zapytania dobrze współpracujące z B-Tree
 
 ## Equality lookup
 
@@ -59,7 +75,7 @@ GROUP BY user_id
 
 ---
 
-# Sequential Scan vs Index Scan
+## Sequential Scan vs Index Scan
 
 Bez indeksu baza wykonuje:
 
@@ -93,7 +109,7 @@ Problem pojawia się przy:
 
 ---
 
-# Jak działa Index Scan
+## Jak działa Index Scan
 
 Po dodaniu indeksu baza:
 1. traversuje strukturę B-Tree,
@@ -110,7 +126,7 @@ Dobrze dobrany indeks może skrócić czas wykonania:
 
 ---
 
-# Selektywność danych
+## Selektywność danych
 
 Jednym z najważniejszych aspektów indeksów jest selektywność.
 
@@ -120,7 +136,7 @@ Indeks działa najlepiej wtedy, gdy warunek:
 
 ---
 
-# Wysoka selektywność
+## Wysoka selektywność
 
 Bardzo dobre kandydaty do indeksowania:
 
@@ -138,7 +154,7 @@ Ponieważ:
 
 ---
 
-# Niska selektywność
+## Niska selektywność
 
 Problematyczne są kolumny posiadające mało możliwych wartości.
 
@@ -168,7 +184,7 @@ optimizer może całkowicie zignorować indeks.
 
 ---
 
-# Dlaczego indeks jest ignorowany
+## Dlaczego indeks jest ignorowany
 
 Przy dużej liczbie wyników index scan generuje:
 - dużo random I/O,
@@ -186,7 +202,7 @@ To bardzo częsta sytuacja:
 
 ---
 
-# Funkcje w WHERE niszczą indeksy
+## Funkcje w WHERE niszczą indeksy
 
 Bardzo ważna zasada:
 
@@ -211,7 +227,7 @@ baza może nie użyć indeksu.
 
 ---
 
-# Dlaczego?
+## Dlaczego?
 
 Indeks przechowuje:
 
@@ -229,7 +245,7 @@ Dla optimizera to zupełnie inne wyrażenie.
 
 ---
 
-# Najczęstsze funkcje psujące indeksy
+## Najczęstsze funkcje psujące indeksy
 
 - LOWER()
 - UPPER()
@@ -240,7 +256,7 @@ Dla optimizera to zupełnie inne wyrażenie.
 
 ---
 
-# Rozwiązania
+## Rozwiązania
 
 ## 1. Normalizacja danych
 
@@ -267,7 +283,7 @@ ON users(LOWER(email));
 
 ---
 
-# Covering Index / Index-Only Scan
+## Covering Index / Index-Only Scan
 
 Jedna z najpotężniejszych optymalizacji.
 
@@ -287,7 +303,7 @@ bez dostępu do tabeli.
 
 ---
 
-# Przykład
+## Przykład
 
 ```sql
 CREATE INDEX idx_sales_sub_eur
@@ -308,7 +324,7 @@ Baza może więc:
 
 ---
 
-# Zalety Index-Only Scan
+## Zalety Index-Only Scan
 
 - minimalizacja I/O,
 - mniej heap reads,
@@ -324,7 +340,7 @@ Szczególnie ważne dla:
 
 ---
 
-# Koszty Covering Index
+## Koszty Covering Index
 
 Każdy dodatkowy indeks:
 - zwiększa rozmiar danych,
@@ -336,7 +352,7 @@ Indeksy nie są darmowe.
 
 ---
 
-# Composite Indexes
+## Composite Indexes
 
 Indeksy wielokolumnowe są jednym z najważniejszych mechanizmów optymalizacji.
 
@@ -344,7 +360,7 @@ Jednocześnie są jednym z najczęstszych źródeł błędów projektowych.
 
 ---
 
-# Leftmost Prefix Rule
+## Leftmost Prefix Rule
 
 Indeks wielokolumnowy działa:
 - od lewej do prawej.
@@ -355,7 +371,7 @@ Kolejne działają tylko w kontekście poprzednich.
 
 ---
 
-# Zły indeks
+## Zły indeks
 
 ```sql
 CREATE INDEX idx_bad
@@ -374,7 +390,7 @@ nie będzie efektywne.
 
 ---
 
-# Dlaczego?
+## Dlaczego?
 
 Indeks jest posortowany przede wszystkim po:
 
@@ -394,7 +410,7 @@ Baza nie potrafi efektywnie:
 
 ---
 
-# Dobry indeks
+## Dobry indeks
 
 ```sql
 CREATE INDEX idx_good
@@ -408,7 +424,7 @@ Teraz baza może:
 
 ---
 
-# Kolejność kolumn w indeksie
+## Kolejność kolumn w indeksie
 
 Ogólna zasada:
 
@@ -427,7 +443,7 @@ Ogólna zasada:
 
 ---
 
-# JOIN i indeksy
+## JOIN i indeksy
 
 Brak indeksu na foreign key bardzo często prowadzi do:
 - Nested Loop,
@@ -437,7 +453,7 @@ Brak indeksu na foreign key bardzo często prowadzi do:
 
 ---
 
-# Zasada
+## Zasada
 
 Pola używane w:
 - JOIN,
@@ -448,7 +464,7 @@ praktycznie zawsze powinny posiadać indeks.
 
 ---
 
-# ORDER BY bez indeksu
+## ORDER BY bez indeksu
 
 Jeżeli baza nie posiada odpowiedniego indeksu:
 - musi wykonać sortowanie,
@@ -466,7 +482,7 @@ ORDER BY created_at DESC;
 
 ---
 
-# Optymalny indeks
+## Optymalny indeks
 
 ```sql
 CREATE INDEX idx_orders_user_created
@@ -479,7 +495,7 @@ Dzięki temu:
 
 ---
 
-# Over-Indexing
+## Over-Indexing
 
 Zbyt duża liczba indeksów jest ogromnym problemem produkcyjnym.
 
@@ -497,7 +513,7 @@ Wiele systemów cierpi bardziej z powodu:
 
 ---
 
-# Najważniejsza zasada
+## Najważniejsza zasada
 
 Indeksy optymalizują:
 - konkretne zapytania,
@@ -510,7 +526,7 @@ Nie istnieje:
 
 ---
 
-# Dobrze zaprojektowane indeksy
+## Dobrze zaprojektowane indeksy
 
 Pozwalają:
 - eliminować pełne skany,
@@ -522,7 +538,7 @@ Pozwalają:
 
 ---
 
-# Źle zaprojektowane indeksy
+## Źle zaprojektowane indeksy
 
 Powodują:
 - większy koszt write path,
@@ -533,6 +549,13 @@ Powodują:
 
 ---
 
-# Finalna zasada
+## Finalna zasada
 
 > Indeks projektuje się pod realne zapytania i realny workload, a nie „na wszelki wypadek”.
+
+## Automatyczna weryfikacja
+
+`PostgreSqlExecutableLabTest` buduje selektywny workload, wykonuje
+`EXPLAIN (ANALYZE, BUFFERS)` i sprawdza nazwę rzeczywiście użytego indeksu.
+Test nie wymusza `enable_seqscan = off`, ponieważ celem jest potwierdzenie decyzji
+planera dla danych i zapytania, a nie sztuczne uzyskanie oczekiwanego napisu.

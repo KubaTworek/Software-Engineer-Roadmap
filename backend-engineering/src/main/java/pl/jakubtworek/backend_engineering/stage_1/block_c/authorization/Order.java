@@ -5,7 +5,8 @@ import jakarta.persistence.*;
 /**
  * Example domain entity used for data-based authorization.
  */
-@Entity
+@Entity(name = "AuthorizationOrder")
+@Table(name = "authorization_orders")
 public class Order {
 
     @Id
@@ -21,8 +22,12 @@ public class Order {
     }
 
     public Order(String ownerUsername, String description) {
-        this.ownerUsername = ownerUsername;
-        this.description = description;
+        this.ownerUsername = requireNonBlank(ownerUsername, "ownerUsername");
+        this.description = requireNonBlank(description, "description");
+    }
+
+    public void updateDescription(String description) {
+        this.description = requireNonBlank(description, "description");
     }
 
     public Long getId() {
@@ -35,5 +40,12 @@ public class Order {
 
     public String getDescription() {
         return description;
+    }
+
+    private static String requireNonBlank(String value, String fieldName) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(fieldName + " must not be blank");
+        }
+        return value;
     }
 }

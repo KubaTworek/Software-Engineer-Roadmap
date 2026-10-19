@@ -11,4 +11,6 @@ public interface CelebrityPostRepository extends JpaRepository<CelebrityPost, Ce
     List<CelebrityPost> findByAuthorIdInOrderByCreatedAtDesc(Collection<UUID> authorIds, Pageable pageable);
 
     void deleteByPostId(UUID postId);
+
+    void deleteByAuthorId(UUID authorId);
 }

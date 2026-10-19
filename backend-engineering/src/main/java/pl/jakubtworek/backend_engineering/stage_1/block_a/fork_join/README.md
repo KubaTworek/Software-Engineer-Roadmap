@@ -1,5 +1,33 @@
-Fork/Join Framework w Javie -- Notatka techniczna
-================================================
+# fork join
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** fork join.
+> - **Typowy błąd:** Blokujące I/O w puli zaprojektowanej do dzielenia pracy CPU.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=ForkJoinPoolTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** brak jawnej roli w nazwach klas; intencję przykładu określają opis i test, nie sam brak prefiksu.
+> - **Granica:** Test kontroluje wybrany przeplot w JVM; pojedyncze uruchomienie nie dowodzi wszystkich zachowań dopuszczonych przez JMM ani wydajności pod obciążeniem.
+<!-- material-card:end -->
+
+## Fork/Join Framework w Javie
+
+
+
+## Mapa przykładu
+
+- `ArraySumTask` pokazuje divide-and-conquer, próg pracy sekwencyjnej oraz wzorzec `fork` jednej gałęzi i bezpośredniego obliczenia drugiej.
+- `BlockingTaskNoManagedBlock` pokazuje blokowanie workera bez poinformowania puli.
+- `BlockingTaskManagedBlock` używa `ForkJoinPool.managedBlock`, aby pula mogła kompensować blokadę.
+- `ForkJoinPoolTest` sprawdza wynik, walidację zakresów i poprawne zakończenie obu wariantów bez testów wydajności zależnych od maszyny.
+
+Porównanie wydajności `managedBlock` z bezpośrednim blokowaniem należy wykonywać jako osobny benchmark, a nie jako asercję czasową w teście jednostkowym.
+
+```shell
+mvn --batch-mode --no-transfer-progress -Dtest=ForkJoinPoolTest test
+```
 
 Fork/Join Framework jest jednym z kluczowych mechanizmów współbieżności w Javie, zaprojektowanym z myślą o efektywnym wykonywaniu obliczeń równoległych na wielu rdzeniach procesora. Został wprowadzony w Java 7 jako część pakietu `java.util.concurrent`. Jego głównym celem jest maksymalne wykorzystanie dostępnych zasobów CPU poprzez dynamiczne dzielenie pracy na mniejsze zadania oraz ich równoległe wykonywanie przez pulę wątków roboczych.
 

@@ -6,6 +6,9 @@ import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
+import java.util.concurrent.TimeUnit;
+
 @Service
 public class KafkaEventPublisher {
 
@@ -21,7 +24,16 @@ public class KafkaEventPublisher {
 
     @Retry(name = "kafkaPublish")
     public void publish(String topic, String key, DomainEvent event) {
-        kafkaTemplate.send(topic, key, event);
-        publishedEvents.increment();
+        try {
+            /*
+             * Samo wywołanie send() oznacza jedynie umieszczenie rekordu w
+             * buforze klienta. Outbox można oznaczyć jako wysłany dopiero po
+             * potwierdzeniu brokera.
+             */
+            kafkaTemplate.send(topic, key, event).get(Duration.ofSeconds(5).toMillis(), TimeUnit.MILLISECONDS);
+            publishedEvents.increment();
+        } catch (Exception exception) {
+            throw new IllegalStateException("Kafka did not acknowledge outbox event", exception);
+        }
     }
 }

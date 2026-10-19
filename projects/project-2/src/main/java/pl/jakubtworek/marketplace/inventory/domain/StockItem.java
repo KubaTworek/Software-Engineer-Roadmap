@@ -136,6 +136,14 @@ public class StockItem extends AggregateRoot {
         reservedQuantity += quantity;
     }
 
+    /** Zwalnia wcześniej zarezerwowaną ilość; port rezerwacji chroni przed duplikatem. */
+    public void releaseWithoutPublishingEvent(int quantity) {
+        if (quantity <= 0) throw new IllegalArgumentException("quantity must be positive");
+        if (reservedQuantity < quantity) throw new IllegalStateException("cannot release more than reserved");
+        reservedQuantity -= quantity;
+        availableQuantity += quantity;
+    }
+
     /**
      * Rezerwuje stock i publikuje zdarzenie domenowe na poziomie agregatu.
      *

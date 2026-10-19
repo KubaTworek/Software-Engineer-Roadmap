@@ -1,84 +1,91 @@
 package com.example.filestorage.production.dedupe;
 
 import com.example.filestorage.file.FileMetadata;
+import com.example.filestorage.storage.StorageService;
+import com.example.filestorage.version.FileVersionRepository;
+import com.example.filestorage.version.FileVersion;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+
+import java.util.NoSuchElementException;
+import java.util.UUID;
 
 /**
- * Serwis odpowiedzialny za rejestrację plików w mechanizmie deduplikacji.
- *
- * Deduplikacja polega na tym, że wiele logicznych plików może wskazywać
- * na tę samą fizyczną zawartość, jeżeli mają identyczny hash SHA-256.
- *
- * Ta klasa nie przenosi jeszcze plików ani nie zmienia objectKey w FileMetadata.
- * Aktualnie pełni rolę rejestru blobów:
- * - zapisuje nowy blob, jeśli hash nie istnieje,
- * - zwiększa refCount, jeśli blob o tym SHA-256 już istnieje.
+ * Content-addressed registry dla fizycznych blobów. Deduplikacja następuje
+ * dopiero po pełnej weryfikacji hasha; API nigdy nie ujawnia klientowi, czy
+ * identyczny hash należał wcześniej do innego użytkownika.
  */
 @Service
 public class DeduplicationService {
+    private final StorageBlobRepository blobs;
+    private final FileVersionRepository versions;
+    private final StorageService storage;
 
-    /**
-     * Repozytorium fizycznych blobów w storage.
-     *
-     * StorageBlob opisuje zawartość pliku niezależnie od logicznego FileMetadata:
-     * - sha256,
-     * - objectKey,
-     * - sizeBytes,
-     * - refCount,
-     * - opcjonalnie informacje o szyfrowaniu albo storage class.
-     */
-    private final StorageBlobRepository blobRepository;
+    public DeduplicationService(StorageBlobRepository blobs,
+                                FileVersionRepository versions,
+                                StorageService storage) {
+        this.blobs = blobs;
+        this.versions = versions;
+        this.storage = storage;
+    }
 
-    public DeduplicationService(StorageBlobRepository blobRepository) {
-        this.blobRepository = blobRepository;
+    @Transactional
+    public UUID registerVersion(FileMetadata file) {
+        var version = versions.findById(file.getCurrentVersionId())
+                .orElseThrow(() -> new NoSuchElementException("Current file version not found"));
+        if (version.getBlobId() != null) {
+            return version.getBlobId();
+        }
+
+        String uploadedObject = version.getObjectKey();
+        blobs.lockHash(file.getSha256());
+        StorageBlob blob = blobs.findBySha256ForUpdate(file.getSha256())
+                .map(existing -> {
+                    if (existing.getSizeBytes() != file.getSizeBytes()) {
+                        throw new IllegalStateException("Identical SHA-256 has a different size");
+                    }
+                    existing.incrementRefCount();
+                    return existing;
+                })
+                .orElseGet(() -> blobs.save(new StorageBlob(
+                        file.getSha256(), uploadedObject, file.getSizeBytes(), null)));
+
+        version.attachBlob(blob.getId(), blob.getObjectKey());
+        file.useCanonicalBlob(blob.getObjectKey());
+
+        if (!uploadedObject.equals(blob.getObjectKey())) {
+            afterCommit(() -> storage.delete(uploadedObject));
+        }
+        return blob.getId();
     }
 
     /**
-     * Rejestruje plik jako blob storage.
-     *
-     * Używane zwykle przez background processing po uploadzie pliku.
-     *
-     * Działanie:
-     * - szuka istniejącego StorageBlob po SHA-256 pliku,
-     * - jeśli istnieje, zwiększa jego refCount,
-     * - jeśli nie istnieje, tworzy nowy StorageBlob z objectKey pliku.
-     *
-     * Metoda jest transakcyjna, bo zmiana refCount albo utworzenie bloba
-     * musi być spójna z zapisem w bazie.
+     * Zwalnia jedna logiczna referencje do zawartosci. Obiekt jest usuwany
+     * dopiero po zatwierdzeniu transakcji i tylko gdy licznik doszedl do zera.
+     * Dzieki temu rollback bazy nie pozostawia metadanych wskazujacych na
+     * fizycznie skasowany, wspoldzielony blob.
      */
     @Transactional
-    public StorageBlob register(FileMetadata file) {
-        return blobRepository.findBySha256(file.getSha256())
-                .map(existing -> {
-                    /*
-                     * Taka sama zawartość już istnieje w systemie.
-                     *
-                     * Zwiększamy licznik referencji, bo kolejny logiczny plik
-                     * wskazuje na ten sam hash.
-                     *
-                     * Uwaga: ta implementacja nie przepina file.objectKey
-                     * na istniejący blob. Ona tylko rejestruje duplikat.
-                     */
-                    existing.incrementRefCount();
+    public void releaseVersion(FileVersion version) {
+        if (version.getBlobId() == null) {
+            afterCommit(() -> storage.delete(version.getObjectKey()));
+            return;
+        }
 
-                    return existing;
-                })
-                .orElseGet(() -> blobRepository.save(
-                        /*
-                         * Pierwszy raz widzimy taką zawartość.
-                         * Tworzymy nowy rekord StorageBlob.
-                         *
-                         * Ostatni argument null może oznaczać np. brak informacji
-                         * o klasie storage, kluczu szyfrowania albo dodatkowych metadanych,
-                         * zależnie od konstrukcji StorageBlob.
-                         */
-                        new StorageBlob(
-                                file.getSha256(),
-                                file.getObjectKey(),
-                                file.getSizeBytes(),
-                                null
-                        )
-                ));
+        StorageBlob blob = blobs.findByIdForUpdate(version.getBlobId())
+                .orElseThrow(() -> new IllegalStateException("Referenced storage blob does not exist"));
+        if (blob.decrementRefCount() == 0) {
+            String objectKey = blob.getObjectKey();
+            blobs.delete(blob);
+            afterCommit(() -> storage.delete(objectKey));
+        }
+    }
+
+    private void afterCommit(Runnable action) {
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override public void afterCommit() { action.run(); }
+        });
     }
 }

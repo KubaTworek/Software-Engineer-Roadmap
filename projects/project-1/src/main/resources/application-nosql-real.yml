@@ -18,14 +18,16 @@ spring:
       # 6379 to domyślny port Redisa.
       port: 6379
 
-    mongodb:
-      # URI połączenia do MongoDB.
-      #
-      # MongoDB jest używane jako dokumentowy read model dla eventów.
-      #
-      # Ważne:
-      # PostgreSQL nadal pozostaje źródłem prawdy.
-      # MongoDB przechowuje tylko denormalizowany widok do szybkiego odczytu.
-      #
-      # booking_capacity_read_model to nazwa bazy dla read modelu.
-      uri: mongodb://localhost:27017/booking_capacity_read_model
+  # Spring Boot 4 przeniósł właściwości połączenia z
+  # `spring.data.mongodb` do `spring.mongodb`.
+  mongodb:
+    # URI połączenia do MongoDB.
+    #
+    # MongoDB jest używane jako dokumentowy read model dla eventów.
+    #
+    # Ważne:
+    # PostgreSQL nadal pozostaje źródłem prawdy.
+    # MongoDB przechowuje tylko denormalizowany widok do szybkiego odczytu.
+    #
+    # booking_capacity_read_model to nazwa bazy dla read modelu.
+    uri: mongodb://localhost:27017/booking_capacity_read_model

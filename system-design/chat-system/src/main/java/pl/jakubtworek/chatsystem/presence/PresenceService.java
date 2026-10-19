@@ -6,7 +6,7 @@ import pl.jakubtworek.chatsystem.common.NotFoundException;
 import pl.jakubtworek.chatsystem.user.AppUser;
 import pl.jakubtworek.chatsystem.user.UserRepository;
 
-import java.time.Instant;
+import java.time.Clock;
 import java.util.UUID;
 
 /**
@@ -47,10 +47,12 @@ public class PresenceService {
      * Jeżeli użytkownik nie istnieje, zwracamy NotFoundException.
      */
     private final UserRepository userRepository;
+    private final Clock clock;
 
-    public PresenceService(UserPresenceRepository presenceRepository, UserRepository userRepository) {
+    public PresenceService(UserPresenceRepository presenceRepository, UserRepository userRepository, Clock clock) {
         this.presenceRepository = presenceRepository;
         this.userRepository = userRepository;
+        this.clock = clock;
     }
 
     /**
@@ -80,7 +82,7 @@ public class PresenceService {
          * Szczegóły tego, czy lastSeenAt zmienia się przy wejściu online,
          * są ukryte w encji UserPresence.
          */
-        presence.markOnline(Instant.now());
+        presence.markOnline(clock.instant());
 
         /*
          * Zapisujemy stan i zwracamy DTO dla klienta/innych warstw.
@@ -106,7 +108,7 @@ public class PresenceService {
         /*
          * Ustawiamy status OFFLINE i aktualizujemy czas ostatniej aktywności.
          */
-        presence.markOffline(Instant.now());
+        presence.markOffline(clock.instant());
 
         return PresenceResponse.from(presenceRepository.save(presence));
     }

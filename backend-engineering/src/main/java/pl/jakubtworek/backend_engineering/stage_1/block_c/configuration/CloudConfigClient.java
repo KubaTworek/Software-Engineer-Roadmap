@@ -19,7 +19,7 @@ public class CloudConfigClient {
      * Property can be externally managed
      * by Spring Cloud Config Server.
      */
-    @Value("${external.service.url}")
+    @Value("${external.service.url:http://localhost:8081}")
     private String serviceUrl;
 
     public void printCloudConfig() {

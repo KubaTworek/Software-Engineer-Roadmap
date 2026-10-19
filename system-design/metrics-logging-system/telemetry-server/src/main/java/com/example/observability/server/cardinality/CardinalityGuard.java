@@ -56,13 +56,16 @@ public class CardinalityGuard {
      * - jaki jest poziom ryzyka kosztowego.
      */
     private final TelemetryRepository repository;
+    private final CardinalityBudgetStore budgetStore;
 
     public CardinalityGuard(
             CardinalityProperties properties,
-            TelemetryRepository repository
+            TelemetryRepository repository,
+            CardinalityBudgetStore budgetStore
     ) {
         this.properties = properties;
         this.repository = repository;
+        this.budgetStore = budgetStore;
     }
 
     /**
@@ -163,10 +166,13 @@ public class CardinalityGuard {
          * To nie jest zapis samych metryk.
          * To zapis metadanych potrzebnych do raportowania kardynalności.
          */
-        repository.recordMetricCardinality(
-                request,
-                Instant.now().truncatedTo(ChronoUnit.HOURS)
-        );
+        Instant hour = Instant.now().truncatedTo(ChronoUnit.HOURS);
+        if (!budgetStore.reserve(request, hour,
+                properties.getMaxSeriesPerMetricPerHour(),
+                properties.getMaxValuesPerLabelPerHour())) {
+            throw rejected("tenant hourly cardinality budget exhausted");
+        }
+        repository.recordMetricCardinality(request, hour);
 
         return CardinalityDecision.accepted(accepted);
     }

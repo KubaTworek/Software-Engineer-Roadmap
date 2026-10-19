@@ -5,6 +5,7 @@ import com.example.videostreaming.catalog.Video;
 import jakarta.persistence.*;
 
 import java.time.Instant;
+import java.time.Duration;
 import java.util.UUID;
 
 @Entity
@@ -72,6 +73,13 @@ public class LiveStream {
 
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
+    @Version
+    @Column(name = "row_version", nullable = false)
+    private long rowVersion;
+    @Column(name = "owner_token", nullable = false)
+    private long ownerToken;
+    @Column(name = "lease_until")
+    private Instant leaseUntil;
 
     protected LiveStream() {}
 
@@ -114,6 +122,8 @@ public class LiveStream {
     public String getLastError() { return lastError; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
+    public long getOwnerToken() { return ownerToken; }
+    public Instant getLeaseUntil() { return leaseUntil; }
 
     public void update(String title, String description, LiveLatencyMode latencyMode, Boolean dvrEnabled, Integer dvrWindowSeconds, Boolean recordingEnabled) {
         if (title != null && !title.isBlank()) this.title = title;
@@ -138,6 +148,61 @@ public class LiveStream {
     public void markEnded() { this.status = LiveStatus.ENDED; this.endedAt = Instant.now(); touch(); }
     public void markFailed(String error) { this.status = LiveStatus.FAILED; this.lastError = error; touch(); }
     public void attachVod(Video video) { this.vodVideo = video; this.status = LiveStatus.VOD_READY; touch(); }
+
+    public long claim(Instant now, Duration lease) {
+        if (leaseUntil != null && leaseUntil.isAfter(now)) {
+            throw new IllegalStateException("Live stream already has an active owner");
+        }
+        ownerToken++;
+        leaseUntil = now.plus(lease);
+        touch();
+        return ownerToken;
+    }
+
+    public boolean ownedBy(long token, Instant now) {
+        return token == ownerToken && leaseUntil != null && leaseUntil.isAfter(now);
+    }
+
+    /**
+     * Odnawia lease wyłącznie dla aktualnego właściciela.
+     *
+     * Sam fencing token chroni zapis przed starym workerem, ale bez heartbeat'u
+     * poprawna, wielogodzinna transmisja utraciłaby ownership po upływie pierwszego
+     * lease. Krótki, odnawiany lease pozwala innej replice przejąć pracę po awarii,
+     * a jednocześnie nie dopuszcza do działania dwóch właścicieli.
+     */
+    public void renew(long token, Instant now, Duration lease) {
+        assertOwner(token, now);
+        leaseUntil = now.plus(lease);
+        touch();
+    }
+
+    public void stopAndFence() {
+        ownerToken++;
+        leaseUntil = null;
+        markEnded();
+    }
+
+    public void markLive(long token, Instant now, String masterKey, String recordingKey) {
+        assertOwner(token, now);
+        markLive(masterKey, recordingKey);
+    }
+
+    public void markEnded(long token, Instant now) {
+        assertOwner(token, now);
+        leaseUntil = null;
+        markEnded();
+    }
+
+    public void markFailed(long token, Instant now, String error) {
+        assertOwner(token, now);
+        leaseUntil = null;
+        markFailed(error);
+    }
+
+    private void assertOwner(long token, Instant now) {
+        if (!ownedBy(token, now)) throw new IllegalStateException("Stale live worker fencing token");
+    }
 
     private void touch() { this.updatedAt = Instant.now(); }
 }

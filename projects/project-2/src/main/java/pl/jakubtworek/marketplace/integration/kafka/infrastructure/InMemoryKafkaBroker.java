@@ -111,9 +111,9 @@ public class InMemoryKafkaBroker implements KafkaMessageBroker, KafkaMessagePubl
      * postępu konsumenta.
      */
     @Override
-    public void commit(String topic, String consumerGroup, long offset) {
+    public void commit(String topic, String consumerGroup, int partition, long offset) {
         committedOffsets.merge(
-                key(topic, consumerGroup),
+                key(topic, consumerGroup, partition),
                 offset,
                 Math::max
         );
@@ -125,9 +125,9 @@ public class InMemoryKafkaBroker implements KafkaMessageBroker, KafkaMessagePubl
      * Jeśli grupa nie commitowała jeszcze żadnego offsetu, zwracamy -1.
      */
     @Override
-    public long committedOffset(String topic, String consumerGroup) {
+    public long committedOffset(String topic, String consumerGroup, int partition) {
         return committedOffsets.getOrDefault(
-                key(topic, consumerGroup),
+                key(topic, consumerGroup, partition),
                 -1L
         );
     }
@@ -152,6 +152,7 @@ public class InMemoryKafkaBroker implements KafkaMessageBroker, KafkaMessagePubl
      *
      * Jeśli wynik byłby ujemny, zwracamy 0.
      */
+    @Override
     public long lag(String topic, String consumerGroup) {
         long end = endOffset(topic);
         long committed = committedOffset(topic, consumerGroup);
@@ -184,7 +185,7 @@ public class InMemoryKafkaBroker implements KafkaMessageBroker, KafkaMessagePubl
     /**
      * Buduje techniczny klucz dla mapy committedOffsets.
      */
-    private String key(String topic, String consumerGroup) {
-        return topic + "::" + consumerGroup;
+    private String key(String topic, String consumerGroup, int partition) {
+        return topic + "::" + consumerGroup + "::" + partition;
     }
 }

@@ -1,4 +1,20 @@
-# Document databases
+# document
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** document.
+> - **Typowy błąd:** Nieograniczone osadzanie kolekcji w jednym dokumencie.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** brak jawnej roli w nazwach klas; intencję przykładu określają opis i test, nie sam brak prefiksu.
+> - **Granica:** Model i H2 sprawdzają logikę; blokady, plan zapytania i zachowanie silnika potwierdza dopiero odpowiedni profil infrastrukturalny.
+<!-- material-card:end -->
+
+## Document databases
+
+
 
 Document database to typ bazy NoSQL, w którym podstawową jednostką zapisu i odczytu jest dokument. Najczęściej taki dokument przypomina strukturę JSON albo BSON. Przykładami baz dokumentowych są MongoDB, Couchbase i Firestore. Ten model jest szczególnie wygodny wtedy, gdy dane mają naturalnie zagnieżdżoną strukturę, nie są idealnie tabelaryczne albo często są odczytywane jako większy agregat.
 

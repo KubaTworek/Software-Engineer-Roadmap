@@ -3,9 +3,11 @@ package com.example.autocomplete.abuse;
 import com.example.autocomplete.model.AutocompleteContext;
 import org.springframework.stereotype.Component;
 
-import java.time.Instant;
+import java.time.Clock;
+import java.time.Duration;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 
 /**
  * Prosty moduł abuse detection dla autocomplete.
@@ -46,11 +48,19 @@ public class AbuseDetectionService {
      * Wartość:
      * - kolejka timestampów requestów z ostatniej minuty.
      *
-     * ConcurrentHashMap zabezpiecza dostęp do mapy przy wielu requestach równolegle.
-     * Sama kolejka ArrayDeque nie jest thread-safe, dlatego niżej synchronizujemy dostęp
-     * do konkretnej kolejki.
+     * Caffeine ogranicza liczbę kluczy i usuwa nieaktywne IP, dzięki czemu sam mechanizm
+     * ochronny nie może bez końca zużywać pamięci. ArrayDeque nie jest thread-safe,
+     * dlatego niżej synchronizujemy dostęp do kolejki przypisanej do jednego IP.
      */
-    private final Map<String, Deque<Long>> requestsByIp = new ConcurrentHashMap<>();
+    private final Cache<String, Deque<Long>> requestsByIp = Caffeine.newBuilder()
+            .maximumSize(100_000)
+            .expireAfterAccess(Duration.ofMinutes(2))
+            .build();
+    private final Clock clock;
+
+    public AbuseDetectionService(Clock clock) {
+        this.clock = clock;
+    }
 
     /**
      * Sprawdza, czy request z danego kontekstu może zostać obsłużony.
@@ -69,7 +79,7 @@ public class AbuseDetectionService {
          *
          * Używamy go do usuwania requestów starszych niż 60 sekund.
          */
-        long now = Instant.now().toEpochMilli();
+        long now = clock.millis();
 
         /*
          * Pobieramy kolejkę requestów dla IP klienta.
@@ -79,7 +89,7 @@ public class AbuseDetectionService {
          * context.safeClientIp() zabezpiecza nas przed null/blank IP,
          * np. zwracając "unknown".
          */
-        Deque<Long> deque = requestsByIp.computeIfAbsent(
+        Deque<Long> deque = requestsByIp.asMap().computeIfAbsent(
                 context.safeClientIp(),
                 ignored -> new ArrayDeque<>()
         );

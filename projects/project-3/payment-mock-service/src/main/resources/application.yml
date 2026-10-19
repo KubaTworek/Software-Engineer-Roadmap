@@ -5,6 +5,16 @@ spring:
     # Dzięki temu w Grafanie, Prometheusie, Tempo/Jaegerze i logach JSON
     # można łatwo odróżnić payment-mock-service od pozostałych mikroserwisów.
     name: payment-mock-service
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5437/payments}
+    username: ${SPRING_DATASOURCE_USERNAME:app}
+    password: ${SPRING_DATASOURCE_PASSWORD:app}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
 
 server:
   # Port HTTP payment-mock-service.

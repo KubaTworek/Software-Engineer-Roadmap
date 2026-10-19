@@ -7,7 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.Instant;
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -49,6 +49,7 @@ public class PromotionEngine {
      * Kupon wskazuje na konkretną promocję, która definiuje logikę rabatu.
      */
     private final CouponRepository coupons;
+    private final Clock clock;
 
     /**
      * Constructor injection.
@@ -57,10 +58,12 @@ public class PromotionEngine {
      */
     public PromotionEngine(
             PromotionRepository promotions,
-            CouponRepository coupons
+            CouponRepository coupons,
+            Clock clock
     ) {
         this.promotions = promotions;
         this.coupons = coupons;
+        this.clock = clock;
     }
 
     /**
@@ -121,7 +124,7 @@ public class PromotionEngine {
         List<Promotion> activePromotions = promotions
                 .findByStatusOrderByPriorityAsc(PromotionStatus.ACTIVE)
                 .stream()
-                .filter(promotion -> promotion.isActiveAt(Instant.now()))
+                .filter(promotion -> promotion.isActiveAt(clock.instant()))
                 .sorted(Comparator.comparingInt(Promotion::getPriority))
                 .toList();
 
@@ -196,7 +199,7 @@ public class PromotionEngine {
              *
              * Jeśli kupon nie może zostać użyty, zwracamy błąd requestu.
              */
-            if (!coupon.canUse() || !coupon.getPromotion().isActiveAt(Instant.now())) {
+            if (!coupon.canUse() || !coupon.getPromotion().isActiveAt(clock.instant())) {
                 throw ApiException.badRequest("Coupon is not active");
             }
 

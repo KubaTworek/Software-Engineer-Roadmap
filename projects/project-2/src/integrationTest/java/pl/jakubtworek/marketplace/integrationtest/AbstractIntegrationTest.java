@@ -3,22 +3,26 @@ package pl.jakubtworek.marketplace.integrationtest;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.resttestclient.TestRestTemplate;
+import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.TestPropertySource;
-import org.testcontainers.containers.KafkaContainer;
+import org.testcontainers.kafka.ConfluentKafkaContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 
 import java.util.UUID;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@AutoConfigureTestRestTemplate
 @ActiveProfiles({"postgres", "kafka"})
 @TestPropertySource(properties = {
         "marketplace.kafka-outbox.scheduled-enabled=false",
+        "marketplace.kafka.consumers.enabled=false",
+        "marketplace.fulfillment-process.timeout-worker-enabled=false",
 
         "spring.jpa.hibernate.ddl-auto=none",
         "spring.flyway.enabled=true",
@@ -34,7 +38,7 @@ public abstract class AbstractIntegrationTest {
     private static final PostgreSQLContainer<?> POSTGRES =
             IntegrationPostgresContainer.getInstance();
 
-    private static final KafkaContainer KAFKA =
+    private static final ConfluentKafkaContainer KAFKA =
             IntegrationKafkaContainer.getInstance();
 
     private static final String RUN_ID =
@@ -115,11 +119,13 @@ public abstract class AbstractIntegrationTest {
         truncateIfExists("integration", "dead_letter_events");
         truncateIfExists("integration", "processed_events");
         truncateIfExists("integration", "outbox_events");
+        truncateIfExists("integration", "order_fulfillment_processes");
     }
 
     protected void cleanDomainTablesIfExist() {
         truncateIfExists("ordering", "order_lines");
         truncateIfExists("ordering", "orders");
+        truncateIfExists("ordering", "api_idempotency_keys");
 
         truncateIfExists("catalog", "products");
 

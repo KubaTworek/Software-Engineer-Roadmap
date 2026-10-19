@@ -6,10 +6,13 @@ import pl.jakubtworek.booking.dto.EventCreateRequest;
 import pl.jakubtworek.booking.dto.EventResponse;
 import pl.jakubtworek.booking.entity.CapacityPool;
 import pl.jakubtworek.booking.entity.Event;
+import pl.jakubtworek.booking.entity.Organization;
 import pl.jakubtworek.booking.exception.NotFoundException;
 import pl.jakubtworek.booking.repository.CapacityPoolRepository;
 import pl.jakubtworek.booking.repository.EventRepository;
+import pl.jakubtworek.booking.repository.OrganizationRepository;
 
+import java.time.Clock;
 import java.util.UUID;
 
 /**
@@ -45,6 +48,8 @@ public class EventService {
      * później używana w etapach concurrency, locking i atomic SQL update.
      */
     private final CapacityPoolRepository capacityPoolRepository;
+    private final OrganizationRepository organizationRepository;
+    private final Clock clock;
 
     /**
      * Constructor injection.
@@ -56,9 +61,13 @@ public class EventService {
      * - Spring nie musi używać refleksji do ustawiania pól.
      */
     public EventService(EventRepository eventRepository,
-                        CapacityPoolRepository capacityPoolRepository) {
+                        CapacityPoolRepository capacityPoolRepository,
+                        OrganizationRepository organizationRepository,
+                        Clock clock) {
         this.eventRepository = eventRepository;
         this.capacityPoolRepository = capacityPoolRepository;
+        this.organizationRepository = organizationRepository;
+        this.clock = clock;
     }
 
     /**
@@ -78,6 +87,17 @@ public class EventService {
      */
     @Transactional
     public EventResponse create(EventCreateRequest request) {
+        return createInternal(request, null);
+    }
+
+    @Transactional
+    public EventResponse create(EventCreateRequest request, UUID organizationId) {
+        var organization = organizationRepository.findById(organizationId)
+                .orElseThrow(() -> new NotFoundException("Organization not found: " + organizationId));
+        return createInternal(request, organization);
+    }
+
+    private EventResponse createInternal(EventCreateRequest request, Organization organization) {
         /*
          * Najpierw zapisujemy Event.
          *
@@ -85,10 +105,12 @@ public class EventService {
          * To ID jest potrzebne do powiązania CapacityPool z konkretnym eventem.
          */
         Event event = eventRepository.save(new Event(
+                organization,
                 request.name(),
                 request.city(),
                 request.category(),
-                request.startsAt()
+                request.startsAt(),
+                clock.instant()
         ));
 
         /*

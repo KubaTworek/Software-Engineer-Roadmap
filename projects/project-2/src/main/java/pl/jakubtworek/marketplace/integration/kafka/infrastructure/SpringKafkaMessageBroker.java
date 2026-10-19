@@ -17,6 +17,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Adapter do prawdziwej Kafki.
@@ -83,8 +84,9 @@ public class SpringKafkaMessageBroker implements KafkaMessageBroker, KafkaMessag
 
             consumer.assign(partitions);
 
+            Map<TopicPartition, OffsetAndMetadata> committedOffsets = consumer.committed(Set.copyOf(partitions));
             for (TopicPartition partition : partitions) {
-                OffsetAndMetadata committed = consumer.committed(partition);
+                OffsetAndMetadata committed = committedOffsets.get(partition);
 
                 if (committed == null) {
                     consumer.seek(partition, 0L);
@@ -124,16 +126,6 @@ public class SpringKafkaMessageBroker implements KafkaMessageBroker, KafkaMessag
      * - commit do Kafki powinien wynosić 8.
      */
     @Override
-    public void commit(String topic, String consumerGroup, long offset) {
-        /*
-         * Ten wariant zakłada jedną partycję — partition 0.
-         *
-         * Jeśli używasz wielu partycji, interfejs KafkaMessageBroker powinien zostać
-         * rozszerzony o partition, np. commit(topic, consumerGroup, partition, offset).
-         */
-        commit(topic, consumerGroup, 0, offset);
-    }
-
     public void commit(String topic, String consumerGroup, int partition, long offset) {
         try (KafkaConsumer<String, IntegrationEventEnvelope> consumer = newConsumer(consumerGroup)) {
             TopicPartition topicPartition = new TopicPartition(topic, partition);
@@ -156,20 +148,13 @@ public class SpringKafkaMessageBroker implements KafkaMessageBroker, KafkaMessag
      * Jeśli grupa nie ma jeszcze commitu, zwracamy -1.
      */
     @Override
-    public long committedOffset(String topic, String consumerGroup) {
-        /*
-         * Ten wariant zakłada jedną partycję — partition 0.
-         */
-        return committedOffset(topic, consumerGroup, 0);
-    }
-
     public long committedOffset(String topic, String consumerGroup, int partition) {
         try (KafkaConsumer<String, IntegrationEventEnvelope> consumer = newConsumer(consumerGroup)) {
             TopicPartition topicPartition = new TopicPartition(topic, partition);
 
             consumer.assign(List.of(topicPartition));
 
-            OffsetAndMetadata committed = consumer.committed(topicPartition);
+            OffsetAndMetadata committed = consumer.committed(Set.of(topicPartition)).get(topicPartition);
 
             if (committed == null) {
                 return -1L;
@@ -205,16 +190,41 @@ public class SpringKafkaMessageBroker implements KafkaMessageBroker, KafkaMessag
         }
     }
 
+    /**
+     * Sumuje zaległość wszystkich partycji. Maksymalny offset jednej partycji nie
+     * opisuje pracy pozostałych partycji i mógłby ukryć realny backlog konsumenta.
+     */
+    @Override
+    public long lag(String topic, String consumerGroup) {
+        try (KafkaConsumer<String, IntegrationEventEnvelope> consumer = newConsumer(consumerGroup)) {
+            List<TopicPartition> partitions = partitionsFor(topic, consumer);
+            if (partitions.isEmpty()) {
+                return 0L;
+            }
+
+            consumer.assign(partitions);
+            Map<TopicPartition, Long> endOffsets = consumer.endOffsets(partitions);
+            long lag = 0L;
+            Map<TopicPartition, OffsetAndMetadata> committedOffsets = consumer.committed(Set.copyOf(partitions));
+            for (TopicPartition partition : partitions) {
+                OffsetAndMetadata committed = committedOffsets.get(partition);
+                long nextOffset = committed == null ? 0L : committed.offset();
+                lag += Math.max(0L, endOffsets.get(partition) - nextOffset);
+            }
+            return lag;
+        }
+    }
+
     private KafkaConsumer<String, IntegrationEventEnvelope> newConsumer(String consumerGroup) {
         return new KafkaConsumer<>(Map.of(
                 ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers,
                 ConsumerConfig.GROUP_ID_CONFIG, consumerGroup,
                 ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, org.apache.kafka.common.serialization.StringDeserializer.class,
-                ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, org.springframework.kafka.support.serializer.JsonDeserializer.class,
+                ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, org.springframework.kafka.support.serializer.JacksonJsonDeserializer.class,
                 ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false,
                 ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest",
-                org.springframework.kafka.support.serializer.JsonDeserializer.TRUSTED_PACKAGES, "*",
-                org.springframework.kafka.support.serializer.JsonDeserializer.VALUE_DEFAULT_TYPE, IntegrationEventEnvelope.class.getName()
+                org.springframework.kafka.support.serializer.JacksonJsonDeserializer.TRUSTED_PACKAGES, "pl.jakubtworek.marketplace.integration.kafka",
+                org.springframework.kafka.support.serializer.JacksonJsonDeserializer.VALUE_DEFAULT_TYPE, IntegrationEventEnvelope.class.getName()
         ));
     }
 

@@ -2,6 +2,7 @@ package pl.jakubtworek.backend_engineering.stage_3.block_b.prometheus;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Pattern;
 
 /**
  * Provides a defensive check against dangerous metric labels.
@@ -10,6 +11,8 @@ import java.util.Locale;
  * that helps prevent accidental high-cardinality labels from entering metrics.
  */
 public final class MetricCardinalityGuard {
+
+    private static final Pattern LABEL_NAME = Pattern.compile("[a-zA-Z_][a-zA-Z0-9_]*");
 
     private static final List<String> FORBIDDEN_LABEL_NAMES = List.of(
             "user_id",
@@ -36,6 +39,10 @@ public final class MetricCardinalityGuard {
     public static void validateLabelName(String labelName) {
         if (labelName == null || labelName.isBlank()) {
             throw new IllegalArgumentException("label name must not be blank");
+        }
+
+        if (!LABEL_NAME.matcher(labelName).matches()) {
+            throw new IllegalArgumentException("invalid Prometheus label name: " + labelName);
         }
 
         String normalized = labelName.toLowerCase(Locale.ROOT);

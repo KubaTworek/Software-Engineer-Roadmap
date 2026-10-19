@@ -1,4 +1,20 @@
-# Case 2 — Escape Analysis
+# escape analysis
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** escape analysis.
+> - **Typowy błąd:** Wnioskowanie o rzeczywistej alokacji wyłącznie z wystąpienia new w źródle.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=EscapeAnalysisCorrectnessTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** brak jawnej roli w nazwach klas; intencję przykładu określają opis i test, nie sam brak prefiksu.
+> - **Granica:** Wynik eksperymentu opisuje tę maszynę i workload; nie jest uniwersalną liczbą produkcyjną.
+<!-- material-card:end -->
+
+## Case 2 — Escape Analysis
+
+
 
 ## Wprowadzenie
 
@@ -24,7 +40,7 @@ Escape Analysis jest więc przede wszystkim mechanizmem umożliwiającym agresyw
 
 ---
 
-# Problem kosztu alokacji
+## Problem kosztu alokacji
 
 Logiczny model Javy sugeruje, że każde:
 
@@ -48,7 +64,7 @@ To właśnie rola Escape Analysis.
 
 ---
 
-# Co oznacza „escape”
+## Co oznacza „escape”
 
 Obiekt „ucieka” (*escapes*), gdy może zostać zaobserwowany poza aktualnym kontekstem wykonywania.
 
@@ -72,7 +88,7 @@ to JVM może potraktować go jako czysto tymczasową konstrukcję logiczną.
 
 ---
 
-# Najważniejsze nieporozumienie — „stack allocation”
+## Najważniejsze nieporozumienie — „stack allocation”
 
 Wiele materiałów tłumaczy Escape Analysis jako:
 
@@ -121,7 +137,7 @@ Bez GC.
 
 ---
 
-# Escape Analysis a Garbage Collector
+## Escape Analysis a Garbage Collector
 
 To bardzo ważna zależność.
 
@@ -139,7 +155,7 @@ W nowoczesnych aplikacjach wysokowydajnych jest to jeden z kluczowych mechanizm�
 
 ---
 
-# Lock Elision — usuwanie synchronizacji
+## Lock Elision — usuwanie synchronizacji
 
 Escape Analysis nie służy wyłącznie do eliminacji alokacji.
 
@@ -173,7 +189,7 @@ To ogromna optymalizacja, ponieważ synchronizacja — nawet zoptymalizowana —
 
 ---
 
-# Dlaczego benchmarki JMH są potrzebne
+## Dlaczego benchmarki JMH są potrzebne
 
 Escape Analysis jest optymalizacją JIT.
 
@@ -203,7 +219,7 @@ Dlatego używa się:
 
 ---
 
-# Dlaczego „return object” jest trudniejsze
+## Dlaczego „return object” jest trudniejsze
 
 W przykładzie benchmarku:
 
@@ -231,7 +247,7 @@ Dlatego przewidywanie zachowania JVM „na oko” jest często błędne.
 
 ---
 
-# Czego Escape Analysis NIE gwarantuje
+## Czego Escape Analysis NIE gwarantuje
 
 Escape Analysis:
 - nie gwarantuje stack allocation,
@@ -245,7 +261,7 @@ Kod musi być poprawny również wtedy, gdy EA nie zadziała.
 
 ---
 
-# Najważniejsze wnioski
+## Najważniejsze wnioski
 
 Najbardziej poprawny model mentalny wygląda tak:
 

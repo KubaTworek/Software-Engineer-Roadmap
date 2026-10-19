@@ -1,2184 +1,772 @@
-# Rate Limiter — System Design
+# Distributed Rate Limiter
+
+<!-- reading-guide:start -->
+## Ścieżki czytania
+
+| Cel czytania | Punkt wejścia |
+| --- | --- |
+| Teoria i model problemu | [1. Problem, wymagania i budżet](#1-problem-wymagania-i-budżet) |
+| Implementacja i jej dowody | [Mapa implementacji](#mapa-implementacji) |
+| Uruchomienie i eksperymenty | [15. Uruchomienie](#15-uruchomienie) |
+| Ograniczenia i scenariusze awarii | [24. Granice gotowości produkcyjnej](#24-granice-gotowości-produkcyjnej) |
+
+Wspólne mechanizmy i ich testy znajdziesz w [indeksie pojęć backend-engineering](../../backend-engineering/README.md#globalny-indeks-pojęć). Tutaj śledź ich konsekwencje dla opisywanego systemu.
+Diagramy docelowe i warianty rozwoju czytaj razem z mapą implementacji; sam opis architektury nie oznacza, że wszystkie jej komponenty są uruchamiane w laboratorium.
+<!-- reading-guide:end -->
+
+Edukacyjne studium systemu, który podejmuje decyzję `allow/deny` przed wykonaniem
+chronionej operacji. Projekt łączy teorię algorytmów z wykonywalną implementacją
+Spring Boot + Redis i pokazuje, gdzie kończą się gwarancje pojedynczego skryptu,
+a zaczynają decyzje architektoniczne: awarie, wiele regionów, zaufanie do
+nagłówków, dynamiczna konfiguracja, quota i obserwowalność.
 
-Kompleksowy projekt systemu **Rate Limiter** dla API, mikroserwisów i systemów rozproszonych.
+## Najpierw uruchom
 
-Rate Limiter odpowiada na pytanie:
+**Najważniejszy niezmiennik:** dla jednego bucketu współbieżne żądania nie mogą
+łącznie zużyć więcej tokenów, niż bucket zawiera po uwzględnieniu refill.
 
-```text
-Czy dane żądanie powinno zostać przepuszczone, czy zablokowane?
-```
-
-Przykładowa odpowiedź pozytywna:
-
-```json
-{
-  "allowed": true,
-  "remaining": 42,
-  "retry_after_ms": null,
-  "limit": 100,
-  "window_ms": 60000
-}
-```
-
-Przykładowa odpowiedź negatywna:
-
-```json
-{
-  "allowed": false,
-  "remaining": 0,
-  "retry_after_ms": 13700,
-  "limit": 100,
-  "window_ms": 60000
-}
-```
-
----
-
-## Spis treści
-
-1. [Cel systemu](#1-cel-systemu)
-2. [Wymagania funkcjonalne](#2-wymagania-funkcjonalne)
-3. [Wymagania niefunkcjonalne](#3-wymagania-niefunkcjonalne)
-4. [Główne przypadki użycia](#4-główne-przypadki-użycia)
-5. [Architektura wysokopoziomowa](#5-architektura-wysokopoziomowa)
-6. [Modele wdrożenia](#6-modele-wdrożenia)
-7. [Rekomendowana architektura](#7-rekomendowana-architektura)
-8. [Komponenty systemu](#8-komponenty-systemu)
-9. [Algorytmy rate limitingu](#9-algorytmy-rate-limitingu)
-10. [Rekomendowany algorytm](#10-rekomendowany-algorytm)
-11. [API Rate Limiter Service](#11-api-rate-limiter-service)
-12. [Model danych konfiguracji](#12-model-danych-konfiguracji)
-13. [Klucze w Redisie](#13-klucze-w-redisie)
-14. [Atomowość](#14-atomowość)
-15. [Token Bucket — logika](#15-token-bucket--logika)
-16. [Hierarchiczne limity](#16-hierarchiczne-limity)
-17. [Skalowanie](#17-skalowanie)
-18. [Hot key mitigation](#18-hot-key-mitigation)
-19. [Caching konfiguracji](#19-caching-konfiguracji)
-20. [Consistency model](#20-consistency-model)
-21. [Failure modes](#21-failure-modes)
-22. [Multi-region design](#22-multi-region-design)
-23. [Quotas vs Rate Limits](#23-quotas-vs-rate-limits)
-24. [Event-driven usage accounting](#24-event-driven-usage-accounting)
-25. [Observability](#25-observability)
-26. [Logging](#26-logging)
-27. [Alerty](#27-alerty)
-28. [Bezpieczeństwo](#28-bezpieczeństwo)
-29. [Przykładowe reguły](#29-przykładowe-reguły)
-30. [Request flow](#30-request-flow)
-31. [Sekwencja](#31-sekwencja)
-32. [Strategia dla 429](#32-strategia-dla-429)
-33. [Idempotency i retry](#33-idempotency-i-retry)
-34. [Koszt pamięciowy](#34-koszt-pamięciowy)
-35. [Optymalizacje wydajności](#35-optymalizacje-wydajności)
-36. [Rule matching](#36-rule-matching)
-37. [Przykładowy rule resolution](#37-przykładowy-rule-resolution)
-38. [Testowanie](#38-testowanie)
-39. [Przykładowe SLO](#39-przykładowe-slo)
-40. [Admin API](#40-admin-api)
-41. [Przykładowy stack technologiczny](#41-przykładowy-stack-technologiczny)
-42. [Trade-offy](#42-trade-offy)
-43. [Minimalna wersja MVP](#43-minimalna-wersja-mvp)
-44. [Produkcyjna wersja docelowa](#44-produkcyjna-wersja-docelowa)
-45. [Największe ryzyka](#45-największe-ryzyka)
-46. [Proponowana decyzja końcowa](#46-proponowana-decyzja-końcowa)
-
----
-
-## 1. Cel systemu
-
-**Rate Limiter** ogranicza liczbę żądań wykonywanych przez użytkownika, klienta, API key, IP, tenant lub usługę w określonym czasie.
-
-Przykłady limitów:
-
-```text
-100 requestów / minutę / użytkownik
-10 000 requestów / godzinę / API key
-5 requestów / sekundę / IP
-1 000 requestów / dzień / tenant
-```
-
-System powinien odpowiadać na pytanie:
-
-```text
-Czy to żądanie powinno zostać przepuszczone?
-```
-
-Możliwe odpowiedzi:
-
-- `allowed: true` — request może zostać obsłużony,
-- `allowed: false` — request powinien zostać odrzucony, zwykle kodem HTTP `429 Too Many Requests`.
-
----
-
-## 2. Wymagania funkcjonalne
-
-System powinien obsługiwać:
-
-### 2.1 Limity per klucz
-
-Możliwe typy kluczy:
-
-- user ID,
-- API key,
-- IP,
-- tenant ID,
-- endpoint,
-- metoda HTTP,
-- kombinacje, np. `tenant:user:endpoint`.
-
-### 2.2 Różne typy limitów
-
-- per sekunda,
-- per minuta,
-- per godzina,
-- per dzień,
-- limity burstowe,
-- limity globalne.
-
-### 2.3 Decyzję online
-
-Każde żądanie powinno dostać decyzję:
-
-```text
-allow / deny
-```
-
-### 2.4 Nagłówki HTTP
-
-System powinien wspierać nagłówki:
-
-```http
-X-RateLimit-Limit
-X-RateLimit-Remaining
-X-RateLimit-Reset
-Retry-After
-```
-
-### 2.5 Konfigurację limitów
-
-- globalne limity domyślne,
-- limity per plan, np. Free, Pro, Enterprise,
-- limity per endpoint,
-- wyjątki dla konkretnych klientów.
-
-### 2.6 Obsługę wielu algorytmów
-
-- fixed window,
-- sliding window,
-- token bucket,
-- leaky bucket.
-
-### 2.7 Integrację z infrastrukturą
-
-- API Gateway,
-- reverse proxy,
-- service mesh,
-- Envoy,
-- NGINX,
-- Kong,
-- HAProxy,
-- własny gateway.
-
----
-
-## 3. Wymagania niefunkcjonalne
-
-| Obszar | Wymaganie |
-|---|---|
-| Latencja | bardzo niska, najlepiej `< 5 ms` dla decyzji lokalnej lub Redisowej |
-| Dostępność | bardzo wysoka, np. 99.99% |
-| Skalowalność | miliony requestów na minutę |
-| Spójność | wystarczająca, ale nie zawsze absolutna |
-| Odporność | system nie może łatwo blokować całego API |
-| Konfigurowalność | zmiany limitów bez redeployu |
-| Obserwowalność | metryki, logi, tracing |
-| Bezpieczeństwo | brak łatwego obchodzenia limitów |
-
-Rate limiter to komponent na ścieżce krytycznej requestu. Jeżeli jest wolny albo niestabilny, degraduje cały system. Dlatego projekt musi minimalizować zależności i koszt każdej decyzji.
-
----
-
-## 4. Główne przypadki użycia
-
-### 4.1 Limit per API key
-
-```text
-API key: abc123
-Limit: 1000 requests / hour
-```
-
-Klucz limitera:
-
-```text
-rate_limit:api_key:abc123:hour:2026-06-05T14
-```
-
-### 4.2 Limit per użytkownik i endpoint
-
-```text
-User 42 może wykonać 10 requestów / minutę na /login
-```
-
-Klucz:
-
-```text
-rate_limit:user:42:endpoint:/login:minute:2026-06-05T14:32
-```
-
-### 4.3 Limit globalny
-
-```text
-Całe API może obsłużyć maksymalnie 100 000 requestów / minutę
-```
-
-Klucz:
-
-```text
-rate_limit:global:minute:2026-06-05T14:32
-```
-
-### 4.4 Limity hierarchiczne
-
-Jedno żądanie może podlegać kilku limitom naraz:
-
-```text
-1. global: 100 000 rpm
-2. tenant: 10 000 rpm
-3. user: 100 rpm
-4. endpoint /payments: 20 rpm
-```
-
-Request jest dozwolony tylko wtedy, gdy **wszystkie limity pozwalają**.
-
----
-
-## 5. Architektura wysokopoziomowa
-
-```text
-Client
-  |
-  v
-API Gateway / Load Balancer
-  |
-  v
-Rate Limiter Check
-  |
-  +--> Config Store
-  |
-  +--> Fast Counter Store, np. Redis Cluster
-  |
-  v
-Backend Service
-```
-
----
-
-## 6. Modele wdrożenia
-
-### 6.1 Opcja A: Rate limiter w API Gateway
-
-```text
-Client -> API Gateway + Rate Limiter -> Services
-```
-
-Zalety:
-
-- centralne miejsce kontroli,
-- backendy są chronione przed nadmiarem ruchu,
-- łatwe egzekwowanie limitów per API key/IP,
-- dobre dla publicznych API.
-
-Wady:
-
-- gateway staje się bardziej złożony,
-- trudniej o bardzo specyficzne limity biznesowe,
-- gateway musi znać identity requestu.
-
-To najczęściej najlepszy wariant dla publicznego API.
-
-### 6.2 Opcja B: Rate limiter jako osobny serwis
-
-```text
-Client -> Gateway -> Rate Limiter Service -> Backend
-```
-
-Gateway lub backend pyta serwis:
-
-```http
-POST /check
-Content-Type: application/json
-
-{
-  "key": "user:42",
-  "rule": "100_per_minute"
-}
-```
-
-Zalety:
-
-- centralna logika,
-- łatwe aktualizacje algorytmów,
-- dobre API dla wielu usług,
-- łatwiejsze testowanie.
-
-Wady:
-
-- dodatkowy network hop,
-- Rate Limiter Service może stać się bottleneckiem,
-- trzeba bardzo uważać na dostępność.
-
-Dobre dla większych organizacji i mikroserwisów.
-
-### 6.3 Opcja C: Rate limiter jako biblioteka w każdej usłudze
-
-```text
-Client -> Gateway -> Service with embedded rate limiter
-```
-
-Zalety:
-
-- brak dodatkowego hopa,
-- prosta integracja lokalna,
-- dobry dla małych systemów.
-
-Wady:
-
-- duplikacja logiki,
-- trudniejsze zarządzanie konfiguracją,
-- większe ryzyko niespójności,
-- trudniejsze globalne limity.
-
-Dobre dla prostych systemów, ale słabe jako długoterminowa platforma infrastrukturalna.
-
----
-
-## 7. Rekomendowana architektura
-
-Dla produkcyjnego systemu rekomendowana jest hybryda:
-
-```text
-                         +----------------+
-                         | Config Service |
-                         +----------------+
-                                  |
-                                  v
-Client
-  |
-  v
-API Gateway / Edge Proxy
-  |
-  v
-Local Rate Limiter Module
-  |
-  +------ hot config cache
-  |
-  +------ Redis Cluster / Counter Store
-  |
-  v
-Backend Services
-```
-
-Decyzja rate-limitowa wykonywana jest **na brzegu**, najlepiej w gatewayu, z szybkim dostępem do Redis Cluster.
-
-Dla części limitów można użyć lokalnego cache’a, ale główne liczniki powinny być w szybkim współdzielonym store.
-
----
-
-## 8. Komponenty systemu
-
-### 8.1 API Gateway / Enforcement Point
-
-Odpowiada za:
-
-- odczytanie tożsamości klienta,
-- zbudowanie klucza limitera,
-- pobranie reguł,
-- wykonanie checka,
-- odrzucenie requestu, jeśli limit przekroczony,
-- dodanie nagłówków HTTP.
-
-Przykład odpowiedzi przy przekroczeniu limitu:
-
-```http
-HTTP/1.1 429 Too Many Requests
-Retry-After: 14
-X-RateLimit-Limit: 100
-X-RateLimit-Remaining: 0
-X-RateLimit-Reset: 1717599600
-```
-
-### 8.2 Rate Limiter Engine
-
-Logika decyzyjna:
-
-```text
-input:
-  identity
-  endpoint
-  method
-  tenant
-  timestamp
-
-output:
-  allowed / denied
-  remaining
-  retry_after
-```
-
-Engine:
-
-1. znajduje pasujące reguły,
-2. buduje klucze,
-3. wykonuje atomową operację w Redisie,
-4. zwraca decyzję.
-
-### 8.3 Config Store
-
-Przechowuje reguły limitów.
-
-Możliwe backendy:
-
-- PostgreSQL,
-- DynamoDB,
-- etcd,
-- Consul,
-- własny config service.
-
-Przykładowa reguła:
-
-```json
-{
-  "id": "free_plan_default",
-  "scope": "api_key",
-  "plan": "free",
-  "limit": 1000,
-  "window_ms": 3600000,
-  "algorithm": "token_bucket",
-  "burst": 100,
-  "enabled": true
-}
-```
-
-### 8.4 Counter Store
-
-Najczęściej:
-
-- Redis,
-- Redis Cluster,
-- KeyDB,
-- Aerospike,
-- DynamoDB przy niższych wymaganiach latencji,
-- lokalny in-memory store dla prostych przypadków.
-
-Dla wysokiej wydajności najczęściej najlepszym wyborem będzie:
-
-```text
-Redis Cluster + Lua scripts
-```
-
-Powód: potrzebujemy atomowych operacji typu:
-
-```text
-read counter -> increment -> set TTL -> return decision
-```
-
-To musi być wykonane atomowo, inaczej pod dużą konkurencją limity będą przeciekać.
-
----
-
-## 9. Algorytmy rate limitingu
-
-### 9.1 Fixed Window Counter
-
-Najprostszy algorytm.
-
-Limit:
-
-```text
-100 requests / minute
-```
-
-Dla każdej minuty trzymamy licznik.
-
-Klucz:
-
-```text
-rate:user:42:2026-06-05T14:32
-```
-
-Operacje:
-
-```text
-INCR key
-EXPIRE key 60s
-```
-
-Jeżeli licznik `<= 100`, request przechodzi.
-
-Zalety:
-
-- bardzo prosty,
-- szybki,
-- tani pamięciowo,
-- łatwy do zaimplementowania w Redisie.
-
-Wady:
-
-- problem na granicy okna.
-
-Przykład problemu:
-
-```text
-12:00:59 -> 100 requestów
-12:01:00 -> 100 requestów
-```
-
-W praktyce klient zrobił 200 requestów w 2 sekundy, mimo limitu 100/min.
-
-Fixed Window jest dobry dla prostych limitów, ale nie jest idealny dla ochrony przed burstami.
-
-### 9.2 Sliding Window Log
-
-Przechowujemy timestamp każdego requestu.
-
-Dla limitu:
-
-```text
-100 requests / minute
-```
-
-Dla requestu w czasie `T`:
-
-1. usuń wpisy starsze niż `T - 60s`,
-2. policz pozostałe wpisy,
-3. jeśli `< 100`, dodaj timestamp i pozwól,
-4. inaczej zablokuj.
-
-Redis:
-
-```text
-ZREMRANGEBYSCORE key 0 now-window
-ZCARD key
-ZADD key now request_id
-EXPIRE key window
-```
-
-Zalety:
-
-- bardzo dokładny,
-- dobrze radzi sobie z granicą okien.
-
-Wady:
-
-- większe zużycie pamięci,
-- koszt rośnie z liczbą requestów,
-- trudniejsze skalowanie dla bardzo gorących kluczy.
-
-Dobry dla limitów bezpieczeństwa, np. logowanie, reset hasła, płatności.
-
-### 9.3 Sliding Window Counter
-
-Kompromis między fixed window a sliding log.
-
-Używa dwóch okien:
-
-```text
-previous window count
-current window count
-```
-
-Szacowana liczba requestów:
-
-```text
-estimated = current_count + previous_count * overlap_ratio
-```
-
-Przykład:
-
-```text
-Limit: 100/min
-Obecne okno: 30 requestów
-Poprzednie okno: 80 requestów
-Jesteśmy 25% w obecnym oknie
-Overlap poprzedniego okna = 75%
-
-estimated = 30 + 80 * 0.75 = 90
-```
-
-Zalety:
-
-- mniej pamięci niż sliding log,
-- bardziej sprawiedliwy niż fixed window,
-- dobry kompromis produkcyjny.
-
-Wady:
-
-- wynik jest przybliżony,
-- nie jest tak dokładny jak sliding log.
-
-To bardzo dobry wybór jako domyślny algorytm API rate limitera.
-
-### 9.4 Token Bucket
-
-Bardzo popularny algorytm dla API.
-
-Każdy klient ma bucket z tokenami.
-
-Parametry:
-
-```text
-capacity = 100
-refill_rate = 10 tokenów / sekundę
-```
-
-Request zużywa token. Jeśli tokeny są dostępne, request przechodzi. Jeśli nie, jest blokowany.
-
-Zalety:
-
-- dobrze obsługuje bursty,
-- naturalnie wspiera limity typu sustained rate + burst,
-- popularny w gatewayach,
-- dobry dla publicznych API.
-
-Wady:
-
-- wymaga przechowywania liczby tokenów i czasu ostatniego uzupełnienia,
-- odrobinę bardziej złożony niż fixed window.
-
-Przykład:
-
-```text
-Plan Pro:
-  sustained: 100 requests / second
-  burst: 500 requests
-```
-
-To oznacza, że klient może chwilowo wykonać 500 requestów, ale długoterminowo tylko 100 rps.
-
-### 9.5 Leaky Bucket
-
-Requesty trafiają do kolejki, która wypuszcza je stałym tempem.
-
-Zalety:
-
-- wygładza ruch,
-- dobre dla systemów wymagających stabilnego przepływu.
-
-Wady:
-
-- wymaga kolejkowania,
-- zwiększa latencję,
-- mniej nadaje się do prostego allow/deny.
-
-Leaky bucket jest lepszy do **traffic shapingu** niż do klasycznego rate limitingu HTTP.
-
----
-
-## 10. Rekomendowany algorytm
-
-Dla większości publicznych API:
-
-```text
-Token Bucket
-```
-
-Dla wrażliwych endpointów bezpieczeństwa:
-
-```text
-Sliding Window Log
-```
-
-Dla taniego, prostego, globalnego limitowania:
-
-```text
-Fixed Window Counter
-```
-
-Praktyczna rekomendacja:
-
-| Use case | Algorytm |
-|---|---|
-| Public API per user/API key | Token Bucket |
-| Login / password reset / OTP | Sliding Window Log |
-| Globalny limit systemowy | Fixed Window lub Token Bucket |
-| Billing/quotas per dzień | Fixed Window |
-| Ochrona przed burstami | Token Bucket |
-| Bardzo dokładne limity | Sliding Window Log |
-
-Nie należy wybierać jednego algorytmu dla wszystkiego. To częsty błąd w projektach rate limiterów.
-
----
-
-## 11. API Rate Limiter Service
-
-Jeśli projektujemy osobny serwis, API może wyglądać następująco.
-
-### 11.1 Check request
-
-```http
-POST /v1/rate-limit/check
-Content-Type: application/json
-```
-
-Request:
-
-```json
-{
-  "subject": {
-    "type": "api_key",
-    "id": "abc123",
-    "tenant_id": "tenant_1",
-    "user_id": "user_42",
-    "ip": "203.0.113.10"
-  },
-  "request": {
-    "method": "POST",
-    "path": "/v1/payments",
-    "cost": 1
-  },
-  "timestamp_ms": 1717599300000
-}
-```
-
-Response:
-
-```json
-{
-  "allowed": true,
-  "results": [
-    {
-      "rule_id": "pro_plan_default",
-      "allowed": true,
-      "limit": 1000,
-      "remaining": 981,
-      "reset_ms": 1717599600000,
-      "retry_after_ms": null
-    }
-  ]
-}
-```
-
-### 11.2 Batch check
-
-Dla wydajności warto wspierać batch:
-
-```http
-POST /v1/rate-limit/batch-check
-Content-Type: application/json
-```
-
-Przydatne, gdy jeden request zużywa kilka limitów:
-
-```json
-{
-  "checks": [
-    {
-      "key": "tenant:123",
-      "rule_id": "tenant_rpm"
-    },
-    {
-      "key": "user:42",
-      "rule_id": "user_rpm"
-    },
-    {
-      "key": "endpoint:/payments",
-      "rule_id": "payments_rpm"
-    }
-  ]
-}
-```
-
-### 11.3 Consume with cost
-
-Nie każdy request musi kosztować `1`.
-
-Przykład:
-
-```text
-GET /users -> cost 1
-POST /payments -> cost 5
-POST /exports -> cost 50
-```
-
-Request:
-
-```json
-{
-  "key": "user:42",
-  "rule_id": "exports_limit",
-  "cost": 50
-}
-```
-
-To pozwala limitować drogie operacje mocniej niż tanie.
-
----
-
-## 12. Model danych konfiguracji
-
-### 12.1 Tabela `rate_limit_rules`
-
-```sql
-CREATE TABLE rate_limit_rules (
-    id UUID PRIMARY KEY,
-    name TEXT NOT NULL,
-    scope TEXT NOT NULL,
-    algorithm TEXT NOT NULL,
-    limit_value INT NOT NULL,
-    window_ms BIGINT,
-    refill_rate_per_sec DOUBLE PRECISION,
-    burst_capacity INT,
-    cost INT DEFAULT 1,
-    priority INT DEFAULT 100,
-    enabled BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP NOT NULL
-);
-```
-
-### 12.2 Tabela `rate_limit_assignments`
-
-Przypisuje reguły do planów, tenantów, użytkowników, endpointów.
-
-```sql
-CREATE TABLE rate_limit_assignments (
-    id UUID PRIMARY KEY,
-    rule_id UUID NOT NULL REFERENCES rate_limit_rules(id),
-    subject_type TEXT NOT NULL,
-    subject_id TEXT,
-    path_pattern TEXT,
-    method TEXT,
-    plan TEXT,
-    priority INT DEFAULT 100,
-    enabled BOOLEAN DEFAULT TRUE
-);
-```
-
-Przykłady:
-
-```text
-rule_id = free_plan_1000_per_hour
-subject_type = plan
-plan = free
-
-rule_id = login_5_per_minute
-path_pattern = /login
-method = POST
-
-rule_id = enterprise_custom
-subject_type = tenant
-subject_id = tenant_123
-```
-
----
-
-## 13. Klucze w Redisie
-
-### 13.1 Fixed Window
-
-```text
-rl:{rule_id}:{subject_id}:{window_start}
-```
-
-Przykład:
-
-```text
-rl:login_5pm:user_42:202606051432
-```
-
-Wartość:
-
-```text
-3
-```
-
-TTL:
-
-```text
-window_size + buffer
-```
-
-### 13.2 Sliding Window Log
-
-Redis Sorted Set:
-
-```text
-rl:{rule_id}:{subject_id}
-```
-
-Score:
-
-```text
-timestamp_ms
-```
-
-Member:
-
-```text
-request_id
-```
-
-### 13.3 Token Bucket
-
-Redis Hash:
-
-```text
-rl:tb:{rule_id}:{subject_id}
-```
-
-Pola:
-
-```text
-tokens: 47.5
-last_refill_ms: 1717599300000
-```
-
-TTL:
-
-```text
-czas potrzebny do pełnego odnowienia bucketu + buffer
-```
-
----
-
-## 14. Atomowość
-
-To bardzo ważny punkt.
-
-Nie wolno robić tak:
-
-```text
-GET counter
-if counter < limit:
-    INCR counter
-```
+**Krytyczny przepływ:** HTTP → wiarygodna tożsamość → dopasowanie wszystkich
+polityk → atomowy skrypt Redis per bucket → agregacja decyzji → nagłówki/`429`.
+
+**Rekomendowany test:**
+
+```powershell
+.\mvnw.cmd -Pinfrastructure-tests -Dit.test=RedisTokenBucketInfrastructureTest verify
+```
+
+Test uruchamia prawdziwy Redis w Testcontainers i dowodzi, że przy 200
+równoległych próbach bucket o pojemności 50 przepuszcza dokładnie 50 operacji.
 
-To jest race condition. Dwa requesty równolegle mogą zobaczyć ten sam licznik i oba przejść.
+**Świadome ograniczenie:** atomowość obowiązuje jeden bucket. Reguła globalna,
+tenantowa i endpointowa mogą leżeć w różnych hash slotach, dlatego cały zestaw
+polityk nie jest jedną transakcją. Próba odrzucona przez późniejszą politykę
+zużywa tokeny wcześniej sprawdzonych polityk. Jest to jawna semantyka ochronna,
+nie przypadkowy efekt implementacji.
 
-Poprawnie:
+## Czego uczy laboratorium
 
-```text
-Lua script w Redisie
-```
-
-Przykład fixed window w Lua:
-
-```lua
-local key = KEYS[1]
-local limit = tonumber(ARGV[1])
-local ttl = tonumber(ARGV[2])
-local cost = tonumber(ARGV[3])
-
-local current = tonumber(redis.call("GET", key) or "0")
-
-if current + cost > limit then
-  return {0, current, limit - current}
-end
-
-local new_value = redis.call("INCRBY", key, cost)
-
-if new_value == cost then
-  redis.call("PEXPIRE", key, ttl)
-end
-
-return {1, new_value, limit - new_value}
-```
-
----
-
-## 15. Token Bucket — logika
-
-Pseudokod:
-
-```python
-def allow_request(key, now_ms, capacity, refill_rate_per_ms, cost):
-    bucket = redis.hgetall(key)
-
-    if bucket is empty:
-        tokens = capacity
-        last_refill_ms = now_ms
-    else:
-        tokens = float(bucket["tokens"])
-        last_refill_ms = int(bucket["last_refill_ms"])
-
-    elapsed = now_ms - last_refill_ms
-    refill = elapsed * refill_rate_per_ms
-
-    tokens = min(capacity, tokens + refill)
-
-    if tokens >= cost:
-        tokens -= cost
-        allowed = True
-    else:
-        allowed = False
-
-    redis.hmset(key, {
-        "tokens": tokens,
-        "last_refill_ms": now_ms
-    })
-
-    return allowed, tokens
-```
-
-W Redisie to również powinno być wykonane przez Lua script.
-
----
-
-## 16. Hierarchiczne limity
-
-Przykład:
-
-```text
-POST /v1/payments
-```
-
-Może mieć limity:
-
-```text
-global: 100 000 rpm
-tenant: 10 000 rpm
-user: 100 rpm
-endpoint: 20 rpm
-```
-
-Naiwne podejście:
-
-```text
-Sprawdzamy każdy limit po kolei i konsumujemy tokeny.
-```
-
-Problem:
-
-```text
-global allowed
-tenant allowed
-user allowed
-endpoint denied
-```
-
-Wtedy global/tenant/user już zostały zużyte, mimo że request finalnie został odrzucony.
-
-### 16.1 Opcja 1: Akceptujemy partial consumption
-
-Najprostsze.
-
-Zalety:
-
-- proste,
-- szybkie,
-- zwykle akceptowalne.
-
-Wady:
-
-- odrzucone requesty mogą konsumować wyższe limity.
-
-Dobre dla większości systemów.
-
-### 16.2 Opcja 2: Check first, consume later
-
-Najpierw sprawdzamy wszystkie limity, potem konsumujemy.
-
-Problem: race condition. Między check i consume stan może się zmienić.
-
-### 16.3 Opcja 3: Atomic multi-key script
-
-W Redisie można wykonać atomowo kilka kluczy, ale w Redis Cluster wszystkie klucze muszą być w tym samym hash slocie.
-
-Można użyć hash tags:
-
-```text
-rl:{user_42}:global
-rl:{user_42}:tenant
-rl:{user_42}:endpoint
-```
-
-Problem: globalne limity nie mapują się naturalnie na ten sam slot.
-
-### 16.4 Rekomendacja
-
-Dla praktycznego systemu:
-
-```text
-1. Najpierw sprawdź najbardziej szczegółowe limity.
-2. Potem bardziej ogólne.
-3. Akceptuj partial consumption albo rozdziel enforcement.
-```
-
-Kolejność:
-
-```text
-endpoint/user -> tenant -> global
-```
-
-Jeżeli user przekracza limit endpointu, nie ma sensu konsumować globalnego limitu.
-
----
-
-## 17. Skalowanie
-
-### 17.1 Skalowanie Rate Limiter Service
-
-Serwis powinien być stateless.
-
-```text
-Rate Limiter instances:
-  - rl-1
-  - rl-2
-  - rl-3
-  - rl-N
-```
-
-Każda instancja korzysta z:
-
-```text
-Redis Cluster
-Config Cache
-Metrics backend
-```
-
-Dzięki temu skalowanie to po prostu dodanie instancji.
-
-### 17.2 Skalowanie Redis Cluster
-
-Redis Cluster sharding po kluczu:
-
-```text
-rl:{rule_id}:{subject_id}
-```
-
-Największy problem: **hot keys**.
-
-Przykłady hot key:
-
-```text
-global limit
-tenant z ogromnym ruchem
-popularny endpoint
-```
-
-Hot key może przeciążyć jeden shard.
-
----
-
-## 18. Hot key mitigation
-
-### 18.1 Local pre-limit
-
-Na każdej instancji gatewaya można mieć lokalny limiter, np.:
-
-```text
-global limit: 100 000 rpm
-gateway instances: 10
-local limit per instance: 10 000 rpm
-```
-
-Zalety:
-
-- bardzo szybkie,
-- zmniejsza obciążenie Redis,
-- dobre dla globalnych limitów.
-
-Wady:
-
-- nierówne rozłożenie ruchu może powodować fałszywe blokady albo przecieki.
-
-### 18.2 Sharded counters
-
-Zamiast jednego licznika:
-
-```text
-rl:global:minute
-```
-
-używamy wielu:
-
-```text
-rl:global:minute:shard:0
-rl:global:minute:shard:1
-...
-rl:global:minute:shard:63
-```
-
-Request losowo trafia do jednego shardu.
-
-Problem: aby znać dokładną sumę, trzeba odczytać wszystkie shardy.
-
-Można robić approximate limiting:
-
-```text
-limit_per_shard = global_limit / shard_count
-```
-
-Albo okresowo agregować.
-
-### 18.3 Approximate rate limiting
-
-Dla globalnych limitów często nie potrzebujesz perfekcyjnej dokładności. Lepiej mieć szybki system, który czasem przepuści 1–2% więcej, niż idealny limiter, który sam stanie się bottleneckiem.
-
-To jest ważny kompromis architektoniczny.
-
----
-
-## 19. Caching konfiguracji
-
-Nie wolno dla każdego requestu czytać konfiguracji z bazy danych.
-
-Poprawny model:
-
-```text
-Config DB -> Config Service -> Gateway local cache
-```
+Po przejściu projektu powinieneś umieć odpowiedzieć na pytania:
 
-Gateway trzyma config w pamięci:
+- czym różnią się fixed window, sliding window, token bucket, GCRA i leaky bucket;
+- dlaczego `GET → obliczenie → SET` nie jest poprawnym limiterem rozproszonym;
+- dlaczego źródło czasu powinno znajdować się przy stanie limitera;
+- jak tworzyć hierarchię limitów global/user/tenant/plan/endpoint;
+- czy odrzucona próba ma konsumować budżet i jakie są konsekwencje decyzji;
+- kiedy awaria Redisa wymaga fail-open, fail-closed albo lokalnego fallbacku;
+- dlaczego regionalny limiter nie daje ścisłego limitu globalnego;
+- dlaczego rate limit, quota i ledger billingowy są trzema różnymi pojęciami;
+- które nagłówki można uznać za tożsamość oraz jak poprawnie czytać
+  `X-Forwarded-For`;
+- jak mierzyć limiter bez tworzenia metryk o nieograniczonej cardinality.
 
-```text
-rule_id -> rule
-path_pattern -> matching rules
-plan -> default rules
-tenant -> overrides
-```
-
-Odświeżanie:
-
-1. polling co kilka sekund,
-2. push przez pub/sub,
-3. wersjonowane snapshoty konfiguracji.
-
-Przykład:
-
-```json
-{
-  "version": 1842,
-  "rules": []
-}
-```
-
-Gateway używa najnowszej znanej wersji.
-
----
-
-## 20. Consistency model
-
-Rate limiter zwykle nie wymaga absolutnej spójności.
-
-Akceptowalne:
-
-```text
-Limit 1000/min czasem przepuści 1003/min
-```
-
-Nieakceptowalne:
-
-```text
-Limit 1000/min regularnie przepuszcza 2000/min
-```
-
-Dla różnych limitów stosujemy różną spójność:
-
-| Typ limitu | Spójność |
-|---|---|
-| Billing quota | wysoka |
-| Security endpoint | wysoka |
-| Global overload protection | przybliżona |
-| UX-friendly API limits | średnia |
-| Abuse prevention | wysoka, ale może być probabilistyczna |
-
----
-
-## 21. Failure modes
-
-To jedna z najważniejszych części projektu. Rate limiter jest zależnością krytyczną.
-
-### 21.1 Redis niedostępny
-
-Możliwe strategie:
-
-#### Fail-open
-
-Jeśli limiter nie działa, przepuszczamy requesty.
-
-Zalety:
-
-- API pozostaje dostępne.
-
-Wady:
-
-- brak ochrony przed abuse,
-- możliwe przeciążenie backendów.
-
-Dobre dla mniej krytycznych limitów.
-
-#### Fail-closed
-
-Jeśli limiter nie działa, blokujemy requesty.
-
-Zalety:
-
-- ochrona backendu.
-
-Wady:
-
-- awaria limitera = awaria API.
-
-Dobre tylko dla bardzo wrażliwych operacji, np. płatności, login, fraud-sensitive endpoints.
-
-#### Degraded local mode
-
-Jeśli Redis padnie, gateway używa lokalnych limitów awaryjnych.
-
-Przykład:
-
-```text
-Normalnie: Redis token bucket 1000 rpm
-Awaryjnie: local fixed window 500 rpm
-```
-
-To często najlepsza strategia.
-
-### 21.2 Config Store niedostępny
-
-Gateway używa ostatniej znanej konfiguracji.
-
-```text
-last known good config
-```
-
-Jeżeli nie ma żadnej konfiguracji:
-
-- dla public API: użyj conservative defaults,
-- dla internal API: można fail-open,
-- dla security endpointów: fail-closed lub bardzo niski lokalny limit.
-
-### 21.3 Clock skew
-
-Algorytmy oparte o czas są podatne na różnice zegarów.
-
-Rozwiązania:
-
-- używać czasu Redis servera (`TIME`) zamiast czasu aplikacji,
-- synchronizować NTP,
-- nie ufać timestampowi od klienta.
-
-Nie wolno używać timestampu przesłanego przez klienta jako źródła prawdy.
-
----
-
-## 22. Multi-region design
-
-### 22.1 Regional rate limiting
-
-Każdy region ma własny Redis.
-
-```text
-EU Gateway -> EU Redis
-US Gateway -> US Redis
-```
-
-Zalety:
-
-- niska latencja,
-- dobra dostępność,
-- prosta architektura.
-
-Wady:
-
-- limity globalne mogą przeciekać.
-
-Przykład:
-
-```text
-Limit globalny: 1000/min
-EU przepuści 1000/min
-US przepuści 1000/min
-Razem: 2000/min
-```
-
-Można podzielić limit:
-
-```text
-EU: 500/min
-US: 500/min
-```
-
-Ale to działa słabo przy nierównym ruchu.
-
-### 22.2 Globalny rate limiter
+## Mapa implementacji
 
-Wspólny globalny store albo synchronizacja między regionami.
+| Element | Rola | Gwarancja / granica |
+| --- | --- | --- |
+| `RateLimitFilter` | enforcement point HTTP | zwraca nagłówki limitu lub `429` |
+| `RequestIdentityResolver` + `GatewayIdentityVerifier` | buduje zaufaną tożsamość | trusted peer oraz opcjonalny świeży podpis HMAC |
+| `RuleMatcher` | wybiera polityki | polityki są kumulatywne, priority ustala kolejność |
+| `RedisTokenBucketLimiter` | data plane | atomowe zużycie jednego bucketu |
+| `token_bucket.lua` | stan i czas w Redisie | `TIME`, refill, consume i TTL w jednym skrypcie |
+| `RedisAvailabilityGate` | ochrona zależności | po trzech awariach przez 2 s omija wolny Redis |
+| `LocalFallbackLimiter` | degradacja lokalna | chroni instancję, nie globalny ruch |
+| `DynamicConfigService` | symulacja control plane | snapshot, walidacja, wersja, `If-Match`, lokalny audit |
+| `JdbcControlPlaneStore` + `RuleReplica` | trwały control plane | profil `durable`, tombstone, rollback jako nowa wersja i config lag |
+| `QuotaService` | estymacja usage online | atomowy licznik miesiąca; to nie ledger billingowy |
+| `UsageEventPublisher` | telemetria asynchroniczna | best effort, błąd Kafki nie zmienia decyzji |
+| `JdbcUsageOutbox` + `UsageOutboxRelay` | trwały receipt/outbox | idempotencja, lease, reclaim, bounded retry, DLQ i reconciliation |
+| `GlobalTokenLeaseLab` | model multi-region | bounded exposure i fencing starego właściciela |
+| `RateLimitAlgorithmLab` | modele dydaktyczne | porównanie algorytmów bez frameworka |
 
-Zalety:
+Oznaczenia używane w kodzie i dokumentacji:
 
-- dokładniejsze limity globalne.
+- **naive** — celowy kontrprzykład, który narusza niezmiennik;
+- **correct** — rozwiązanie poprawne w określonej granicy;
+- **simulation** — deterministyczny model do nauki, nie komponent wdrożeniowy;
+- **production boundary** — miejsce wymagające decyzji zależnej od środowiska.
 
-Wady:
+## 1. Problem, wymagania i budżet
 
-- większa latencja,
-- większa złożoność,
-- podatność na awarie międzyregionalne.
+Limiter chroni ograniczony zasób: CPU, pulę połączeń, partnera zewnętrznego,
+kosztowny endpoint lub uczciwy podział pojemności między klientów. Nie jest
+zamiennikiem autoryzacji, WAF-a ani kontroli współbieżności wewnątrz operacji.
 
-### 22.3 Rekomendacja multi-region
+Typowe wymagania funkcjonalne:
 
-Dla większości API:
+- limit per IP, klucz API, użytkownik, tenant, plan i endpoint;
+- koszt ważony, np. eksport kosztuje więcej niż odczyt profilu;
+- burst do pojemności bucketu i kontrolowany refill;
+- jednoznaczne `429 Too Many Requests` oraz `Retry-After`;
+- zmiana reguł bez restartu data plane.
 
-```text
-Regional limit enforcement + okresowa globalna agregacja
-```
-
-Dla billing quotas:
-
-```text
-asynchroniczne usage events + dokładne rozliczenie offline/nearline
-```
-
-Dla abuse/security:
-
-```text
-regionalne twarde limity + globalne sygnały fraud/abuse
-```
-
-Nie warto robić perfekcyjnego, globalnie spójnego rate limitera dla każdego requestu, bo koszt i latencja zwykle nie są warte zysku.
-
----
+Wymagania niefunkcjonalne są równie ważne:
 
-## 23. Quotas vs Rate Limits
+- bardzo mała latencja decyzji, bo limiter jest na ścieżce każdego requestu;
+- brak pojedynczego globalnego hot key, jeśli ruch jest wysoki;
+- przewidywalne zachowanie przy timeoutach i awarii store;
+- ograniczona cardinality metryk i logów;
+- możliwość oszacowania błędu limitu w architekturze multi-region.
 
-To są różne rzeczy.
+Przykładowy rachunek capacity, który należy wykonać przed wdrożeniem:
 
-### 23.1 Rate limit
-
 ```text
-100 requestów / minutę
+100 000 RPS × 3 pasujące polityki = 300 000 operacji bucket/s
+p99 aplikacji = 120 ms, budżet limitera = 5 ms
+1 mln aktywnych principals × ~200 B stanu = ~200 MB + narzut Redis
 ```
-
-Chroni system przed chwilowym przeciążeniem.
 
-### 23.2 Quota
-
-```text
-1 000 000 requestów / miesiąc
-```
+To przybliżenie. Należy dodać ruch administracyjny, retry, replikację, zapas na
+failover i realny rozmiar kluczy. Najpierw ustala się wymagany throughput i SLO,
+dopiero później wybiera topologię.
 
-Służy do billingów, planów i ograniczeń długoterminowych.
+## 2. Algorytmy
 
-Rate limiter może obsługiwać oba, ale technicznie warto je rozdzielić:
+| Algorytm | Stan | Burst | Dokładność | Typowe zastosowanie |
+| --- | ---: | --- | --- | --- |
+| Fixed window | licznik + okno | duży na granicy okna | niska | prosty, tani limit |
+| Sliding window log | timestamp każdej próby | kontrolowany | wysoka | mały ruch, audyt |
+| Sliding window counter | dwa liczniki | mały | przybliżona | kompromis pamięć/dokładność |
+| Token bucket | tokeny + czas refill | jawnie do `capacity` | dobra | API i ruch burstowy |
+| GCRA | theoretical arrival time | przez tolerancję | dobra | zwarty stan i precyzyjne spacing |
+| Leaky bucket | kolejka + tempo odpływu | buforuje | wygładza output | shaping, nie tylko policing |
 
-```text
-Realtime rate limit -> Redis
-Usage accounting / quotas -> Kafka + DB / warehouse
-```
+Wszystkie modele są wykonywalne w `RateLimitAlgorithmLabTest`. Produkcyjny data
+plane implementuje celowo tylko Token Bucket, aby nie udawać, że przełącznik
+enum automatycznie zapewnia semantykę pozostałych algorytmów.
 
-Dla miesięcznych limitów niekoniecznie chcesz trzymać wszystko tylko w Redisie.
+### Fixed window
 
----
+Licznik dotyczy przedziału, np. `12:00:00–12:00:59`. Jest tani, ale klient może
+wykonać cały limit pod koniec jednego okna i ponownie na początku następnego.
+W krótkim przedziale przejdzie prawie `2 × limit`. Dodatkowo naiwny rozdział
+`check()` i `increment()` pozwala wielu wątkom zobaczyć ten sam wolny slot.
 
-## 24. Event-driven usage accounting
+### Sliding window log
 
-Każdy zaakceptowany request może emitować event:
+Przechowuje timestamp każdej próby i usuwa starsze niż `now - window`. Daje
+intuicyjną dokładność, ale zużycie pamięci rośnie z liczbą requestów. W Redisie
+często używa sorted set, co oznacza więcej pamięci i pracy niż prosty licznik.
 
-```json
-{
-  "tenant_id": "tenant_123",
-  "user_id": "user_42",
-  "api_key": "abc123",
-  "endpoint": "/v1/payments",
-  "cost": 5,
-  "timestamp": "2026-06-05T14:32:10Z"
-}
-```
+### Sliding window counter
 
-Pipeline:
+Interpoluje wynik poprzedniego i bieżącego okna:
 
 ```text
-Gateway -> Kafka -> Stream Processor -> Usage DB / Warehouse
+estimated = current + previous × remaining_fraction_of_previous_window
 ```
-
-Użycie:
-
-- billing,
-- dashboardy,
-- analityka,
-- wykrywanie abuse,
-- miesięczne quotas.
-
----
-
-## 25. Observability
 
-Metryki:
+Nie pamięta każdej próby, ale wynik jest przybliżeniem. Błąd trzeba zaakceptować
+jako część kontraktu, a nie ukrywać jako szczegół techniczny.
 
-```text
-rate_limiter.requests_total
-rate_limiter.allowed_total
-rate_limiter.denied_total
-rate_limiter.redis_latency_ms
-rate_limiter.config_version
-rate_limiter.fail_open_total
-rate_limiter.fail_closed_total
-rate_limiter.local_fallback_total
-rate_limiter.hot_key_detected_total
-```
+### Token bucket
 
-Wymiary:
+Bucket ma `capacity = C`, tempo odnawiania `r` tokenów/s i koszt operacji `k`.
+Dla czasu `t`:
 
 ```text
-rule_id
-tenant_id
-endpoint
-method
-region
-decision
-algorithm
+refilled = min(C, tokens_previous + (t - t_previous) × r)
+allow    = refilled >= k
+tokens'  = allow ? refilled - k : refilled
 ```
-
-Uwaga: z wymiarami trzeba uważać. `user_id` jako label metryki może zabić Prometheusa przez wysoką kardynalność.
-
-Dla user-level danych lepsze są logi albo eventy, nie metryki.
 
----
+`capacity` określa dozwolony burst, a `refill rate` długoterminowy throughput.
+To dwie niezależne decyzje. Limit `60/min` nie musi znaczyć burstu 60; można
+ustawić `capacity=10`, `refill=1/s`.
 
-## 26. Logging
+### GCRA
 
-Log dla zablokowanego requestu:
+Generic Cell Rate Algorithm przechowuje jeden theoretical arrival time. Kolejna
+próba jest dopuszczona, jeśli nie przychodzi wcześniej niż TAT pomniejszony o
+tolerancję burstu. Model daje semantykę zbliżoną do ciągle uzupełnianego bucketu,
+ale wymaga tylko jednego skalara. Test pokazuje burst dwóch żądań i późniejsze
+odnawianie rytmu. Produkcyjna ścieżka nadal celowo używa Token Bucket.
 
-```json
-{
-  "event": "rate_limit_denied",
-  "rule_id": "free_plan_default",
-  "subject_type": "api_key",
-  "subject_hash": "sha256:...",
-  "endpoint": "/v1/payments",
-  "method": "POST",
-  "limit": 100,
-  "remaining": 0,
-  "retry_after_ms": 12000,
-  "region": "eu-central-1"
-}
-```
-
-Nie należy logować surowych API keys ani pełnych danych osobowych. Lepiej używać hashy.
+### Leaky bucket
 
----
+Modeluje kolejkę opróżnianą w stałym tempie. Token bucket odpowiada głównie na
+„czy dopuścić?”, leaky bucket może odpowiedzieć „kiedy wysłać?”. Jeśli nie ma
+kontrolowanej kolejki, limit jej rozmiaru i anulowania, łatwo zamienić shaping w
+nieograniczony bufor opóźnionych prac.
 
-## 27. Alerty
+## 3. Atomowość i współbieżność
 
-Przykładowe alerty:
+Naiwna sekwencja:
 
 ```text
-Redis latency p99 > 20 ms przez 5 minut
-Rate limiter error rate > 1%
-Fail-open count > 0
-Denied traffic wzrósł 5x względem baseline
-Config version stale > 5 minut
-Hot key CPU usage high
-429 rate dla konkretnego endpointu przekracza próg
+GET bucket
+oblicz refill i decyzję
+SET bucket
 ```
-
----
-
-## 28. Bezpieczeństwo
 
-### 28.1 Identity extraction
+nie jest poprawna. Dwa requesty mogą odczytać ten sam stan i oba zużyć ostatni
+token. Lua przenosi odczyt, obliczenie, zapis i TTL do jednej atomowej operacji
+serwera Redis. Test infrastrukturalny sprawdza zachowanie przy realnej
+współbieżności, czego mock Redisa nie jest w stanie dowieść.
 
-Nie można bezwarunkowo ufać nagłówkom typu:
+Atomowość skryptu nie oznacza atomowości całego requestu biznesowego. Token może
+zostać zużyty, a downstream później zwróci `500`. Zwrot tokenu bywa gorszy niż
+jego utrata: retry i duplikaty mogą zwiększyć budżet. Polityka musi rozstrzygnąć,
+czy limitujemy próby, zaakceptowane requesty czy ukończone operacje. Ten projekt
+limituje **próby przyjęcia do chronionego systemu**.
 
-```http
-X-Forwarded-For
-X-User-ID
-```
-
-Jeżeli gateway stoi za load balancerem, trzeba jasno określić trusted proxies.
+## 4. Czas, precision i TTL
 
-Dla IP rate limitingu:
+Wiele instancji aplikacji może mieć clock skew. Gdy każda przekazuje własny
+timestamp, cofnięty zegar opóźni refill, a wyprzedzony może wyprodukować tokeny.
+Skrypt używa `redis.call('TIME')`, więc stan i jego zegar mają tę samą granicę.
 
-```text
-client_ip = first untrusted IP in X-Forwarded-For chain
-```
+Redis `TIME` nie jest zegarem monotonicznym i wciąż może zostać skorygowany.
+W granicy jednego store zmniejsza jednak rozbieżność klientów. Produkcyjny
+system powinien monitorować NTP i jawnie zdecydować, jaki ujemny elapsed jest
+dozwolony. TTL wynosi co najmniej 60 s i około dwa czasy pełnego refill, aby
+nieaktywne principals nie zajmowały pamięci bez końca.
 
-### 28.2 API key hashing
+Tokeny mogą być ułamkowe. Skrypt zachowuje precision refill, a klient prezentuje
+`remaining` jako liczbę całkowitą. Nagłówek jest informacją orientacyjną; jedyną
+wiążącą odpowiedzią jest decyzja aktualnej atomowej operacji.
 
-API keys nie powinny być przechowywane ani logowane plaintextem.
+## 5. Klucze Redis i sharding
 
-Klucz limitera może używać hash:
+Przykładowy klucz:
 
 ```text
-sha256(api_key)
+rl:{user:user-123}:eu-central-1:user-limit
 ```
 
-### 28.3 Bypass rules
-
-Trzeba uważać na allowlisty:
-
-```text
-internal_service = unlimited
-```
+- `principal` izoluje użytkownika/tenanta/klucz;
+- region koduje semantykę regionalną;
+- rule ID rozdziela polityki;
+- `{...}` jest hash tagiem Redis Cluster.
 
-To częsty błąd. Lepiej dać wysokie, ale skończone limity.
+Klucz globalny jest z definicji hot key. Przy bardzo wysokim ruchu trzeba go
+shardować i zaakceptować przybliżenie, rezerwować lokalne porcje globalnego
+budżetu albo użyć hierarchicznego limitera. Ścisła globalna serializacja może
+stać się droższa niż zasób, który chroni.
 
-### 28.4 Distributed abuse
+Projekt nie uruchamia „udawanego klastra” kilku niepołączonych procesów Redis.
+Docker Compose zawiera świadomie pojedynczy Redis do lokalnego laboratorium.
+Prawdziwy Redis Cluster wymaga inicjalizacji slotów, obsługi failover, topology
+refresh i testów migracji slotu.
 
-IP-based limiter jest słaby przeciwko botnetom. User/API-key limiter jest zwykle lepszy.
+## 6. Hierarchia polityk
 
-Najlepiej stosować kombinację:
+Jedno żądanie może spełnić kilka reguł:
 
 ```text
-IP + user + API key + tenant + endpoint
+global ∩ plan ∩ tenant ∩ user ∩ endpoint
 ```
 
----
-
-## 29. Przykładowe reguły
-
-```yaml
-rules:
-  - id: global_api_limit
-    scope: global
-    algorithm: token_bucket
-    refill_rate_per_sec: 5000
-    burst_capacity: 20000
-
-  - id: free_plan_default
-    scope: api_key
-    plan: free
-    algorithm: token_bucket
-    refill_rate_per_sec: 1
-    burst_capacity: 60
-
-  - id: pro_plan_default
-    scope: api_key
-    plan: pro
-    algorithm: token_bucket
-    refill_rate_per_sec: 50
-    burst_capacity: 1000
-
-  - id: login_ip_limit
-    scope: ip
-    path: /login
-    method: POST
-    algorithm: sliding_window_log
-    limit: 5
-    window_ms: 60000
-
-  - id: password_reset_user_limit
-    scope: user
-    path: /password/reset
-    method: POST
-    algorithm: sliding_window_log
-    limit: 3
-    window_ms: 3600000
-```
-
----
-
-## 30. Request flow
-
-```text
-1. Client wysyła request.
-2. Gateway uwierzytelnia request albo odczytuje API key.
-3. Gateway buduje kontekst:
-   - api_key_hash
-   - user_id
-   - tenant_id
-   - ip
-   - endpoint
-   - method
-4. Gateway znajduje pasujące reguły w lokalnym config cache.
-5. Dla każdej reguły wykonuje check/consume.
-6. Jeśli dowolna reguła odmawia:
-   - zwraca 429
-   - ustawia Retry-After
-   - loguje event
-7. Jeśli wszystkie pozwalają:
-   - przepuszcza request do backendu
-   - opcjonalnie emituje usage event
-```
+Reguły w projekcie są **kumulatywne**: wszystkie muszą dopuścić request.
+`priority` ustala deterministyczną kolejność oceny, nie oznacza override.
+Nazwy reguł nie używają więc mylącego słowa `override`.
 
----
+Data plane konsumuje każdą pasującą politykę nawet wtedy, gdy jedna odmówiła.
+Takie attempt accounting chroni globalne i tenantowe budżety przed darmowym
+spamem do już wyczerpanego endpointu. Ceną jest zużycie wcześniejszych bucketów
+przez request finalnie odrzucony. Alternatywy to:
 
-## 31. Sekwencja
+- stop on first deny — tańsze, ale kolejność zmienia accounting;
+- peek then commit — wymaga rezerwacji i obsługi wyścigów;
+- jeden wielokluczowy skrypt — tylko dla kluczy w tym samym hash slocie;
+- admission token/saga — większa złożoność i nowe failure windows.
 
-```text
-Client
-  |
-  | HTTP request
-  v
-Gateway
-  |
-  | identify subject
-  v
-Rate Limiter Module
-  |
-  | get matching rules from local cache
-  v
-Config Cache
-  |
-  | atomic consume
-  v
-Redis Cluster
-  |
-  | allowed / denied
-  v
-Gateway
-  |
-  | allowed -> backend
-  | denied -> 429
-  v
-Backend Service
-```
+Walidator odrzuca zduplikowane ID, niepełny scope, niepoprawny refill oraz
+`cost > capacity`, który tworzyłby regułę nigdy nieprzepuszczającą ruchu.
 
----
+Wzorce ścieżek są celowo małe i jednoznaczne:
 
-## 32. Strategia dla 429
+- `/api/users` — exact;
+- `/api/*` — dokładnie jeden segment;
+- `/api/**` — całe poddrzewo, ale nie `/apix`.
 
-Odpowiedź:
+W dużym systemie warto współdzielić matcher z gatewayem lub kompilować reguły do
+jednego standardu, aby routing i limitowanie nie interpretowały wzorców inaczej.
 
-```json
-{
-  "error": "rate_limit_exceeded",
-  "message": "Too many requests. Please retry later.",
-  "retry_after_ms": 12000
-}
-```
+## 7. Kontrakt HTTP
 
-Nagłówki:
+Dla decyzji ustawiane są nagłówki `RateLimit-Limit`, `RateLimit-Remaining` oraz
+kompatybilne nagłówki `X-*`. `RateLimit-Reset` pojawia się tylko wtedy, gdy
+decyzja zna dodatni czas ponownego dopuszczenia; wartość `0` dla zaakceptowanego
+requestu fałszywie sugerowałaby pełne odnowienie wszystkich bucketów.
+Odrzucenie zwraca:
 
 ```http
 HTTP/1.1 429 Too Many Requests
 Retry-After: 12
-X-RateLimit-Limit: 100
-X-RateLimit-Remaining: 0
-X-RateLimit-Reset: 1717599600
+Content-Type: application/problem+json
+
+{"type":"urn:problem:rate-limit-exceeded","title":"Rate limit exceeded","status":429,
+ "error":"rate_limit_exceeded","retryAfterSeconds":12}
 ```
 
-Dla wielu limitów naraz, `Retry-After` powinien pochodzić z najbardziej restrykcyjnego limitu, czyli tego, który pozwoli najpóźniej.
-
----
-
-## 33. Idempotency i retry
-
-Rate limiter może przypadkowo karać retry klienta.
-
-Przykład:
-
-```text
-Klient wysłał POST.
-Backend przetworzył request.
-Połączenie padło.
-Klient retry.
-Rate limiter liczy retry jako drugi request.
-```
-
-Rozwiązania:
-
-1. wspierać `Idempotency-Key`,
-2. nie naliczać pełnego kosztu dla duplikatu,
-3. deduplikować po `request_id` przez krótki czas.
-
-Ostrożnie: deduplikacja każdego requestu zwiększa koszt pamięciowy.
-
----
-
-## 34. Koszt pamięciowy
-
-### 34.1 Fixed window
-
-Jeden licznik per aktywny klucz per okno.
-
-```text
-active_keys * active_rules
-```
-
-Jeżeli masz:
-
-```text
-1 000 000 aktywnych API keys
-3 reguły
-```
-
-To potencjalnie:
-
-```text
-3 000 000 kluczy
-```
-
-Redis sobie z tym poradzi, ale trzeba pilnować TTL.
-
-### 34.2 Sliding window log
-
-Pamięć zależy od liczby requestów.
-
-```text
-active_requests_in_window
-```
-
-Dla 1 mln requestów/min to może być dużo. Dlatego sliding log trzeba stosować selektywnie.
-
-### 34.3 Token bucket
-
-Jeden hash/string per aktywny subject/rule.
-
-Najlepszy kompromis pamięciowy.
-
----
-
-## 35. Optymalizacje wydajności
-
-1. **Lua scripts**
-   - atomowość,
-   - mniej round-tripów.
-
-2. **Pipeline Redis**
-   - gdy sprawdzamy wiele limitów.
-
-3. **Local config cache**
-   - zero DB lookupów na request.
-
-4. **Local emergency limiter**
-   - fallback bez Redisa.
-
-5. **Batch API**
-   - mniej network overhead.
-
-6. **Precomputed rule matching**
-   - szybkie mapowanie endpoint → reguły.
-
-7. **Approximate global limits**
-   - mniej hot key problemów.
-
-8. **Connection pooling**
-   - Redis połączenia utrzymywane stale.
-
----
-
-## 36. Rule matching
-
-Reguły mogą mieć różne priorytety:
-
-```text
-1. tenant-specific override
-2. API key-specific override
-3. endpoint-specific rule
-4. plan default
-5. global default
-```
-
-Przykład:
-
-```yaml
-priority:
-  tenant_override: 10
-  api_key_override: 20
-  endpoint_specific: 30
-  plan_default: 100
-  global_default: 1000
-```
-
-Trzeba jasno zdefiniować, czy reguły:
-
-1. się sumują,
-2. najbardziej specyficzna wygrywa,
-3. wszystkie obowiązują naraz.
-
-Rekomendacja:
-
-```text
-Reguły bezpieczeństwa i globalne zawsze obowiązują.
-Reguły planowe mogą być override’owane przez tenant/API-key-specific config.
-```
-
----
-
-## 37. Przykładowy rule resolution
-
-Dla requestu:
-
-```text
-tenant = t1
-plan = pro
-user = u42
-endpoint = POST /v1/payments
-```
-
-System wybiera:
-
-```text
-global_api_limit
-tenant_t1_limit
-pro_plan_default
-payments_endpoint_limit
-user_u42_custom_limit, jeśli istnieje
-```
-
-Potem wykonuje check dla każdej aktywnej reguły.
-
----
-
-## 38. Testowanie
-
-### 38.1 Unit tests
-
-- fixed window increments,
-- token refill,
-- boundary conditions,
-- Retry-After calculation,
-- cost > 1,
-- disabled rules,
-- expired keys.
-
-### 38.2 Concurrency tests
-
-Scenariusz:
-
-```text
-limit = 100
-parallel requests = 1000
-allowed powinno być <= 100
-```
-
-To testuje atomowość.
-
-### 38.3 Load tests
-
-Testy:
-
-```text
-100k rps
-1M aktywnych kluczy
-hot tenant
-Redis shard failure
-config reload
-```
-
-### 38.4 Chaos tests
-
-- Redis timeout,
-- Redis partial outage,
-- config service niedostępny,
-- gateway restart,
-- opóźniony config update,
-- clock skew.
-
----
-
-## 39. Przykładowe SLO
-
-```text
-Rate limiter check availability: 99.99%
-p99 decision latency: < 10 ms
-p95 decision latency: < 3 ms
-Incorrect allow/deny rate: < 0.1%
-Config propagation delay: < 10 seconds
-Redis error rate: < 0.01%
-```
-
----
-
-## 40. Admin API
-
-Do zarządzania regułami:
+Przy wielu politykach pojedyncza para `limit/remaining` jest uproszczeniem.
+Implementacja prezentuje najbardziej restrykcyjną wartość i liczbę ocenionych
+reguł. API diagnostyczne może pokazać szczegóły, ale publiczna odpowiedź nie
+powinna ujawniać identyfikatorów wewnętrznych polityk.
+
+Brak pasującej reguły oznacza default allow. W produkcji należy zdecydować, czy
+nieznany endpoint ma być fail-open, czy ma otrzymać bezpieczny limit domyślny.
+
+## 8. Tożsamość i granice zaufania
+
+Limiter per user jest poprawny tylko wtedy, gdy user ID jest wiarygodne. Klient
+publiczny może dowolnie sfałszować `X-User-Id`, `X-Tenant-Id` i `X-Plan`.
+Projekt honoruje te nagłówki wyłącznie, gdy bezpośredni peer należy do listy
+trusted proxies. W przeciwnym razie plan spada do `FREE`, a identyfikatory
+user/tenant są pomijane.
+
+Sama prywatna sieć nie jest dowodem tożsamości gatewaya. Opcja
+`require-signed-identity-headers` wymaga świeżego timestampu i podpisu HMAC nad
+metodą, ścieżką, tenantem, userem oraz planem. Chroni to przed podszyciem przez
+inny workload i prostym replay. Jest to laboratorium granicy zaufania; mTLS lub
+workload identity pozostają preferowanym mechanizmem platformowym.
+
+`X-Forwarded-For` jest analizowany od prawej strony: pomijamy znane proxy i
+wybieramy najbliższy niezaufany hop. Implementacja obsługuje pełny IPv4/IPv6
+CIDR i ogranicza długość nagłówka. Czytanie pierwszego elementu z lewej pozwala
+atakującemu dopisać własny adres.
+
+Klucz API nie trafia do bucketu ani logu. Identyfikator jest wyliczany przez
+`HMAC-SHA-256(secret, apiKey)`. Zwykły hash umożliwia offline guessing kluczy o
+małej entropii. Rotacja sekretu HMAC zmienia wszystkie identyfikatory, dlatego
+produkcja potrzebuje wersji klucza i kontrolowanej migracji.
+
+Admin API wymaga `X-Admin-Token`, porównuje go w stałym czasie i akceptuje
+poprzednie tokeny podczas rotacji. Profil `prod` nie startuje z sekretami demo.
+To minimalna granica laboratorium; w praktyce stosuje się osobny internal
+gateway, workload identity, mTLS/RBAC, audyt trwały i rate limit administracji.
+
+## 9. Awarie i degradacja
+
+| Strategia | Dostępność | Ochrona | Odpowiednia dla |
+| --- | --- | --- | --- |
+| `FAIL_OPEN` | wysoka | słaba podczas awarii | endpoint bezpieczny, degradacja akceptowalna |
+| `FAIL_CLOSED` | niska | silna | płatność, eksport, kosztowny downstream |
+| `LOCAL_FALLBACK` | średnia | per instancja | większość zwykłego API |
+
+Lokalny fallback liczy koszt operacji, ma ograniczone okna, sprząta stare wpisy
+i ma twarde `max-buckets`. Po wyczerpaniu cardinality odmawia utworzenia nowego
+bucketu zamiast ryzykować OOM. Nie zachowuje jednak globalnej gwarancji: przy `n` instancjach efektywny
+limit może wzrosnąć około `n` razy, a autoscaling zmienia go w czasie.
+
+Timeout Redisa wynosi 500 ms, ale oczekiwanie tyle dla każdego requestu podczas
+awarii wywołałoby przeciążenie wtórne. `RedisAvailabilityGate` po trzech błędach
+otwiera się na 2 s, dzięki czemu kolejne requesty od razu stosują strategię
+fallback. Jest to mały circuit breaker dydaktyczny; do produkcji potrzebne są
+konfigurowalne progi, half-open probes, jitter i SLO zależności.
+
+Failure strategy jest właściwością reguły, bo ryzyko biznesowe endpointów jest
+różne. Płatność może wymagać fail-closed, odczyt katalogu fail-open. Jedna
+globalna strategia zwykle jest zbyt uproszczona.
+
+## 10. Multi-region
+
+Najprostszy wariant to niezależny bucket w każdym regionie. Daje małą latencję i
+odporność na podział sieci, ale globalny klient może zużyć sumę limitów regionów.
+Przy `R` regionach lokalny limit `L` pozwala w skrajnym przypadku na `R × L`.
+
+Możliwe modele:
+
+- regionalny limit — szybki, przewidywalny lokalnie, globalnie luźny;
+- dzielenie globalnego budżetu na regiony — prostsze, lecz nierówny ruch marnuje
+  pojemność;
+- leasing porcji tokenów — region rezerwuje budżet centralnie i wydaje lokalnie;
+- globalny store — dokładniejszy, ale dodaje latency i zależność cross-region;
+- CRDT/async replication — dostępne, ale limit jest przybliżony i trzeba policzyć
+  maksymalny overshoot.
+
+`GLOBAL_APPROXIMATE` w modelu klucza jest oznaczeniem intencji, a nie dowodem
+globalnej spójności. Bez rzeczywistej globalnej topologii Redis pozostaje
+production boundary.
+
+## 11. Dynamiczna konfiguracja
+
+Control plane nie powinien modyfikować struktur używanych równocześnie przez
+requesty. `DynamicConfigService` publikuje niezmienny, posortowany snapshot.
+Zmiana wymaga bieżącej wersji w `If-Match`; stary operator otrzymuje `412`, więc
+nie nadpisze cudzego update'u. Każda mutacja tworzy wpis audit.
 
 ```http
 POST /admin/rules
-PATCH /admin/rules/{id}
-GET /admin/rules
-DELETE /admin/rules/{id}
-
-POST /admin/assignments
-GET /admin/effective-rules?tenant_id=t1&user_id=u42&path=/v1/payments
+X-Admin-Token: ...
+X-Admin-Actor: on-call@example
+If-Match: 7
 ```
 
-Przydatny endpoint:
+Domyślny Admin API pozostaje lokalną symulacją, żeby szybki profil nie wymagał
+bazy. Profil `durable` wpina `JdbcControlPlaneStore` w ten sam Admin API, używa
+blokady `FOR UPDATE`, optimistic version i okresowej synchronizacji
+`RuleReplica`. Wyłączenie jest trwałym tombstone, a rollback publikuje dawną
+regułę jako nową wersję — historia nigdy nie jest przepisywana. Replika odrzuca
+lukę i podczas awarii zachowuje last-known-good. Metryka `config.lag` pokazuje
+różnicę między PostgreSQL head i lokalnym snapshotem.
 
-```http
-GET /admin/debug/effective-limit
+Regułę można najpierw uruchomić z `enforcementMode=MONITOR`. Bucket jest liczony,
+a `SHADOW_WOULD_DENY` mierzony, lecz ruch nie jest blokowany. Dopiero jawna
+zmiana na `ENFORCE` kończy canary polityki. Pełny system nadal potrzebuje:
+
+1. trwałego, wersjonowanego źródła prawdy;
+2. walidacji i dry-run przed publikacją;
+3. podpisanego eventu lub watch streamu;
+4. atomowej podmiany snapshotu w każdej instancji;
+5. alarmu na config lag;
+6. kryterium automatycznego rollbacku złej polityki.
+
+## 12. Rate limit, quota i billing
+
+Te trzy mechanizmy rozwiązują inne problemy:
+
+- **rate limit** — krótkie okno; chroni system teraz;
+- **quota** — długi budżet produktu, np. operacje w miesiącu;
+- **billing ledger** — trwały, audytowalny zapis rozliczeniowy.
+
+`QuotaService` przechowuje w Redisie atomowy `INCRBY` z datą wygaśnięcia po
+zamknięciu miesiąca. Koszt to koszt operacji endpointowej, nie suma kosztów
+wszystkich polityk ochronnych. Awaria quota po pozytywnej decyzji nie odwraca
+requestu — licznik jest estymacją online.
+
+W profilu domyślnym event usage jest best effort. Profil `durable` wybiera
+`DurableUsageEventSink`: receipt i intencja publikacji trafiają razem do
+PostgreSQL, a relay używa `SKIP LOCKED`, lease i reclaim. Publish-before-mark
+może dać duplikat, więc `eventId` jest kluczem idempotencji konsumenta. Poison
+event po dziesięciu próbach przechodzi do stanu `DEAD`, dzięki czemu nie blokuje
+partycji pracy. `authoritativeUsage()` wspiera reconciliation, ale limiter nadal
+nie jest autorytatywnym ledgerem biznesowym.
+
+## 13. Obserwowalność
+
+Najważniejsze metryki:
+
+- `rate_limiter_decisions_total{decision}` — wynik końcowy;
+- `rate_limiter_redis_decisions_total{rule.type,decision}` — wynik data plane;
+- `rate_limiter_redis_latency_seconds` — histogram, analizuj p95/p99;
+- `rate_limiter_redis_errors_total{rule.type}` — błędy zależności;
+- `rate_limiter_fallback_total{strategy}` — wejścia w degradację;
+- `rate_limiter_redis_circuit_open` — bieżący stan circuit breakera;
+- `rate_limiter_config_version` — wersja lokalnego snapshotu;
+- `rate_limiter_config_lag` — różnica względem trwałego head;
+- `rate_limiter_usage_receipt_total` oraz `rate_limiter_usage_outbox_total` — trwałość, retry i DLQ;
+- `rate_limiter_quota_errors_total` i wyniki publish usage.
+
+Nie dodajemy `userId`, API key ani tenant ID jako tagów ogólnego licznika — ich
+nieograniczona cardinality może przeciążyć system metryk. Identyfikatory są
+przydatne w próbkowanych logach/audycie z odpowiednią retencją i ochroną PII.
+
+Sam wzrost `denied` nie zawsze oznacza awarię: limiter może właśnie prawidłowo
+powstrzymywać klienta. Alert powinien łączyć error rate, fallback, circuit state,
+latency Redisa i saturation chronionego downstreamu. Procedura znajduje się w
+[`observability/RUNBOOK.md`](observability/RUNBOOK.md).
+
+## 14. Testowanie
+
+Szybkie testy nie wymagają lokalnego Redisa ani Kafki:
+
+```powershell
+.\mvnw.cmd test
 ```
 
-Request:
+Dowodzą m.in.:
 
-```json
-{
-  "tenant_id": "t1",
-  "user_id": "u42",
-  "api_key": "abc",
-  "method": "POST",
-  "path": "/v1/payments"
-}
+- różnic między pięcioma modelami algorytmów;
+- kontrprzykładu check-then-act;
+- kumulatywnej hierarchii i attempt accounting;
+- semantyki exact, `/*`, `/**`;
+- walidacji i optimistic concurrency konfiguracji;
+- weighted cost oraz cleanup fallbacku;
+- fail-open/fail-closed/local fallback;
+- HMAC, trusted proxy i rotacji admin tokenu;
+- tego, że awaria estymacji quota nie zmienia dozwolonej decyzji;
+- ograniczonego ryzyka lease'ów regionalnych i fencing tokenu;
+- utworzenia niskokardynalnej obserwacji decyzji dla OTel.
+
+Test infrastrukturalny:
+
+```powershell
+.\mvnw.cmd -Pinfrastructure-tests verify
 ```
 
-Response:
+uruchamia Redis `7.4-alpine` oraz PostgreSQL `17-alpine`. Sprawdza atomowość pod
+konkurencją, bucket TTL i odtworzenie, koszt ważony, quota TTL, tombstone i
+rollback konfiguracji, konwergencję replik, reclaim oraz DLQ outboxa. Pojedynczą klasę wybiera `-Dit.test=NazwaTestu`. Profil jest
+osobny, aby zwykłe `verify` pozostało szybkie, a brak Dockera nie zmieniał wyniku
+testów jednostkowych.
 
-```json
-{
-  "matched_rules": [
-    "global_api_limit",
-    "tenant_t1_limit",
-    "pro_plan_default",
-    "payments_endpoint_limit"
-  ]
-}
+Load test używa w k6 modelu **open workload** (`constant-arrival-rate`). Closed
+model z ustaloną liczbą VU ukrywa coordinated omission: gdy system zwalnia,
+generator sam wysyła mniej requestów i raport wygląda zbyt dobrze.
+
+```powershell
+$env:RATE = 500
+$env:DURATION = "2m"
+k6 run load-test.js
 ```
 
-To bardzo pomaga w debugowaniu.
+Przed eksperymentem określ expected RPS, p99, maksymalny odsetek błędów,
+saturation i kryterium przerwania. Osobno wykonaj load, stress, spike i soak;
+jeden krótki test nie odpowiada na wszystkie pytania.
 
----
+## 15. Uruchomienie
 
-## 41. Przykładowy stack technologiczny
+Wymagania: Java 21, Docker dla infrastruktury.
 
-### 41.1 Wariant prosty
+```powershell
+.\mvnw.cmd clean verify
+docker compose up --build
+
+# trwały control plane i usage outbox (aplikacja na porcie 8081)
+docker compose --profile durable up --build rate-limiter-durable
+
+# aplikacja korzystająca z prawdziwej topologii Redis Cluster (port 8082)
+docker compose --profile cluster --profile cluster-app up --build rate-limiter-cluster
+```
+
+Przykładowe endpointy:
 
 ```text
-API Gateway: NGINX / Kong / własny middleware
-Counter store: Redis
-Config DB: PostgreSQL
-Metrics: Prometheus + Grafana
-Logs: Loki / Elasticsearch
+GET  /api/users
+POST /api/payments
+POST /api/exports
+GET  /admin/rules
+GET  /admin/audit
+GET  /actuator/prometheus
+GET  /swagger-ui/index.html
 ```
 
-### 41.2 Wariant większy
+Compose uruchamia pojedynczy Redis, Kafka, Collector OTLP, Prometheus i Grafanę. Obraz aplikacji
+działa jako nieuprzywilejowany użytkownik. Dane i hasła compose są wyłącznie
+lokalne; produkcja wymaga TLS, secret store, uwierzytelnienia Redis/Kafka,
+network policies, limitów zasobów i pinowania obrazów po digest.
+
+## 16. Failure matrix
+
+| Awaria | Zachowanie laboratorium | Ryzyko produkcyjne |
+| --- | --- | --- |
+| Redis timeout | strategia per rule, potem circuit | overshoot albo niedostępność |
+| Redis restart | stan bucketów może zniknąć | chwilowy burst po recovery |
+| Kafka down | best effort może zgubić event; durable retry/DLQ | konsument nadal musi deduplikować |
+| quota Redis down | accepted request pozostaje accepted | niedokładny podgląd usage |
+| zły config update | walidacja, shadow, `If-Match`, rollback | automatyczne kryterium rollbacku zależy od SLO |
+| relay pada po publish | lease wygasa i event wraca | duplikat; consumer deduplikuje `eventId` |
+| podział regionów | regionalne buckety działają | globalny overshoot |
+| spoofed identity headers | ignorowane od niezaufanego peer | błędna lista proxy psuje granicę |
+
+## 17. Kiedy użyć innego rozwiązania
+
+Limiter w aplikacji daje dostęp do tożsamości domenowej i kosztu operacji, ale
+każdy request dociera już do procesu. Gateway/Envoy/API Management może odrzucić
+ruch wcześniej i prościej chronić całą flotę. Biblioteka lokalna ma najniższą
+latencję, lecz nie daje wspólnego limitu. Często potrzebne są warstwy:
 
 ```text
-Gateway: Envoy / Kong / custom Go service
-Rate Limiter Service: Go / Rust / Java
-Counter Store: Redis Cluster
-Config Store: PostgreSQL + config service
-Events: Kafka
-Analytics: ClickHouse / BigQuery / Snowflake
-Metrics: Prometheus
-Tracing: OpenTelemetry
+edge/WAF limit → gateway/API key limit → application/tenant-operation limit
 ```
 
----
+Nie wolno bezrefleksyjnie dodać retry na każdej warstwie. Retry gatewaya,
+klienta i service mesh może zwielokrotnić ruch oraz zużycie tokenów. Kontrakt
+powinien definiować właściciela retry i to, czy każda próba jest osobno liczona.
 
-## 42. Trade-offy
+## 18. Trwały control plane
 
-| Decyzja | Plus | Minus |
-|---|---|---|
-| Redis | szybki, prosty | hot keys, memory pressure |
-| Token bucket | dobry dla API | mniej intuicyjny niż fixed window |
-| Sliding log | dokładny | drogi pamięciowo |
-| Gateway enforcement | chroni backend | gateway bardziej złożony |
-| Fail-open | dostępność | ryzyko abuse |
-| Fail-closed | bezpieczeństwo | ryzyko outage |
-| Multi-region local | niska latencja | limit może przeciekać |
-| Global consistency | dokładność | latencja i złożoność |
-
----
-
-## 43. Minimalna wersja MVP
-
-Na start warto zbudować:
+Control plane ma inne SLO niż data plane. Publikacja może być wolniejsza i
+silnie spójna; odczyt na ścieżce requestu musi korzystać z lokalnego snapshotu.
+`JdbcControlPlaneStore` przechowuje append-only log zmian:
 
 ```text
-1. Gateway middleware
-2. Redis fixed window albo token bucket
-3. Config w pliku / PostgreSQL
-4. Lokalne cache’owanie configu
-5. Nagłówki rate limit
-6. Metryki allowed/denied/latency
-7. Fail-open dla większości endpointów
-8. Fail-closed/local fallback dla login/security endpoints
+operator --expectedVersion--> PostgreSQL head FOR UPDATE
+         --append version N--> rule_change
+data-plane replica --changesAfter(localVersion)--> atomic snapshot swap
 ```
 
-MVP nie powinno zaczynać od multi-region, sliding log dla wszystkiego i skomplikowanego rule engine’u. To może szybko przerosnąć projekt.
+Blokada serializuje dwóch publisherów, a `expectedVersion` wykrywa lost update.
+Replika wymaga ciągłych wersji; luka oznacza błąd synchronizacji, nie zgodę na
+częściową konfigurację. Dwie instancje mogą przez krótki czas mieć różne wersje,
+dlatego rollout musi mierzyć config lag i określić maksymalny czas konwergencji.
 
----
+Snapshot powinien zachować last-known-good podczas awarii control plane. Nie
+należy odpytywać PostgreSQL dla każdego requestu. Event notification przyspiesza
+propagację, ale okresowy poll nadal jest potrzebny jako mechanizm naprawczy.
 
-## 44. Produkcyjna wersja docelowa
+## 19. Outbox i reconciliation usage
 
-Docelowo:
+Bez outboxu istnieje okno:
 
 ```text
-- API Gateway enforcement
-- Redis Cluster
-- Lua scripts
-- Token bucket jako domyślny algorytm
-- Sliding window log dla endpointów bezpieczeństwa
-- Config Service z wersjonowanymi snapshotami
-- Local config cache
-- Local fallback limiter
-- Usage events do Kafka
-- Dashboardy i alerty
-- Admin/debug API
-- Multi-region regional enforcement
-- Approximate global limits
+decyzja/operacja zakończona → crash → Kafka send nigdy nie nastąpił
 ```
 
----
+W profilu `durable` `JdbcUsageOutbox.record()` zapisuje receipt i intencję publikacji w jednej
+transakcji. Relay rezerwuje batch przez `FOR UPDATE SKIP LOCKED` oraz lease.
+Crash przed publish pozostawia pracę do odzyskania. Crash po publish, lecz przed
+`markPublished`, powoduje redelivery — dlatego downstream deduplikuje `eventId`.
+Retry jest ograniczony; poison event otrzymuje stan `DEAD` i wymaga operacyjnej
+decyzji o naprawie lub kontrolowanym replayu.
 
-## 45. Największe ryzyka
+Exactly-once end-to-end nie wynika z transakcji w jednej bazie. Praktyczny model
+to at-least-once transport + idempotentny konsument + okresowa reconciliation.
+`authoritativeUsage()` pozwala porównać projekcję z receiptami. Ostateczny billing
+powinien jednak uzgadniać wynik z systemem, który wykonał efekt biznesowy.
 
-### 45.1 Rate limiter jako single point of failure
+## 20. Prawdziwy Redis Cluster
 
-Jeżeli każdy request zależy od niego, musi mieć fallback.
+Profil compose `cluster` tworzy sześć węzłów: trzy masters i trzy replicas, a
+`redis-cluster-init` przypisuje wszystkie 16 384 sloty. Drill wykonuje migrację
+slotu oraz kontrolowany failover repliki:
 
-### 45.2 Hot keys
+```powershell
+docker compose --profile cluster --profile cluster-drill up `
+  --abort-on-container-exit redis-cluster-drill
+```
 
-Globalne i tenantowe limity mogą przeciążyć jeden shard.
+Resharding przechodzi przez stany `MIGRATING/IMPORTING`; klient musi obsługiwać
+`MOVED` i `ASK` oraz odświeżać topologię. Replikacja Redis jest asynchroniczna,
+więc potwierdzony zapis może zginąć przy awarii primary przed replikacją. Opcje
+`WAIT`, persistence i liczba replik zmniejszają ryzyko, ale nie tworzą
+linearizowalnej bazy bez kosztu.
 
-### 45.3 Zbyt dokładne projektowanie
+Profil Spring `cluster` konfiguruje Lettuce z adaptive i okresowym topology
+refresh. Usługa `rate-limiter-cluster` działa wewnątrz sieci Compose, więc
+adresy ogłaszane przez węzły są osiągalne. Drill zapisuje klucz przez klienta
+redirect-aware, wykonuje reshard i failover, a następnie ponownie odczytuje dane.
 
-Perfekcyjna globalna spójność jest droga. Często niepotrzebna.
+Skrypt Lua może używać wielu kluczy tylko w jednym hash slocie. Hash tag pomaga
+współlokować dane principalu, lecz reguła globalna i userowa celowo mają różne
+hotspoty. Failover powinien być testowany razem z timeoutem klienta, topology
+refresh, pulą połączeń i strategią fallback, a nie tylko komendą `PING`.
 
-### 45.4 Zła identyfikacja klienta
+## 21. Globalny budżet przez lease
 
-IP-based limiting bez poprawnej obsługi proxy jest łatwy do obejścia albo może blokować niewinnych użytkowników.
-
-### 45.5 Brak obserwowalności
-
-Bez dobrych metryk trudno odróżnić realny abuse od źle ustawionego limitu.
-
----
-
-## 46. Proponowana decyzja końcowa
-
-Dla solidnego projektu Rate Limiter rekomendowany wybór:
+`GlobalTokenLeaseLab` pokazuje centralny allocator rozdający regionom porcje
+tokenów. Region obsługuje requesty lokalnie aż do wyczerpania lease:
 
 ```text
-Enforcement: API Gateway
-Storage: Redis Cluster
-Default algorithm: Token Bucket
-Security endpoints: Sliding Window Log
-Global protection: approximate/local + Redis
-Config: PostgreSQL + Config Service + local cache
-Atomicity: Redis Lua scripts
-Fallback: local degraded limiter
-Usage accounting: Kafka events
-Observability: Prometheus + logs + tracing
+global budget → lease EU (40) + lease US (40) + unleased (20)
 ```
 
-To daje dobry balans między:
+Podczas partition region nie może dostać nowej porcji, ale może wydać pozostałą.
+Maksymalne chwilowe ryzyko to suma niewydanych tokenów we wszystkich aktywnych
+lease'ach. Mniejszy batch zmniejsza overshoot, lecz zwiększa ruch do allocatora.
+
+Wygaśnięcie zwraca tylko niewykorzystaną część. Fencing token chroni przed
+opóźnionym właścicielem po regrant: sam TTL/blokada nie wystarcza, bo stary
+proces może wznowić pracę po pauzie GC lub partition. Clock skew wymaga czasu
+allocatora, marginesu bezpieczeństwa albo odnawiania opartego o lease protocol.
+
+## 22. Tracing end-to-end
+
+Spring MVC odbiera i propaguje W3C `traceparent`. `RateLimiterEngine` tworzy
+obserwację `rate-limiter.decision` z niskokardynalnymi polami `http.method` i
+`decision`. Micrometer Tracing łączy ją z aktywnym spanem HTTP, a bridge OTel
+wysyła trace przez OTLP do Collectora.
+
+Nie wolno dodawać pełnego API key, user ID ani ścieżki z dynamicznym ID jako
+atrybutu każdego spanu. Trace ma odpowiedzieć, czy czas zużył matcher, Redis,
+fallback czy downstream. `observability/otel-collector.yml` używa debug exportera
+do laboratorium; produkcja wymaga backendu trace, TLS, auth, batchingu i sampling.
+
+Head sampling podejmuje decyzję przed poznaniem wyniku, więc może zgubić rzadkie
+błędy. Tail sampling w Collectorze może zachować `429`, wyjątki i wolne trace,
+ale buforuje całe ślady i wymaga spójnego routingu spanów danego trace.
+
+## 23. Chaos i soak
+
+`chaos/redis-outage-drill.ps1` zatrzymuje Redis, generuje ruch i zawsze próbuje
+przywrócić zależność. Test należy oceniać przez kontrakt reguły:
+
+- FAIL_OPEN — request działa, ale ochrona jest osłabiona;
+- FAIL_CLOSED — oczekiwane jest odrzucenie;
+- LOCAL_FALLBACK — limit staje się per instancja;
+- circuit powinien ograniczyć liczbę wolnych prób do Redisa.
+
+`k6/soak-test.js` utrzymuje open workload domyślnie przez 30 minut. Obserwuj p99,
+dropped iterations, heap/GC, liczbę kluczy i pamięć Redisa, reconnects, fallback
+oraz stabilność cardinality metryk. Restart store w połowie testu powinien
+pokazać kontrolowaną degradację i powrót bez retry storm.
+
+Game day musi mieć ownera, blast radius, warunek przerwania, dashboard, rollback
+i hipotezę. Chaos bez oczekiwanego niezmiennika jest tylko awarią wywołaną przez
+zespół.
+
+## 24. Granice gotowości produkcyjnej
+
+Projekt dowodzi algorytmu i najważniejszych decyzji, ale świadomie nie obiecuje:
+
+- ścisłego limitu globalnego między regionami;
+- atomowej transakcji wielu bucketów w różnych slotach;
+- pełnego IAM/mTLS dla Admin API;
+- fairness między tenantami podczas globalnego przeciążenia;
+- zweryfikowanej konfiguracji konkretnego managed Redis i backendu tracingowego;
+- wspólnej transakcji z efektem biznesowym wykonywanym w innym serwisie.
+
+To są następne decyzje zależne od SLO, kosztu, topologii i modelu zagrożeń — nie
+braki, które można wiarygodnie ukryć kilkoma dodatkowymi adnotacjami Springa.
+
+## 25. Fairness, overload i concurrency limiting
+
+Rate limit kontroluje liczbę przyjęć w czasie, lecz nie liczbę operacji
+wykonywanych jednocześnie. Jeśli request trwa 10 s, nawet umiarkowane 100 RPS
+może oznaczać około 1000 prac w toku. Zależność przybliża Little's Law:
 
 ```text
-wydajnością,
-dokładnością,
-prostotą,
-skalowalnością,
-odpornością na awarie.
+concurrency ≈ throughput × średni czas przebywania w systemie
 ```
 
-Najważniejsza decyzja projektowa: **nie próbować robić idealnie dokładnego limitera dla każdego przypadku**.
+Dlatego limiter nie zastępuje bulkheadu, bounded queue ani adaptive concurrency
+limit. Przed wolnym downstreamem potrzebny jest limit prac w toku oraz load
+shedding. W przeciwnym razie request może przejść Token Bucket i długo czekać w
+nieograniczonej kolejce, zużywając pamięć oraz deadline klienta.
 
-Dla API trafficu zwykle lepszy jest szybki, odporny i lekko przybliżony system niż perfekcyjny system, który stanie się bottleneckiem.
+Hierarchia tenantów ogranicza noisy neighbor, ale nie gwarantuje fairness. Można
+użyć osobnych pul, weighted fair queueing albo rezerwacji minimalnego udziału.
+Ścisła równość bywa niewłaściwa: tenant płatności może mieć wyższy priorytet niż
+batch eksportowy. Polityka powinna wynikać z klasy ruchu i SLO, a nie z kolejności
+wątków w JVM.
 
----
+`AdaptiveConcurrencyLimit` jest wykonywalnym modelem AIMD: sukces zwiększa
+limit powoli, sygnał przeciążenia zmniejsza go multiplikatywnie. Pokazuje, że
+ten sam ruch może przejść limit czasowy, a mimo to zostać odrzucony z powodu
+wyczerpania bezpiecznej liczby prac w toku.
 
-## Podsumowanie
+## 26. Wybór miejsca i storage
 
-Rate Limiter powinien być:
+| Miejsce egzekwowania | Zaleta | Ograniczenie |
+| --- | --- | --- |
+| klient | mniej zbędnego ruchu | niezaufany, nie chroni przed atakiem |
+| CDN/WAF | odrzuca najwcześniej | mało kontekstu domenowego |
+| API gateway | wspólne klucze i polityki | potencjalny bottleneck/control plane |
+| sidecar/service mesh | spójna polityka techniczna | retry na wielu warstwach |
+| aplikacja | zna tenant, operację i koszt | request dotarł już do procesu |
 
-- szybki,
-- odporny na awarie,
-- konfigurowalny,
-- obserwowalny,
-- możliwie prosty w krytycznej ścieżce requestu.
+Redis jest dobrym wyborem dla współdzielonego, krótkowiecznego stanu i atomowych
+skryptów, ale nie jest jedyną opcją:
 
-Najlepszy praktyczny design to połączenie:
+- pamięć procesu — najniższa latency, limit per instancja;
+- gateway-managed limiter — mniej własnego kodu, zależność od platformy;
+- relacyjna baza — trwałość i transakcje, zwykle za droga na każdy request;
+- dedykowany service — centralne zasady, dodatkowy hop i osobne SLO;
+- aproksymacyjne lokalne liczniki — duża skala kosztem kontrolowanego overshoot.
 
-- enforcementu w API Gateway,
-- Redis Cluster jako szybkiego counter store,
-- Lua scripts dla atomowości,
-- Token Bucket jako domyślnego algorytmu,
-- Sliding Window Log dla endpointów bezpieczeństwa,
-- lokalnego fallbacku,
-- wersjonowanej konfiguracji,
-- eventów użycia do billingów i analityki.
+Wybór opisuje trójkąt: dokładność, dostępność i latency. Podczas partition nie da
+się jednocześnie zachować ścisłego globalnego limitu i niezależnie przyjmować
+ruchu we wszystkich regionach. System musi jawnie wybrać, które ryzyko jest
+akceptowalne.
+
+## 27. Checklist projektu systemowego
+
+Przed zaakceptowaniem projektu odpowiedz konkretnie:
+
+1. Jaki zasób chronimy i czy liczymy próby, sukcesy czy koszt?
+2. Jaki burst, sustained rate i maksymalny overshoot są dozwolone?
+3. Co jest principalem i kto poświadcza jego tożsamość?
+4. Czy polityki się sumują, nadpisują, czy wybieramy najbardziej restrykcyjną?
+5. Gdzie znajduje się punkt atomowości i źródło czasu?
+6. Jak zachowujemy się przy timeout, restart, failover i partition?
+7. Czy limit jest regionalny, globalny dokładny czy globalny przybliżony?
+8. Jak konfiguracja jest walidowana, wersjonowana, propagowana i wycofywana?
+9. Jak klient poznaje limit, reset i semantykę retry?
+10. Jak odróżniamy rate limit, quota, usage receipt i billing ledger?
+11. Które metryki, trace i alerty dowodzą poprawności bez wysokiej cardinality?
+12. Jak testujemy race, clock skew, hot key, reshard, failover, soak i recovery?
+
+Jeżeli odpowiedzi są mierzalne i powiązane z testem albo świadomie nazwaną
+granicą, projekt jest znacznie bliższy wiarygodnemu system designowi niż diagram
+z samym napisem „Redis Cluster”.

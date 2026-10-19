@@ -1,8 +1,8 @@
 package pl.jakubtworek.backend_engineering.stage_2.block_b.testing.support;
 
-import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * In-memory processed event store used for unit tests.
@@ -12,7 +12,7 @@ import java.util.UUID;
  */
 public class InMemoryProcessedEventStore {
 
-    private final Set<UUID> processedEventIds = new HashSet<>();
+    private final Set<UUID> processedEventIds = ConcurrentHashMap.newKeySet();
 
     /**
      * Tries to register the event as processed.
@@ -28,6 +28,11 @@ public class InMemoryProcessedEventStore {
      */
     public int size() {
         return processedEventIds.size();
+    }
+
+    /** Simulates transaction rollback when business processing fails. */
+    public void unmarkProcessed(UUID eventId) {
+        processedEventIds.remove(eventId);
     }
 
     /**

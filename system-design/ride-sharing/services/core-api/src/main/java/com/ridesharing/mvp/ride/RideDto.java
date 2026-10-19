@@ -8,6 +8,7 @@ public record RideDto(
         UUID id,
         UUID passengerId,
         UUID driverId,
+        String cityId,
         RideStatus status,
         double pickupLat,
         double pickupLng,
@@ -26,7 +27,7 @@ public record RideDto(
         Instant completedAt
 ) {
     public static RideDto from(Ride r) {
-        return new RideDto(r.getId(), r.getPassenger().getId(), r.getDriver() == null ? null : r.getDriver().getId(), r.getStatus(),
+        return new RideDto(r.getId(), r.getPassenger().getId(), r.getDriver() == null ? null : r.getDriver().getId(), r.getCityId(), r.getStatus(),
                 r.getPickupLat(), r.getPickupLng(), r.getPickupAddress(), r.getDropoffLat(), r.getDropoffLng(), r.getDropoffAddress(),
                 r.getEstimatedDistanceKm(), r.getEstimatedDurationMinutes(), r.getEstimatedPrice(), r.getFinalPrice(), r.getCurrency(),
                 r.getRequestedAt(), r.getAcceptedAt(), r.getStartedAt(), r.getCompletedAt());

@@ -18,7 +18,7 @@ Objawy: wzrost latency katalogu, spadek cache hit ratio, możliwe problemy z rat
 
 ## Payment failure
 
-Objawy: circuit breaker open, wzrost `PAYMENT_PENDING`, większe p95/p99 w Order Service.
+Objawy: circuit breaker open, wzrost `PAYMENT_UNKNOWN`/`MANUAL_REVIEW`, większe p95/p99 w Order Service.
 
 ## Broker lag
 

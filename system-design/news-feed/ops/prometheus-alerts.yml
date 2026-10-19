@@ -1,0 +1,39 @@
+groups:
+  - name: news-feed-slo
+    rules:
+      - alert: NewsFeedHighErrorRate
+        expr: sum(rate(http_server_requests_seconds_count{application="news-feed-stage-6",status=~"5.."}[5m])) / sum(rate(http_server_requests_seconds_count{application="news-feed-stage-6"}[5m])) > 0.01
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "News Feed przekracza 1% błędów 5xx"
+      - alert: NewsFeedP99Latency
+        expr: histogram_quantile(0.99, sum by (le) (rate(http_server_requests_seconds_bucket{application="news-feed-stage-6",uri="/api/v1/feed"}[5m]))) > 0.75
+        for: 10m
+        labels: { severity: ticket }
+        annotations:
+          summary: "p99 feedu przekracza 750 ms"
+      - alert: NewsFeedKafkaConsumerLag
+        expr: kafka_consumer_group_lag{group=~"news-feed-.*"} > 10000
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Projekcja feedu przestaje nadążać"
+      - alert: NewsFeedOutboxStuck
+        expr: newsfeed_outbox_oldest_age_seconds > 120
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "Najstarszy nieopublikowany event outbox ma ponad 2 minuty"
+      - alert: NewsFeedDeadLetterGrowth
+        expr: increase(newsfeed_dlq_size[15m]) > 10
+        for: 5m
+        labels: { severity: ticket }
+        annotations:
+          summary: "DLQ rośnie i wymaga klasyfikacji poison records"
+      - alert: NewsFeedLowCacheHitRatio
+        expr: sum(rate(newsfeed_feed_cache_requests_total{result="hit"}[10m])) / sum(rate(newsfeed_feed_cache_requests_total[10m])) < 0.6
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Hit ratio cache feedu spadł poniżej 60%"

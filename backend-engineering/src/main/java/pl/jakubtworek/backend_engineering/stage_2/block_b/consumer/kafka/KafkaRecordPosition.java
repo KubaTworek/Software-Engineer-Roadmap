@@ -11,6 +11,18 @@ public record KafkaRecordPosition(
         int partition,
         long offset
 ) {
+    public KafkaRecordPosition {
+        if (topic == null || topic.isBlank()) {
+            throw new IllegalArgumentException("Topic cannot be empty");
+        }
+        if (partition < 0) {
+            throw new IllegalArgumentException("Partition cannot be negative");
+        }
+        if (offset < 0) {
+            throw new IllegalArgumentException("Offset cannot be negative");
+        }
+    }
+
     /**
      * Kafka commits the next offset, not the currently processed offset.
      */

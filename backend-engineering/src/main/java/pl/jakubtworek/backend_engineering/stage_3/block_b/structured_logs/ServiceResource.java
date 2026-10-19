@@ -26,7 +26,7 @@ public final class ServiceResource {
         this.deploymentEnvironmentName =
                 requireNonBlank(builder.deploymentEnvironmentName, "deploymentEnvironmentName");
         this.serviceInstanceId = builder.serviceInstanceId != null
-                ? builder.serviceInstanceId
+                ? requireNonBlank(builder.serviceInstanceId, "serviceInstanceId")
                 : UUID.randomUUID().toString();
     }
 

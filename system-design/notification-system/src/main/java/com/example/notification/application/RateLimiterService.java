@@ -5,6 +5,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.time.Clock;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -66,15 +67,18 @@ public class RateLimiterService {
      * można sprawdzić, czy requesty nie były blokowane przez rate limiter.
      */
     private final AuditService auditService;
+    private final Clock clock;
 
     public RateLimiterService(
             @Value("${notification.rate-limit.tenant-per-minute:60}") int tenantLimit,
             @Value("${notification.rate-limit.user-per-minute:20}") int userLimit,
-            AuditService auditService
+            AuditService auditService,
+            Clock clock
     ) {
         this.tenantLimit = tenantLimit;
         this.userLimit = userLimit;
         this.auditService = auditService;
+        this.clock = clock;
     }
 
     /**
@@ -155,7 +159,7 @@ public class RateLimiterService {
                 key,
                 ignored -> new Bucket(
                         limit,
-                        Instant.now().plusSeconds(60)
+                        clock.instant().plusSeconds(60)
                 )
         );
 
@@ -175,9 +179,9 @@ public class RateLimiterService {
              * To jest fixed window, więc po przekroczeniu resetAt użytkownik/tenant
              * dostaje od nowa pełny limit.
              */
-            if (Instant.now().isAfter(bucket.resetAt)) {
+            if (clock.instant().isAfter(bucket.resetAt)) {
                 bucket.remaining = limit;
-                bucket.resetAt = Instant.now().plusSeconds(60);
+                bucket.resetAt = clock.instant().plusSeconds(60);
             }
 
             /*

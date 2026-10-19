@@ -54,10 +54,18 @@ public class FileProcessingService {
      * Każde zadanie jest dodawane osobno, żeby worker mógł je przetwarzać niezależnie.
      */
     @Transactional
-    public void enqueueDefaultJobs(UUID fileId) {
-        enqueue(fileId, FileProcessingJobType.ANTIVIRUS_SCAN);
-        enqueue(fileId, FileProcessingJobType.THUMBNAIL_GENERATION);
-        enqueue(fileId, FileProcessingJobType.DEDUPE_REGISTER);
+    public void enqueueSecurityGate(UUID fileId, UUID versionId) {
+        enqueue(fileId, versionId, FileProcessingJobType.ANTIVIRUS_SCAN);
+    }
+
+    /**
+     * Te zadania powstaja dopiero po czystym wyniku AV. Samo FIFO w tabeli nie
+     * gwarantuje kolejnosci przy wielu workerach, wiec zaleznosc jest wyrazona
+     * stanem i utworzeniem pracy, a nie przypadkowym ORDER BY.
+     */
+    public void enqueuePostScanJobs(UUID fileId, UUID versionId) {
+        enqueue(fileId, versionId, FileProcessingJobType.THUMBNAIL_GENERATION);
+        enqueue(fileId, versionId, FileProcessingJobType.DEDUPE_REGISTER);
     }
 
     /**
@@ -68,13 +76,13 @@ public class FileProcessingService {
      * zwracamy istniejący rekord zamiast tworzyć duplikat.
      *
      * To ważne przy retry, ponownym publikowaniu eventów albo wielokrotnym wywołaniu
-     * enqueueDefaultJobs dla tego samego pliku.
+     * enqueue dla tej samej pary plik-wersja.
      */
     @Transactional
-    public FileProcessingJob enqueue(UUID fileId, FileProcessingJobType type) {
-        return repository.findByFileIdAndJobType(fileId, type)
+    public FileProcessingJob enqueue(UUID fileId, UUID versionId, FileProcessingJobType type) {
+        return repository.findByFileIdAndVersionIdAndJobType(fileId, versionId, type)
                 .orElseGet(() -> repository.save(
-                        new FileProcessingJob(fileId, type)
+                        new FileProcessingJob(fileId, versionId, type)
                 ));
     }
 }

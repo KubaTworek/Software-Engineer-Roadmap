@@ -1,12 +1,15 @@
 package pl.jakubtworek.backend_engineering.stage_1.block_b.array_vs_linked;
 
 import org.openjdk.jmh.annotations.*;
+import pl.jakubtworek.backend_engineering.stage_1.block_b.benchmarking.BenchmarkDimension;
+import pl.jakubtworek.backend_engineering.stage_1.block_b.benchmarking.Measures;
 
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.ListIterator;
 import java.util.concurrent.TimeUnit;
 
+@Measures(BenchmarkDimension.LATENCY)
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.MICROSECONDS)
 @Warmup(iterations = 5, time = 1)
@@ -16,7 +19,7 @@ import java.util.concurrent.TimeUnit;
 public class InsertionBenchmark {
 
     @Param({"1000", "10000", "100000"})
-    private int size;
+    int size;
 
     private ArrayList<Integer> baseArrayList;
     private LinkedList<Integer> baseLinkedList;

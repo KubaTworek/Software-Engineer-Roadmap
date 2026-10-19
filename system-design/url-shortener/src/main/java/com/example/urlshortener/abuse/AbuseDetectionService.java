@@ -3,15 +3,17 @@ package com.example.urlshortener.abuse;
 import com.example.urlshortener.queue.ClickMessage;
 import com.example.urlshortener.service.ShortUrlCacheService;
 import com.example.urlshortener.service.ShortUrlService;
+import com.example.urlshortener.analytics.AnalyticsProperties;
+import com.example.urlshortener.security.SecretSupport;
 
 import java.net.URI;
-import java.security.MessageDigest;
-import java.util.HexFormat;
 import java.util.Locale;
+import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 
 /**
@@ -48,6 +50,11 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class AbuseDetectionService {
+    private static final DefaultRedisScript<Long> INCREMENT_WITH_TTL = new DefaultRedisScript<>("""
+            local value = redis.call('INCR', KEYS[1])
+            if value == 1 then redis.call('PEXPIRE', KEYS[1], ARGV[1]) end
+            return value
+            """, Long.class);
 
     /**
      * Logger używany do zapisywania informacji diagnostycznych.
@@ -133,6 +140,7 @@ public class AbuseDetectionService {
      * </p>
      */
     private final ShortUrlCacheService cacheService;
+    private final AnalyticsProperties analyticsProperties;
 
     /**
      * Konstruktor z dependency injection.
@@ -148,13 +156,15 @@ public class AbuseDetectionService {
             StringRedisTemplate redisTemplate,
             UserAgentClassifier userAgentClassifier,
             ShortUrlService shortUrlService,
-            ShortUrlCacheService cacheService
+            ShortUrlCacheService cacheService,
+            AnalyticsProperties analyticsProperties
     ) {
         this.properties = properties;
         this.redisTemplate = redisTemplate;
         this.userAgentClassifier = userAgentClassifier;
         this.shortUrlService = shortUrlService;
         this.cacheService = cacheService;
+        this.analyticsProperties = analyticsProperties;
     }
 
     /**
@@ -425,7 +435,7 @@ public class AbuseDetectionService {
      * </p>
      *
      * <pre>
-     * abuse:ip:{shortCode}:{sha256(ip)}
+     * abuse:ip:{shortCode}:{hmac(ip)}
      * </pre>
      *
      * <p>
@@ -455,13 +465,13 @@ public class AbuseDetectionService {
              * Klucz zawiera:
              * - prefiks abuse:ip,
              * - shortCode,
-             * - hash SHA-256 adresu IP.
+             * - HMAC adresu IP.
              *
              * Dzięki temu licznik jest osobny dla każdej pary:
              *
              * shortCode + IP
              */
-            String key = "abuse:ip:" + message.shortCode() + ":" + sha256(message.ipAddress());
+            String key = "abuse:ip:" + message.shortCode() + ":" + hmacIp(message.ipAddress());
 
             /*
              * Atomowo zwiększamy licznik w Redisie.
@@ -469,19 +479,7 @@ public class AbuseDetectionService {
              * INCR jest operacją atomową, więc działa poprawnie również przy wielu
              * równoległych requestach.
              */
-            Long value = redisTemplate.opsForValue().increment(key);
-
-            /*
-             * Jeśli licznik został utworzony właśnie teraz, ustawiamy jego TTL.
-             *
-             * TTL odpowiada oknu czasowemu z konfiguracji, np. 5 minut.
-             *
-             * Po upływie TTL licznik zniknie z Redisa, a kolejne kliknięcia zaczną
-             * nowe okno pomiarowe.
-             */
-            if (value != null && value == 1L) {
-                redisTemplate.expire(key, properties.ipWindow());
-            }
+            Long value = incrementWithTtl(key, properties.ipWindow());
 
             /*
              * Jeśli licznik przekroczył skonfigurowany próg, uznajemy ruch
@@ -534,18 +532,7 @@ public class AbuseDetectionService {
             /*
              * Atomowo zwiększamy licznik podejrzanych eventów dla short code.
              */
-            Long value = redisTemplate.opsForValue().increment(key);
-
-            /*
-             * Dla nowego licznika ustawiamy TTL zgodny z shortCodeWindow.
-             *
-             * Przykład:
-             * jeśli shortCodeWindow = 15 minut, licznik dotyczy podejrzanych
-             * eventów z ostatniego piętnastominutowego okna.
-             */
-            if (value != null && value == 1L) {
-                redisTemplate.expire(key, properties.shortCodeWindow());
-            }
+            Long value = incrementWithTtl(key, properties.shortCodeWindow());
 
             /*
              * Jeśli licznik przekroczył próg autoBlockSuspiciousEvents,
@@ -650,36 +637,14 @@ public class AbuseDetectionService {
                 : current + "," + next;
     }
 
-    /**
-     * Oblicza hash SHA-256 dla podanej wartości i zwraca go jako tekst hex.
-     *
-     * <p>
-     * W tej klasie metoda jest używana do hashowania adresu IP przed zapisaniem
-     * go w kluczu Redis.
-     * </p>
-     *
-     * <p>
-     * Przykład użycia:
-     * </p>
-     *
-     * <pre>
-     * 192.168.1.10 -> sha256 -> "długi_string_hex"
-     * </pre>
-     *
-     * <p>
-     * To ogranicza ekspozycję surowych adresów IP w Redisie. Nie jest to jednak
-     * pełna anonimizacja, ponieważ dla znanych adresów IP hash może być odtworzony
-     * metodą słownikową. W produkcyjnym systemie warto rozważyć HMAC z sekretnym
-     * kluczem albo rotowany salt.
-     * </p>
-     *
-     * @param value wartość wejściowa do zahashowania
-     * @return hash SHA-256 w formacie hex
-     * @throws Exception jeśli algorytm SHA-256 byłby niedostępny
-     */
-    private String sha256(String value) throws Exception {
-        return HexFormat.of().formatHex(
-                MessageDigest.getInstance("SHA-256").digest(value.getBytes())
-        );
+    /** Keyed pseudonym keeps raw IPs out of Redis and resists offline IPv4 enumeration. */
+    private String hmacIp(String value) {
+        // A keyed marker prevents offline enumeration of the small IPv4 space.
+        return SecretSupport.hmacSha256(analyticsProperties.ipHashSalt(), value);
+    }
+
+    private Long incrementWithTtl(String key, java.time.Duration ttl) {
+        // Lua closes the crash window between INCR and EXPIRE.
+        return redisTemplate.execute(INCREMENT_WITH_TTL, List.of(key), Long.toString(ttl.toMillis()));
     }
 }

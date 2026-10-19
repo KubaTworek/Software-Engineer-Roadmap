@@ -4,6 +4,7 @@ import com.example.paymentsystem.payment.PaymentProvider;
 
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
+import java.time.Duration;
 
 /**
  * Mockowa implementacja klienta PSP.
@@ -70,6 +71,36 @@ public class MockProviderClient implements PaymentProviderClient {
     @Override
     public PspPaymentResponse createPayment(PspPaymentRequest request) {
 
+        /* A connect failure occurs before request bytes cross the side-effect
+         * boundary. The caller may therefore retry the same command safely. */
+        if (hasMode(request, "simulate-connect-timeout")) {
+            throw new ProviderCallException("Connection timed out before dispatch",
+                    ProviderOutcomeCertainty.NOT_SENT);
+        }
+
+        /* Rate limiting is modeled as a pre-dispatch rejection with Retry-After.
+         * A real adapter must preserve this information instead of flattening
+         * every provider response into a generic 500. */
+        if (hasMode(request, "simulate-rate-limit")) {
+            throw new ProviderCallException("Provider rate limit",
+                    ProviderOutcomeCertainty.NOT_SENT, Duration.ofSeconds(30));
+        }
+
+        /* Deterministic fault injection makes the ambiguous-outcome path executable.
+         * The provider may have accepted the request before the transport timed out. */
+        if (hasMode(request, "simulate-timeout")) {
+            throw new ProviderCallException("Response timed out after dispatch",
+                    ProviderOutcomeCertainty.UNKNOWN);
+        }
+
+        /* A malformed success response is also ambiguous: the PSP received the
+         * request, but our adapter cannot extract the reference needed to prove
+         * its result. */
+        if (hasMode(request, "simulate-incompatible-response")) {
+            throw new ProviderCallException("Unsupported provider response version",
+                    ProviderOutcomeCertainty.UNKNOWN);
+        }
+
         /**
          * Budujemy źródło dla deterministycznego providerPaymentId.
          *
@@ -127,5 +158,22 @@ public class MockProviderClient implements PaymentProviderClient {
                         + ".local/checkout/"
                         + providerPaymentId
         );
+    }
+
+    @Override
+    public PspOperationResponse execute(PspOperationRequest request) {
+        if (request.idempotencyKey().startsWith("simulate-connect-timeout")) {
+            throw new ProviderCallException("Connection timed out before dispatch", ProviderOutcomeCertainty.NOT_SENT);
+        }
+        if (request.idempotencyKey().startsWith("simulate-timeout")) {
+            throw new ProviderCallException("Response timed out after dispatch", ProviderOutcomeCertainty.UNKNOWN);
+        }
+        String source = provider + ":" + request.type() + ":" + request.idempotencyKey();
+        return new PspOperationResponse(provider.name().toLowerCase() + "_" + request.type().name().toLowerCase()
+                + "_" + UUID.nameUUIDFromBytes(source.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    private boolean hasMode(PspPaymentRequest request, String prefix) {
+        return request.idempotencyKey() != null && request.idempotencyKey().startsWith(prefix);
     }
 }

@@ -1,24 +1,24 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: chat-stage6-postgres
+    container_name: chat-postgres
     environment:
-      POSTGRES_DB: chat_stage6
+      POSTGRES_DB: chat
       POSTGRES_USER: chat
       POSTGRES_PASSWORD: chat
     ports:
       - "5432:5432"
     volumes:
-      - chat_stage6_pgdata:/var/lib/postgresql/data
+      - chat_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U chat -d chat_stage6"]
+      test: ["CMD-SHELL", "pg_isready -U chat -d chat"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   prometheus:
     image: prom/prometheus:v2.54.1
-    container_name: chat-stage6-prometheus
+    container_name: chat-prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
     volumes:
@@ -31,15 +31,15 @@ services:
 
   grafana:
     image: grafana/grafana:11.2.0
-    container_name: chat-stage6-grafana
+    container_name: chat-grafana
     ports:
       - "3000:3000"
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
     volumes:
-      - chat_stage6_grafana:/var/lib/grafana
+      - chat_grafana:/var/lib/grafana
 
 volumes:
-  chat_stage6_pgdata:
-  chat_stage6_grafana:
+  chat_pgdata:
+  chat_grafana:

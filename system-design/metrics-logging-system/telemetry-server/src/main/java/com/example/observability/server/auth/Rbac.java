@@ -15,7 +15,7 @@ public final class Rbac {
 
     public static AuthContext requirePlatformAdmin() {
         AuthContext ctx = current();
-        if (!ctx.canAdmin()) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "admin access denied");
+        if (!ctx.canPlatformAdmin()) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "platform admin access denied");
         return ctx;
     }
 

@@ -1,6 +1,62 @@
 # Ride Sharing — System Design
 
+<!-- reading-guide:start -->
+## Ścieżki czytania
+
+| Cel czytania | Punkt wejścia |
+| --- | --- |
+| Teoria i model problemu | [7. Geospatial Indexing](#7-geospatial-indexing) |
+| Implementacja i jej dowody | [Jak czytać implementację](#jak-czytać-implementację) |
+| Uruchomienie i eksperymenty | [Jak czytać implementację](#jak-czytać-implementację) |
+| Ograniczenia i scenariusze awarii | [32. Failure Scenarios](#32-failure-scenarios) |
+
+Wspólne mechanizmy i ich testy znajdziesz w [indeksie pojęć backend-engineering](../../backend-engineering/README.md#globalny-indeks-pojęć). Tutaj śledź ich konsekwencje dla opisywanego systemu.
+Diagramy docelowe i warianty rozwoju czytaj razem z mapą implementacji; sam opis architektury nie oznacza, że wszystkie jej komponenty są uruchamiane w laboratorium.
+<!-- reading-guide:end -->
+
+## Zacznij tutaj
+
+| Pytanie | Odpowiedź |
+| --- | --- |
+| Najważniejszy niezmiennik | Jeden kierowca nie może aktywnie obsługiwać dwóch przejazdów, a stan przejazdu może iść tylko po dozwolonych przejściach. |
+| Krytyczny przepływ | Request pasażera → geospatial candidates → matching → akceptacja kierowcy → przejazd → cena → płatność i zdarzenia. |
+| Rekomendowany test | `mvnw.cmd test`; kontrakty PostgreSQL i Redis: `mvnw.cmd -Pinfrastructure-tests verify`. |
+| Świadome ograniczenia | Modele ML są deterministycznymi baseline'ami, lease regionu działa in-memory, a lokalne GEO nie jest modelem Redis Cluster. Granice te są opisane przy usługach. |
+
 Kompleksowy projekt architektury systemu typu Uber/Bolt/Lyft. Dokument obejmuje wymagania funkcjonalne i niefunkcjonalne, architekturę wysokiego poziomu, mikroserwisy, model danych, matching, lokalizację w czasie rzeczywistym, płatności, skalowanie, bezpieczeństwo, observability oraz plan implementacji.
+
+## Jak czytać implementację
+
+Repozytorium rozdziela **model działający lokalnie** od **wariantu rozproszonego**. `core-api` z profilem domyślnym korzysta z lokalnego pricingu i indeksu GEO. Profil `distributed` przełącza te same porty domenowe na adaptery HTTP do `location-service` i `pricing-service`. Dzięki temu wariant lokalny pozostaje prosty, a wariant rozproszony nie duplikuje logiki cyklu życia przejazdu.
+
+| Gwarancja | Mechanizm | Najważniejszy dowód |
+| --- | --- | --- |
+| legalne przejścia stanu ride | jawna maszyna stanów | `RideStateMachineTest` |
+| jeden aktywny offer per driver | blokada w aplikacji + częściowy indeks PostgreSQL | `DriverOfferOwnershipTest`, `PostgreSqlRideVersionInfrastructureTest` |
+| brak przeterminowanego właściciela | `activeRideId`, deadline oferty i release scoped do ride | `DriverOfferOwnershipTest` |
+| retry komendy nie tworzy drugiego skutku | fingerprint, trwały status i lease rekordu idempotencji | `IdempotencyServiceTest` |
+| event nie ginie razem z commitem | envelope w outboxie, claim przez `SKIP LOCKED` | `OutboxEnvelopeTest` i test PostgreSQL |
+| stara pozycja GPS nie nadpisuje nowej | monotoniczny `sequence` w skrypcie Redis Lua | `RedisLocationInfrastructureTest` |
+| consumer może dostać duplikat | `eventId` + unikalny indeks warehouse | `WarehouseConsumerTest` |
+| prywatny realtime | osobna grupa Kafka per gateway i kolejki per użytkownik | `RealtimeFanoutServiceTest` |
+
+Standard zdarzenia zawiera `eventId`, typ i wersję schematu, identyfikator agregatu, czas, korelację, przyczynę oraz payload. Kafka zapewnia kolejność tylko w obrębie klucza agregatu; konsumenci nadal muszą być idempotentni. Publikacja i konsumowanie mają semantykę **at least once**, nie exactly once.
+
+### Uruchomienie
+
+```powershell
+# szybkie, deterministyczne testy wszystkich 12 modułów
+.\mvnw.cmd test
+
+# kontrakty zależne od prawdziwego PostgreSQL i Redisa (wymaga Dockera)
+.\mvnw.cmd -Pinfrastructure-tests verify
+
+# sama infrastruktura lub cały wariant rozproszony
+docker compose up -d postgres-core postgres-warehouse redis kafka
+docker compose --profile distributed up --build
+```
+
+Każda usługa ma własne README opisujące problem, niezmiennik, krytyczny przepływ, test i świadome ograniczenia. Dokument główny opisuje teorię systemu, natomiast README usługi jest mapą od teorii do kodu.
 
 ---
 

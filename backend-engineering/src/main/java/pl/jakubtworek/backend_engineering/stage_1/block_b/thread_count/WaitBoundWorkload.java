@@ -5,6 +5,9 @@ public final class WaitBoundWorkload implements Workload {
     private final int waitMillis;
 
     public WaitBoundWorkload(int waitMillis) {
+        if (waitMillis < 0) {
+            throw new IllegalArgumentException("waitMillis must not be negative");
+        }
         this.waitMillis = waitMillis;
     }
 

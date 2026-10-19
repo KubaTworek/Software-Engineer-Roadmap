@@ -15,6 +15,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.web.bind.annotation.*;
+import jakarta.validation.Valid;
+import com.example.observability.server.ingest.IngestPolicy;
+import com.example.observability.server.ingest.SensitiveDataRedactor;
 
 import java.time.Instant;
 import java.util.concurrent.CompletableFuture;
@@ -104,6 +107,8 @@ public class IngestController {
      * bezpośrednio do warstwy danych.
      */
     private final TelemetryRepository repository;
+    private final IngestPolicy ingestPolicy;
+    private final SensitiveDataRedactor redactor;
 
     public IngestController(
             KafkaTemplate<String, String> kafkaTemplate,
@@ -112,7 +117,9 @@ public class IngestController {
             @Value("${telemetry.kafka.metrics-topic}") String metricsTopic,
             QuotaService quotaService,
             CardinalityGuard cardinalityGuard,
-            TelemetryRepository repository
+            TelemetryRepository repository,
+            IngestPolicy ingestPolicy,
+            SensitiveDataRedactor redactor
     ) {
         this.kafkaTemplate = kafkaTemplate;
         this.objectMapper = objectMapper;
@@ -121,6 +128,8 @@ public class IngestController {
         this.quotaService = quotaService;
         this.cardinalityGuard = cardinalityGuard;
         this.repository = repository;
+        this.ingestPolicy = ingestPolicy;
+        this.redactor = redactor;
     }
 
     /**
@@ -144,11 +153,12 @@ public class IngestController {
      */
     @PostMapping("/logs")
     public CompletableFuture<ResponseEntity<IngestResponse>> ingestLogs(
-            @RequestBody LogIngestRequest request
+            @Valid @RequestBody LogIngestRequest request
     ) throws JsonProcessingException {
 
         // Fallback "demo" jest wygodny lokalnie, ale produkcyjnie tenantId powinien być jawny albo wynikać z API key.
-        request.setTenantId(Validation.required(request.getTenantId(), "demo"));
+        // Tenant pochodzi z uwierzytelnionego klucza, nie z niezaufanego body.
+        request.setTenantId(com.example.observability.server.auth.Rbac.current().tenantId());
 
         // Tylko writer/admin danego tenanta może wysyłać logi.
         Rbac.requireWrite(request.getTenantId());
@@ -171,6 +181,9 @@ public class IngestController {
          * Dzięki temu późniejszy indexer/query engine nie musi obsługiwać tylu nulli.
          */
         request.getLogs().forEach(log -> {
+            if (log.getEventId() == null || log.getEventId().isBlank()) {
+                log.setEventId(java.util.UUID.randomUUID().toString());
+            }
             if (log.getTimestamp() == null) {
                 log.setTimestamp(Instant.now());
             }
@@ -187,6 +200,8 @@ public class IngestController {
                     Validation.required(log.getHost(), "unknown")
             );
         });
+        redactor.redact(request);
+        ingestPolicy.validate(request);
 
         String payload = objectMapper.writeValueAsString(request);
 
@@ -228,10 +243,10 @@ public class IngestController {
      */
     @PostMapping("/metrics")
     public CompletableFuture<ResponseEntity<IngestResponse>> ingestMetrics(
-            @RequestBody MetricIngestRequest request
+            @Valid @RequestBody MetricIngestRequest request
     ) throws JsonProcessingException {
 
-        request.setTenantId(Validation.required(request.getTenantId(), "demo"));
+        request.setTenantId(com.example.observability.server.auth.Rbac.current().tenantId());
 
         // Tylko writer/admin danego tenanta może wysyłać metryki.
         Rbac.requireWrite(request.getTenantId());
@@ -243,17 +258,31 @@ public class IngestController {
          * jako zmierzoną w momencie ingestu.
          */
         request.getSeries().forEach(series ->
+        {
+                if (series.getSamples() == null) series.setSamples(java.util.List.of());
+                if (series.getHistograms() == null) series.setHistograms(java.util.List.of());
+                if (series.getLabels() == null) series.setLabels(java.util.Map.of());
                 series.getSamples().forEach(sample -> {
+                    if (sample.getEventId() == null || sample.getEventId().isBlank()) {
+                        sample.setEventId(java.util.UUID.randomUUID().toString());
+                    }
                     if (sample.getTimestamp() == null) {
                         sample.setTimestamp(Instant.now());
                     }
-                })
+                });
+                series.getHistograms().forEach(point -> {
+                    if (point.getEventId() == null || point.getEventId().isBlank())
+                        point.setEventId(java.util.UUID.randomUUID().toString());
+                    if (point.getTimestamp() == null) point.setTimestamp(Instant.now());
+                });
+        }
         );
+        ingestPolicy.validate(request);
 
         // Liczba samples jest podstawą rozliczania quota dla metryk.
         int samples = request.getSeries()
                 .stream()
-                .mapToInt(s -> s.getSamples().size())
+                .mapToInt(s -> s.getSamples().size() + s.getHistograms().size())
                 .sum();
 
         quotaService.checkMetricSamples(request.getTenantId(), samples);
@@ -302,9 +331,9 @@ public class IngestController {
      */
     @PostMapping("/traces")
     public ResponseEntity<IngestResponse> ingestTraces(
-            @RequestBody TraceIngestRequest request
+            @Valid @RequestBody TraceIngestRequest request
     ) {
-        request.setTenantId(Validation.required(request.getTenantId(), "demo"));
+        request.setTenantId(com.example.observability.server.auth.Rbac.current().tenantId());
 
         // Tylko writer/admin danego tenanta może wysyłać trace'y.
         Rbac.requireWrite(request.getTenantId());
@@ -355,6 +384,7 @@ public class IngestController {
                     Validation.required(span.getStatus(), "OK").toUpperCase()
             );
         });
+        ingestPolicy.validate(request);
 
         /*
          * Bezpośredni zapis trace'ów do repozytorium.

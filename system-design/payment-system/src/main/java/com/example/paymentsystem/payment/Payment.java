@@ -66,6 +66,10 @@ public class Payment {
     @Column(name = "capture_mode", nullable = false)
     private CaptureMode captureMode;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_method", nullable = false)
+    private PaymentMethod paymentMethod;
+
     @Column(name = "risk_score", nullable = false)
     private int riskScore;
 
@@ -86,7 +90,15 @@ public class Payment {
     protected Payment() {
     }
 
-    public Payment(UUID merchantId, String orderId, String customerId, long amount, String currency, CaptureMode captureMode, PaymentProvider provider, int riskScore, RiskDecision riskDecision) {
+    public Payment(UUID merchantId, String orderId, String customerId, long amount, String currency,
+                   CaptureMode captureMode, PaymentProvider provider, int riskScore, RiskDecision riskDecision) {
+        this(merchantId, orderId, customerId, amount, currency, captureMode, PaymentMethod.CARD,
+                provider, riskScore, riskDecision);
+    }
+
+    public Payment(UUID merchantId, String orderId, String customerId, long amount, String currency,
+                   CaptureMode captureMode, PaymentMethod paymentMethod, PaymentProvider provider,
+                   int riskScore, RiskDecision riskDecision) {
         Instant now = Instant.now();
         this.paymentId = UUID.randomUUID();
         this.merchantId = merchantId;
@@ -99,6 +111,7 @@ public class Payment {
         this.status = PaymentStatus.CREATED;
         this.provider = provider;
         this.captureMode = captureMode;
+        this.paymentMethod = paymentMethod;
         this.riskScore = riskScore;
         this.riskDecision = riskDecision;
         this.createdAt = now;
@@ -106,11 +119,45 @@ public class Payment {
     }
 
     public void attachProviderPayment(String providerPaymentId, String checkoutUrl) {
-        require(PaymentStatus.CREATED);
+        require(PaymentStatus.PROCESSING);
         this.providerPaymentId = providerPaymentId;
         this.checkoutUrl = checkoutUrl;
         this.status = PaymentStatus.PENDING;
         touch();
+    }
+
+    public void startProviderAttempt() {
+        require(PaymentStatus.CREATED);
+        status = PaymentStatus.PROCESSING;
+        touch();
+    }
+
+    /** A network failure does not prove that the provider rejected the charge. */
+    public void markProviderOutcomeUnknown() {
+        require(PaymentStatus.PROCESSING);
+        status = PaymentStatus.UNKNOWN;
+        touch();
+    }
+
+    /** Safe retry is allowed only when the adapter proves the request was not sent. */
+    public void markProviderAttemptNotSent() {
+        require(PaymentStatus.PROCESSING);
+        // This local payment is terminal. A client retry may create a fresh
+        // attempt because the adapter proved that no external effect exists.
+        status = PaymentStatus.FAILED;
+        touch();
+    }
+
+    /** Reconciliation/webhook may resolve an ambiguous create without repeating it. */
+    public long reconcileSucceeded(String providerPaymentId) {
+        if (!(status == PaymentStatus.UNKNOWN || status == PaymentStatus.PENDING)) {
+            throw new PaymentException("Cannot reconcile success in status: " + status);
+        }
+        if (this.providerPaymentId == null) this.providerPaymentId = providerPaymentId;
+        capturedAmount = amount;
+        status = PaymentStatus.SUCCEEDED;
+        touch();
+        return amount;
     }
 
     public void applyFx(long settlementAmount, String settlementCurrency, String fxRate) {
@@ -137,21 +184,30 @@ public class Payment {
     public void authorize() {
         require(PaymentStatus.PENDING);
         if (captureMode != CaptureMode.MANUAL) throw new PaymentException("Only manual payments can be authorized");
+        if (!paymentMethod.supportsManualCapture()) {
+            throw new PaymentException("Payment method does not support manual capture: " + paymentMethod);
+        }
         this.status = PaymentStatus.AUTHORIZED;
         touch();
     }
 
     public long capture(long captureAmount) {
-        require(PaymentStatus.AUTHORIZED);
-        if (captureAmount <= 0 || captureAmount > amount) throw new PaymentException("Invalid capture amount");
-        capturedAmount = captureAmount;
-        status = PaymentStatus.CAPTURED;
+        if (!(status == PaymentStatus.AUTHORIZED || status == PaymentStatus.PARTIALLY_CAPTURED)) {
+            throw new PaymentException("Payment is not capturable in status: " + status);
+        }
+        long remainingAuthorization = amount - capturedAmount;
+        if (captureAmount <= 0 || captureAmount > remainingAuthorization) {
+            throw new PaymentException("Capture exceeds remaining authorization");
+        }
+        capturedAmount += captureAmount;
+        status = capturedAmount == amount ? PaymentStatus.CAPTURED : PaymentStatus.PARTIALLY_CAPTURED;
         touch();
         return captureAmount;
     }
 
     public long refund(long refundAmount) {
-        if (!(status == PaymentStatus.SUCCEEDED || status == PaymentStatus.CAPTURED || status == PaymentStatus.PARTIALLY_REFUNDED)) {
+        if (!(status == PaymentStatus.SUCCEEDED || status == PaymentStatus.CAPTURED
+                || status == PaymentStatus.PARTIALLY_CAPTURED || status == PaymentStatus.PARTIALLY_REFUNDED)) {
             throw new PaymentException("Payment is not refundable in status: " + status);
         }
         long refundable = capturedAmount - refundedAmount;
@@ -268,6 +324,8 @@ public class Payment {
     public CaptureMode getCaptureMode() {
         return captureMode;
     }
+
+    public PaymentMethod getPaymentMethod() { return paymentMethod; }
 
     public int getRiskScore() {
         return riskScore;

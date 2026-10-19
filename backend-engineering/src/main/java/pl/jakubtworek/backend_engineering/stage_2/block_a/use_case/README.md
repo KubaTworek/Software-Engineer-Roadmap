@@ -1,4 +1,20 @@
-# Przepływ przypadku użycia w DDD, Clean Architecture i CQRS
+# use case
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `praktyka-produkcyjna`
+> - **Uczy:** use case.
+> - **Typowy błąd:** Rozproszenie jednej lokalnej transakcji use case pomiędzy niezależne zapisy.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** `DomainEventPublisher` = `production-boundary`, `JpaOrderRepositoryAdapter` = `production-boundary`, `OutboxEventPublisher` = `production-boundary` (+1).
+> - **Granica:** Test granicy modułu lub lokalnej transakcji nie gwarantuje atomowości między procesami ani zgodności niezależnie wdrażanych klientów.
+<!-- material-card:end -->
+
+## Przepływ przypadku użycia w DDD, Clean Architecture i CQRS
+
+
 
 ## Wprowadzenie
 
@@ -7,6 +23,32 @@ Przepływ przypadku użycia, czyli use-case flow, opisuje drogę od intencji uż
 Na przykładzie operacji `PlaceOrder` można pokazać, jak powinien wyglądać poprawny przepływ w systemie e-commerce. Klient chce złożyć zamówienie. Do systemu trafia komenda zawierająca dane zamówienia. Warstwa aplikacyjna przetwarza tę komendę, tworzy lub ładuje agregat `Order`, wywołuje na nim metodę domenową, zapisuje wynik przez repozytorium i publikuje zdarzenie `OrderPlaced`. Inne części systemu, takie jak Billing lub Fulfillment, mogą następnie zareagować na to zdarzenie.
 
 Najważniejsze jest to, że każda warstwa ma własną odpowiedzialność. Serwis aplikacyjny nie powinien podejmować decyzji biznesowych. Agregat nie powinien znać bazy danych ani brokera wiadomości. Repozytorium nie powinno zawierać reguł biznesowych. Publisher nie powinien być bezpośrednio zależny od domeny w sposób naruszający dependency rule. Dzięki takiemu podziałowi system pozostaje czytelny, testowalny i odporny na zmiany technologiczne.
+
+## Kanoniczny przykład wykonywalny
+
+Ten pakiet jest punktem odniesienia dla pełnego przepływu Stage 2A. Klasy mają
+jedną, jawną odpowiedzialność:
+
+| Granica | Klasy | Odpowiedzialność |
+|---|---|---|
+| adapter wejściowy | `PlaceOrderHttpAdapter`, `PlaceOrderHttpRequest` | mapowanie kontraktu HTTP na komendę; brak decyzji biznesowych |
+| port wejściowy | `PlaceOrderUseCase` | stabilny sposób uruchomienia przypadku użycia niezależnie od transportu |
+| application | `PlaceOrderApplicationService` | orkiestracja i wyznaczenie granicy transakcji |
+| domain | `Order`, `OrderPlacedEvent` | invariants, zmiana stanu i wewnętrzny fakt biznesowy |
+| granica integracyjna | `SalesIntegrationEventMapper`, `OrderPlacedIntegrationEvent` | jawne tłumaczenie wewnętrznych Value Objects na wersjonowany published language |
+| infrastruktura | `OutboxEventPublisher`, `OutboxMessage` | serializacja i zapis komunikatu, bez bezpośredniej publikacji do brokera |
+
+Domain event i integration event nie są tym samym kontraktem. Pierwszy może
+ewoluować razem z agregatem i zawiera `OrderId`, `CustomerId` oraz `Money`.
+Drugi opuszcza moduł, dlatego zawiera typy transportowe, jawny `schemaVersion`
+i stabilną nazwę `sales.order-placed.v1`. `SalesIntegrationEventMapper` jest
+kontrolowanym miejscem, w którym te modele są rozdzielane.
+
+Test `PlaceOrderBoundaryFlowTest` uruchamia cały przepływ bez Springa i bazy.
+Testowy unit of work buforuje zapis agregatu i outboxa, zatwierdza oba razem i
+odrzuca oba przy awarii serializacji. Nie zastępuje to integracji z PostgreSQL,
+ale wykonawczo potwierdza, że oba zapisy znajdują się wewnątrz callbacku
+`TransactionManager`.
 
 ## Ogólny przepływ przypadku użycia
 
@@ -138,5 +180,5 @@ Czwartym błędem jest przekazywanie obiektów infrastrukturalnych przez wszystk
 ## Podsumowanie
 
 Przepływ przypadku użycia w dobrze zaprojektowanym systemie powinien być prosty, ale rygorystycznie podzielony na odpowiedzialności. Komenda opisuje intencję. Serwis aplikacyjny orkiestruje scenariusz. Agregat wykonuje logikę biznesową i chroni invariants. Repozytorium zapisuje agregat. Publisher rejestruje zdarzenia, najlepiej przez transactional outbox. Osobny proces publikuje komunikaty do brokera. Read model CQRS jest aktualizowany asynchronicznie na podstawie zdarzeń.
- 
+
 Takie podejście pozwala budować system, który jest odporny na zmiany technologiczne, łatwy do testowania i zgodny z zasadami DDD oraz Clean Architecture. Najważniejsza zasada brzmi: decyzje biznesowe należą do domeny, a infrastruktura jedynie umożliwia ich trwałe wykonanie i komunikację z resztą systemu.

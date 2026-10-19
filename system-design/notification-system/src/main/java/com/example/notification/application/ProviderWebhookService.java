@@ -4,8 +4,12 @@ import com.example.notification.domain.*;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.util.Map;
+import java.time.Clock;
 
 /**
  * Serwis odpowiedzialny za obsługę webhooków od zewnętrznych providerów.
@@ -34,6 +38,11 @@ public class ProviderWebhookService {
     private final Ports.NotificationJobRepository jobRepository;
     private final Ports.NotificationRepository notificationRepository;
     private final AuditService auditService;
+    private final NotificationStatusPolicy statusPolicy;
+    private final Ports.WebhookInboxRepository inboxRepository;
+    private final SuppressionService suppressionService;
+    private final Clock clock;
+    private final int inboxMaxAttempts;
 
     /**
      * Metryka liczby jobów potwierdzonych jako dostarczone.
@@ -56,11 +65,21 @@ public class ProviderWebhookService {
             Ports.NotificationJobRepository jobRepository,
             Ports.NotificationRepository notificationRepository,
             AuditService auditService,
-            MeterRegistry meterRegistry
+            NotificationStatusPolicy statusPolicy,
+            Ports.WebhookInboxRepository inboxRepository,
+            SuppressionService suppressionService,
+            MeterRegistry meterRegistry,
+            Clock clock,
+            @Value("${notification.webhook.inbox-max-attempts:20}") int inboxMaxAttempts
     ) {
         this.jobRepository = jobRepository;
         this.notificationRepository = notificationRepository;
         this.auditService = auditService;
+        this.statusPolicy = statusPolicy;
+        this.inboxRepository = inboxRepository;
+        this.suppressionService = suppressionService;
+        this.clock = clock;
+        this.inboxMaxAttempts = inboxMaxAttempts;
 
         /*
          * Licznik dostarczonych jobów.
@@ -114,6 +133,13 @@ public class ProviderWebhookService {
                 .orElseThrow(() -> new Exceptions.NotificationValidationException(
                         "Unknown providerMessageId: " + providerMessageId
                 ));
+
+        // Callbacki mogą zostać zduplikowane albo dostarczone poza kolejnością.
+        // Terminalnego wyniku nie cofamy; konflikt pozostaje w inboxie/audycie,
+        // ale nie zmienia już efektu biznesowego.
+        if (job.isTerminal()) {
+            return;
+        }
 
         /*
          * Mapujemy status od providera na wewnętrzny status joba.
@@ -186,6 +212,9 @@ public class ProviderWebhookService {
                  * Metryka bounce.
                  */
                 bouncedCounter.increment();
+                suppressionService.suppress(job.getTenantId(), job.getChannel(),
+                        job.getContactPoint().valueFor(job.getChannel()),
+                        reason == null ? "provider bounce" : reason);
             }
 
             case FAILED -> {
@@ -230,6 +259,33 @@ public class ProviderWebhookService {
         refreshNotification(job);
     }
 
+    /** Trwale przyjmuje callback przed próbą zmiany projekcji. Duplikat zwraca poprzedni wynik. */
+    @Transactional
+    public boolean accept(String eventId, String providerMessageId, ProviderWebhookStatus status, String reason) {
+        WebhookInboxEvent candidate = new WebhookInboxEvent(eventId, providerMessageId, status, reason, clock.instant());
+        WebhookInboxEvent stored = inboxRepository.saveIfAbsent(candidate);
+        if (stored.isProcessed()) return false;
+        try {
+            handle(stored.getProviderMessageId(), stored.getStatus(), stored.getReason());
+            stored.markProcessed(clock.instant());
+            inboxRepository.save(stored);
+            return true;
+        } catch (RuntimeException failure) {
+            // Callback może wyprzedzić zapis providerMessageId. Inbox pozostaje
+            // pending, a kolejne dostarczenie lub maintenance job ponowi obsługę.
+            stored.markFailed(failure.getMessage(), clock.instant(), inboxMaxAttempts);
+            inboxRepository.save(stored);
+            return false;
+        }
+    }
+
+    @Scheduled(fixedDelayString = "${notification.webhook.inbox-retry-ms:5000}")
+    public void reprocessPendingInbox() {
+        for (WebhookInboxEvent event : inboxRepository.findPending()) {
+            accept(event.getEventId(), event.getProviderMessageId(), event.getStatus(), event.getReason());
+        }
+    }
+
     /**
      * Aktualizuje status głównego Notification na podstawie statusów jego jobów.
      *
@@ -268,38 +324,7 @@ public class ProviderWebhookService {
                      * PUSH delivered,
                      * IN_APP delivered.
                      */
-                    if (!jobs.isEmpty()
-                            && jobs.stream().allMatch(j ->
-                            j.getStatus() == NotificationStatus.DELIVERED
-                    )) {
-                        n.markDelivered();
-
-                        /*
-                         * Jeśli jakikolwiek job ma BOUNCED,
-                         * całe Notification oznaczamy jako BOUNCED.
-                         *
-                         * To jest uproszczona polityka agregacji.
-                         * W większym systemie warto dodać status PARTIALLY_DELIVERED
-                         * albo PARTIALLY_FAILED.
-                         */
-                    } else if (jobs.stream().anyMatch(j ->
-                            j.getStatus() == NotificationStatus.BOUNCED
-                    )) {
-                        n.markBounced();
-
-                        /*
-                         * Jeśli jakikolwiek job ma FAILED,
-                         * całe Notification oznaczamy jako FAILED.
-                         *
-                         * To również uproszczenie.
-                         * Przy wielu kanałach jeden FAILED nie musi oznaczać,
-                         * że cała komunikacja do użytkownika się nie udała.
-                         */
-                    } else if (jobs.stream().anyMatch(j ->
-                            j.getStatus() == NotificationStatus.FAILED
-                    )) {
-                        n.markFailed();
-                    }
+                    statusPolicy.apply(n, jobs);
 
                     /*
                      * Zapisujemy zaktualizowany status Notification.

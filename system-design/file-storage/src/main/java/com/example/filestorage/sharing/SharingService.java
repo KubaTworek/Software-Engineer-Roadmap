@@ -7,6 +7,7 @@ import com.example.filestorage.file.FileMetadata;
 import com.example.filestorage.file.FileMetadataRepository;
 import com.example.filestorage.folder.Folder;
 import com.example.filestorage.folder.FolderRepository;
+import com.example.filestorage.sync.ChangeLogService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -92,6 +93,7 @@ public class SharingService {
      * Zawiera np. publicBaseUrl używany do zbudowania pełnego publicznego linku.
      */
     private final SharingProperties sharingProperties;
+    private final ChangeLogService changeLogService;
 
     /**
      * Generator kryptograficznie bezpiecznych tokenów publicznych linków.
@@ -108,7 +110,8 @@ public class SharingService {
                           FileMetadataRepository fileRepository,
                           FolderRepository folderRepository,
                           AuditService auditService,
-                          SharingProperties sharingProperties) {
+                          SharingProperties sharingProperties,
+                          ChangeLogService changeLogService) {
         this.accessControlService = accessControlService;
         this.permissionRepository = permissionRepository;
         this.shareLinkRepository = shareLinkRepository;
@@ -117,6 +120,7 @@ public class SharingService {
         this.folderRepository = folderRepository;
         this.auditService = auditService;
         this.sharingProperties = sharingProperties;
+        this.changeLogService = changeLogService;
     }
 
     /**
@@ -151,7 +155,10 @@ public class SharingService {
                 "File shared with " + request.email()
         );
 
-        return PermissionResponse.from(permissionRepository.save(permission));
+        permission = permissionRepository.save(permission);
+        changeLogService.record(actorUserId, file.getOwnerId(), ResourceType.FILE, file.getId(),
+                "FILE_SHARED", "{}");
+        return PermissionResponse.from(permission);
     }
 
     /**
@@ -182,7 +189,10 @@ public class SharingService {
                 "Folder shared with " + request.email()
         );
 
-        return PermissionResponse.from(permissionRepository.save(permission));
+        permission = permissionRepository.save(permission);
+        changeLogService.record(actorUserId, folder.getOwnerId(), ResourceType.FOLDER, folder.getId(),
+                "FOLDER_SHARED", "{}");
+        return PermissionResponse.from(permission);
     }
 
     /**
@@ -230,11 +240,11 @@ public class SharingService {
         ResourcePermission permission = permissionRepository.findById(permissionId)
                 .orElseThrow(() -> new NoSuchElementException("Permission not found"));
 
-        /*
-         * Tylko owner zasobu może odwołać permission.
-         */
-        requireOwner(actorUserId, permission.getResourceType(), permission.getResourceId());
-
+        // Zdarzenie musi zostac rozeslane przed cofnieciem ACL, aby odbiorca
+        // dowiedzial sie, ze powinien usunac lokalna kopie z widoku synchronizacji.
+        UUID ownerId = requireOwner(actorUserId, permission.getResourceType(), permission.getResourceId());
+        changeLogService.record(actorUserId, ownerId, permission.getResourceType(),
+                permission.getResourceId(), "PERMISSION_REVOKED", "{}");
         permission.revoke();
         permissionRepository.save(permission);
 
@@ -499,12 +509,11 @@ public class SharingService {
      *
      * Używane przy odwoływaniu permissionów i publicznych linków.
      */
-    private void requireOwner(UUID actorUserId, ResourceType type, UUID resourceId) {
+    private UUID requireOwner(UUID actorUserId, ResourceType type, UUID resourceId) {
         if (type == ResourceType.FILE) {
-            accessControlService.requireFileOwner(actorUserId, resourceId);
-        } else {
-            accessControlService.requireFolderOwner(actorUserId, resourceId);
+            return accessControlService.requireFileOwner(actorUserId, resourceId).getOwnerId();
         }
+        return accessControlService.requireFolderOwner(actorUserId, resourceId).getOwnerId();
     }
 
     /**

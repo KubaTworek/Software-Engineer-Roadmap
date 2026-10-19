@@ -13,7 +13,7 @@ class OutboxEventTest {
 
         assertThat(event.getStatus()).isEqualTo(OutboxStatus.NEW);
 
-        event.markEnqueued();
+        event.markEnqueued("test-worker");
         assertThat(event.getStatus()).isEqualTo(OutboxStatus.ENQUEUED);
         assertThat(event.getAttempts()).isEqualTo(1);
 

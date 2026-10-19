@@ -1,4 +1,20 @@
-# Model domenowy i kontrakty eventów w architekturze event-driven
+# domain
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `praktyka-produkcyjna`
+> - **Uczy:** domain.
+> - **Typowy błąd:** Reakcja na event bez sprawdzenia dozwolonego przejścia stanu procesu.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** brak jawnej roli w nazwach klas; intencję przykładu określają opis i test, nie sam brak prefiksu.
+> - **Granica:** Fake broker sprawdza logikę obsługi; rebalance, offsety i trwałość wymagają brokera, a efekt zewnętrzny własnej idempotencji.
+<!-- material-card:end -->
+
+## Model domenowy i kontrakty eventów w architekturze event-driven
+
+
 
 ## Wprowadzenie
 

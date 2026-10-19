@@ -1,6 +1,6 @@
 package pl.jakubtworek.backend_engineering.stage_3.block_b.tracing;
 
-import io.opentelemetry.api.trace.Span;
+import java.util.Objects;
 
 /**
  * Example repository wrapper with a PostgreSQL span.
@@ -14,17 +14,26 @@ public final class TracedOrderRepository {
     private final OrderRepository orderRepository;
 
     public TracedOrderRepository(CheckoutSpanFactory spanFactory, OrderRepository orderRepository) {
-        this.spanFactory = spanFactory;
-        this.orderRepository = orderRepository;
+        this.spanFactory = Objects.requireNonNull(spanFactory, "spanFactory must not be null");
+        this.orderRepository = Objects.requireNonNull(orderRepository, "orderRepository must not be null");
     }
 
     public OrderRecord findOrder(String orderId) {
-        try (SpanScope ignored = spanFactory.startPostgresSelectOrdersSpan()) {
-            return orderRepository.findOrder(orderId);
-        } catch (RuntimeException exception) {
-            SpanErrorHandler.recordException(Span.current(), exception);
-            throw exception;
+        try (SpanScope spanScope = spanFactory.startPostgresSelectOrdersSpan()) {
+            try {
+                return orderRepository.findOrder(requireNonBlank(orderId, "orderId"));
+            } catch (RuntimeException exception) {
+                SpanErrorHandler.recordException(spanScope.span(), exception);
+                throw exception;
+            }
         }
+    }
+
+    private static String requireNonBlank(String value, String fieldName) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(fieldName + " must not be blank");
+        }
+        return value;
     }
 
     /**
@@ -39,5 +48,16 @@ public final class TracedOrderRepository {
             long totalCents,
             String currency
     ) {
+        public OrderRecord {
+            if (id == null || id.isBlank()) {
+                throw new IllegalArgumentException("id must not be blank");
+            }
+            if (totalCents < 0) {
+                throw new IllegalArgumentException("totalCents must not be negative");
+            }
+            if (currency == null || currency.isBlank()) {
+                throw new IllegalArgumentException("currency must not be blank");
+            }
+        }
     }
 }

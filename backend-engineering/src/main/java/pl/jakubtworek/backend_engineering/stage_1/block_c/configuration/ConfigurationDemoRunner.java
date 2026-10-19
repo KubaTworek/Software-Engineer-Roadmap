@@ -2,6 +2,7 @@ package pl.jakubtworek.backend_engineering.stage_1.block_c.configuration;
 
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.core.env.Environment;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 import java.util.Arrays;
@@ -10,6 +11,7 @@ import java.util.Arrays;
  * Demonstrates active profiles and configuration loading.
  */
 @Component
+@Profile("demo")
 public class ConfigurationDemoRunner
         implements CommandLineRunner {
 

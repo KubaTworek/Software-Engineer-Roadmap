@@ -10,6 +10,9 @@ public interface OutboxEventRepository {
     List<OutboxEvent> findAll(int limit);
     List<OutboxEvent> findByStatus(OutboxEventStatus status, int limit);
 
+    /** Atomowo rezerwuje batch, aby dwie repliki nie opublikowały go równocześnie. */
+    List<OutboxEvent> claimNew(int limit);
+
     default List<OutboxEvent> findNew(int limit) {
         return findByStatus(OutboxEventStatus.NEW, limit);
     }

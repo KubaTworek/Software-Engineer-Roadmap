@@ -3,6 +3,7 @@ package com.example.videostreaming.storage;
 import io.minio.*;
 import io.minio.http.Method;
 import io.minio.messages.Item;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.io.InputStream;
@@ -40,6 +41,7 @@ public class ObjectStorageService {
      * na AWS S3, GCS albo Azure Blob Storage.
      */
     private final MinioClient minio;
+    private final MinioClient publicMinio;
 
     /**
      * Konfiguracja storage.
@@ -51,8 +53,11 @@ public class ObjectStorageService {
      */
     private final StorageProperties props;
 
-    public ObjectStorageService(MinioClient minio, StorageProperties props) {
+    public ObjectStorageService(MinioClient minio,
+                                @Qualifier("publicMinioClient") MinioClient publicMinio,
+                                StorageProperties props) {
         this.minio = minio;
+        this.publicMinio = publicMinio;
         this.props = props;
     }
 
@@ -71,13 +76,27 @@ public class ObjectStorageService {
      * @return tymczasowy URL pozwalający wykonać HTTP PUT
      */
     public String presignedPutUrl(String objectKey) throws Exception {
-        return minio.getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
+        return publicMinio.getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
                 .method(Method.PUT)
                 .bucket(props.bucket())
                 .object(objectKey)
                 .expiry(props.presignedUploadExpiryMinutes(), TimeUnit.MINUTES)
                 .build());
     }
+
+    /**
+     * Potwierdza stan obiektu po bezpośrednim uploadzie. Samo wywołanie
+     * endpointu `complete` nie dowodzi, że klient wysłał deklarowany plik.
+     */
+    public ObjectMetadata metadata(String objectKey) throws Exception {
+        StatObjectResponse response = minio.statObject(StatObjectArgs.builder()
+                .bucket(props.bucket())
+                .object(objectKey)
+                .build());
+        return new ObjectMetadata(response.size(), response.contentType(), response.etag());
+    }
+
+    public record ObjectMetadata(long size, String contentType, String entityTag) {}
 
     /**
      * Generuje tymczasowy signed URL do pobrania obiektu.
@@ -94,7 +113,7 @@ public class ObjectStorageService {
      * @return tymczasowy URL pozwalający wykonać HTTP GET
      */
     public String presignedGetUrl(String objectKey, int minutes) throws Exception {
-        return minio.getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
+        return publicMinio.getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
                 .method(Method.GET)
                 .bucket(props.bucket())
                 .object(objectKey)

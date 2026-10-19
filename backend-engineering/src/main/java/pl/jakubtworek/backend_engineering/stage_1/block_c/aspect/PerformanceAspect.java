@@ -28,7 +28,7 @@ public class PerformanceAspect {
      * proceed() MUST be called,
      * otherwise target method will never execute.
      */
-    @Around("execution(* demo.aop.service.*.*(..))")
+    @Around("@within(org.springframework.stereotype.Service)")
     public Object measureExecutionTime(
             ProceedingJoinPoint proceedingJoinPoint
     ) throws Throwable {

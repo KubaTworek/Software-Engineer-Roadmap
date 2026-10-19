@@ -20,4 +20,11 @@ public record OrderPaidEvent(
                                      String correlationId, String requestId, String traceId) {
         return new OrderPaidEvent(eventId, orderId, reservationId, userId, amount, Instant.now(), correlationId, requestId, traceId);
     }
+
+    /** Wariant z jawnym czasem eliminuje niedeterministyczny zegar z testów workflow. */
+    public static OrderPaidEvent at(UUID eventId, UUID orderId, UUID reservationId, String userId, BigDecimal amount,
+                                    Instant occurredAt, String correlationId, String requestId, String traceId) {
+        return new OrderPaidEvent(eventId, orderId, reservationId, userId, amount, occurredAt,
+                correlationId, requestId, traceId);
+    }
 }

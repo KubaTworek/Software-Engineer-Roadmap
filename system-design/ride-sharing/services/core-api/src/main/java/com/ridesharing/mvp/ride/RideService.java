@@ -4,13 +4,13 @@ import com.ridesharing.mvp.common.ApiException;
 import com.ridesharing.mvp.driver.Driver;
 import com.ridesharing.mvp.driver.DriverService;
 import com.ridesharing.mvp.maps.MapsClient;
-import com.ridesharing.mvp.matching.MatchingService;
+import com.ridesharing.mvp.matching.MatchingRequestedEvent;
 import com.ridesharing.mvp.outbox.OutboxService;
-import com.ridesharing.mvp.payment.PaymentService;
+import com.ridesharing.mvp.payment.PaymentAuthorizationRequestedEvent;
+import com.ridesharing.mvp.payment.PaymentCaptureRequestedEvent;
 import com.ridesharing.mvp.user.AppUser;
-import com.ridesharing.mvp.websocket.RideWebSocketPublisher;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.annotation.Lazy;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,6 +20,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.LinkedHashMap;
 
 /**
  * Główny serwis domenowy przejazdów.
@@ -84,7 +85,7 @@ public class RideService {
      * Liczy cenę orientacyjną na podstawie dystansu i czasu.
      * W późniejszych etapach może zostać zastąpiony osobnym Pricing Service.
      */
-    private final PricingService pricingService;
+    private final RidePricingPort pricingService;
 
     /**
      * Serwis płatności.
@@ -96,8 +97,6 @@ public class RideService {
      * - authorize: sprawdza/blokuje środki przed kursem,
      * - capture: pobiera finalną kwotę po zakończeniu kursu.
      */
-    private final PaymentService paymentService;
-
     /**
      * Serwis kierowców.
      *
@@ -114,7 +113,7 @@ public class RideService {
      * Wysyła bieżące aktualizacje przejazdu do aplikacji pasażera/kierowcy.
      * To zapewnia real-time feedback bez konieczności ciągłego pollingu.
      */
-    private final RideWebSocketPublisher publisher;
+    private final ApplicationEventPublisher applicationEvents;
 
     /**
      * Serwis outbox.
@@ -125,18 +124,6 @@ public class RideService {
      * Dzięki temu zmiana statusu przejazdu i event są spójne transakcyjnie.
      */
     private final OutboxService outbox;
-
-    /**
-     * MatchingService uruchamia szukanie kierowcy.
-     *
-     * @Lazy najpewniej służy do przerwania cyklicznej zależności:
-     * RideService potrzebuje MatchingService, a MatchingService woła z powrotem RideService.
-     *
-     * Działa, ale architektonicznie lepszy byłby event:
-     * RideRequested -> Kafka/outbox -> Matching consumer.
-     */
-    @Lazy
-    private final MatchingService matchingService;
 
     /**
      * Liczy orientacyjną cenę przejazdu bez tworzenia przejazdu.
@@ -158,6 +145,8 @@ public class RideService {
         );
 
         var price = pricingService.estimatePrice(
+                request.cityId(),
+                request.vehicleType(),
                 route.distanceKm(),
                 route.durationMinutes()
         );
@@ -179,10 +168,8 @@ public class RideService {
      * 1. Liczy trasę i cenę.
      * 2. Tworzy Ride w statusie REQUESTED.
      * 3. Zapisuje status początkowy do historii.
-     * 4. Przechodzi do MATCHING.
-     * 5. Autoryzuje płatność.
-     * 6. Publikuje event RideRequested.
-     * 7. Uruchamia asynchroniczny matching.
+     * 4. Publikuje trwały event i zleca autoryzację po commicie.
+     * 5. Dopiero sukces autoryzacji przełącza przejazd do MATCHING.
      *
      * Metoda jest transakcyjna, więc zapis przejazdu, historia i outbox event
      * są częścią jednej operacji domenowej.
@@ -197,6 +184,8 @@ public class RideService {
         );
 
         var price = pricingService.estimatePrice(
+                request.cityId(),
+                request.vehicleType(),
                 route.distanceKm(),
                 route.durationMinutes()
         );
@@ -205,6 +194,7 @@ public class RideService {
 
         var ride = Ride.builder()
                 .id(UUID.randomUUID())
+                .cityId(request.cityId())
                 .passenger(passenger)
                 .status(RideStatus.REQUESTED)
                 .pickupLat(request.pickup().lat())
@@ -230,31 +220,8 @@ public class RideService {
          */
         recordInitialStatus(ride, passenger.getId(), "ride requested");
 
-        /*
-         * Po utworzeniu przejazdu system od razu przechodzi do MATCHING.
-         * State machine waliduje, czy REQUESTED -> MATCHING jest dozwolone.
-         */
-        transition(ride, RideStatus.MATCHING, "SYSTEM", null, "matching started");
-
-        /*
-         * Autoryzacja płatności odbywa się przed przypisaniem/przed startem kursu.
-         * To ogranicza ryzyko wykonania kursu bez możliwości pobrania płatności.
-         */
-        paymentService.authorize(ride);
-
-        /*
-         * Event idzie dwutorowo:
-         * - WebSocket: szybka aktualizacja UI,
-         * - Outbox: trwały event do Kafki.
-         */
-        emit(ride, "RideRequested", "Ride requested; matching started");
-
-        /*
-         * Matching jest asynchroniczny.
-         * Pasażer dostaje odpowiedź z aktualnym statusem, a znalezienie kierowcy
-         * przyjdzie później przez WebSocket/polling.
-         */
-        matchingService.matchAsync(ride, this);
+        emit(ride, "RideRequested", "Ride requested; payment authorization pending");
+        applicationEvents.publishEvent(new PaymentAuthorizationRequestedEvent(ride.getId()));
 
         return RideDto.from(ride);
     }
@@ -268,6 +235,52 @@ public class RideService {
      */
     public RideDto get(UUID rideId) {
         return RideDto.from(find(rideId));
+    }
+
+    /**
+     * Ownership jest regułą aplikacyjną, a nie wyłącznie detalem kontrolera.
+     * Dzięki temu przyszły adapter GraphQL lub gRPC nie ominie autoryzacji odczytu.
+     */
+    public RideDto getForParticipant(AppUser user, UUID rideId) {
+        var ride = find(rideId);
+        boolean passenger = ride.getPassenger().getId().equals(user.getId());
+        boolean driver = ride.getDriver() != null
+                && ride.getDriver().getUser().getId().equals(user.getId());
+        if (!passenger && !driver) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "Not a participant of this ride");
+        }
+        return RideDto.from(ride);
+    }
+
+    /** Snapshot agregatu potrzebny przez krok płatniczy wykonywany po commicie. */
+    @Transactional(readOnly = true)
+    public Ride paymentContext(UUID rideId) {
+        // Koordynator płatności działa po commicie i często w innym wątku.
+        // Ładujemy tu jawnie relacje używane przez PaymentPersistenceService,
+        // zamiast polegać na sesji Hibernate, która po wyjściu z metody jest zamknięta.
+        return rides.findPaymentContextById(rideId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Ride not found"));
+    }
+
+    @Transactional
+    public void startMatchingAfterAuthorization(UUID rideId) {
+        var ride = locked(rideId);
+        if (ride.getStatus() != RideStatus.REQUESTED) {
+            return;
+        }
+        transition(ride, RideStatus.MATCHING, "SYSTEM", null, "payment authorized; matching started");
+        emit(ride, "RideMatchingStarted", "Payment authorized; matching started");
+        requestMatchingAfterCommit(ride);
+    }
+
+    @Transactional
+    public void markFailedBeforeMatching(UUID rideId, String reason) {
+        var ride = locked(rideId);
+        if (ride.getStatus() != RideStatus.REQUESTED) {
+            return;
+        }
+        transition(ride, RideStatus.FAILED, "SYSTEM", null, reason);
+        emit(ride, "RideFailed", reason);
     }
 
     /**
@@ -311,14 +324,15 @@ public class RideService {
         var ride = locked(rideId);
 
         if (ride.getStatus() != RideStatus.MATCHING) {
-            driverService.markAvailable(driverId);
+            driverService.markAvailable(driverId, rideId);
             return;
         }
 
         var driver = driverService.getById(driverId);
 
         ride.setDriver(driver);
-        ride.setAcceptedAt(Instant.now());
+        ride.setOfferedAt(Instant.now());
+        ride.setOfferExpiresAt(Instant.now().plusSeconds(20));
 
         /*
          * W tej implementacji DRIVER_ASSIGNED oznacza przypisanie/ofertę kierowcy.
@@ -369,7 +383,9 @@ public class RideService {
                 "driver accepted"
         );
 
-        driverService.markOnTrip(driver.getId());
+        driverService.markOnTrip(driver.getId(), rideId);
+        ride.setAcceptedAt(Instant.now());
+        ride.setOfferExpiresAt(null);
 
         rides.save(ride);
 
@@ -407,13 +423,13 @@ public class RideService {
                 "driver rejected; rematching"
         );
 
-        driverService.markAvailable(driver.getId());
+        driverService.markAvailable(driver.getId(), rideId);
 
         rides.save(ride);
 
         emit(ride, "DriverRejectedRide", "Driver rejected; matching restarted");
 
-        matchingService.matchAsync(ride, this);
+        requestMatchingAfterCommit(ride);
 
         return RideDto.from(ride);
     }
@@ -535,13 +551,13 @@ public class RideService {
          * Jeżeli capture się nie uda, PaymentService powinien oznaczyć płatność
          * jako failed/pending i uruchomić retry/reconciliation.
          */
-        paymentService.capture(ride);
+        applicationEvents.publishEvent(new PaymentCaptureRequestedEvent(ride.getId()));
 
         /*
          * Po zakończeniu kursu kierowca wraca do puli dostępnych.
          * Produkcyjnie warto sprawdzić, czy kierowca nie przełączył się na OFFLINE.
          */
-        driverService.markAvailable(driver.getId());
+        driverService.markAvailable(driver.getId(), rideId);
 
         emit(
                 ride,
@@ -599,7 +615,7 @@ public class RideService {
          * Jeżeli kierowca był już przypisany, zwalniamy go do kolejnych zleceń.
          */
         if (driver != null) {
-            driverService.markAvailable(driver.getId());
+            driverService.markAvailable(driver.getId(), rideId);
         }
 
         emit(ride, "RideCancelledByPassenger", "Ride cancelled by passenger");
@@ -642,7 +658,7 @@ public class RideService {
         rides.save(ride);
 
         if (driver != null) {
-            driverService.markAvailable(driver.getId());
+            driverService.markAvailable(driver.getId(), rideId);
         }
 
         emit(ride, "RideForceCancelled", "Ride force-cancelled by admin");
@@ -799,17 +815,53 @@ public class RideService {
      * supportu, analityki, data warehouse albo powiadomień.
      */
     private void emit(Ride ride, String eventType, String message) {
-        publisher.publishRideEvent(ride, message);
+        var payload = new LinkedHashMap<String, Object>();
+        payload.put("rideId", ride.getId().toString());
+        payload.put("cityId", ride.getCityId());
+        payload.put("status", ride.getStatus().name());
+        payload.put("message", message);
+        payload.put("passengerUsername", ride.getPassenger().getEmail());
+        if (ride.getDriver() != null) {
+            payload.put("driverUsername", ride.getDriver().getUser().getEmail());
+        }
 
         outbox.rideEvent(
                 ride.getId(),
                 eventType,
-                Map.of(
-                        "rideId", ride.getId().toString(),
-                        "status", ride.getStatus().name(),
-                        "message", message,
-                        "occurredAt", Instant.now().toString()
-                )
+                payload
         );
+    }
+
+    /**
+     * Timeout jest przejściem domenowym, nie prostym ustawieniem AVAILABLE.
+     * Ponowna walidacja pod blokadą chroni przed spóźnionym schedulerem, który
+     * próbowałby cofnąć zaakceptowaną już ofertę.
+     */
+    @Transactional
+    public void expireOffer(UUID rideId, UUID driverId) {
+        var ride = locked(rideId);
+        if (ride.getStatus() != RideStatus.DRIVER_ASSIGNED
+                || ride.getDriver() == null
+                || !ride.getDriver().getId().equals(driverId)
+                || ride.getOfferExpiresAt() == null
+                || ride.getOfferExpiresAt().isAfter(Instant.now())) {
+            return;
+        }
+
+        ride.setDriver(null);
+        ride.setOfferExpiresAt(null);
+        transition(ride, RideStatus.MATCHING, "SYSTEM", null, "driver offer expired");
+        driverService.markAvailable(driverId, rideId);
+        emit(ride, "DriverOfferExpired", "Driver did not answer; matching restarted");
+        requestMatchingAfterCommit(ride);
+    }
+
+    private void requestMatchingAfterCommit(Ride ride) {
+        applicationEvents.publishEvent(new MatchingRequestedEvent(
+                ride.getId(),
+                ride.getCityId(),
+                ride.getPickupLat(),
+                ride.getPickupLng()
+        ));
     }
 }

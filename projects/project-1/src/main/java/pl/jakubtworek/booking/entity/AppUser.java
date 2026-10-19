@@ -148,13 +148,6 @@ public class AppUser {
     }
 
     /**
-     * Gettery używane przez:
-     * - security,
-     * - JwtTokenService,
-     * - AuthService,
-     * - komponenty autoryzacyjne,
-     * - mapowanie DTO.
-     *
      * Brak setterów jest celowy. W prostym modelu użytkownik jest tworzony
      * z konkretną rolą i organizacją.
      *

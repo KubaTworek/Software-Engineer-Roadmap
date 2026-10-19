@@ -9,7 +9,9 @@ public record ConversationMemberResponse(
         String displayName,
         ConversationRole role,
         Instant joinedAt,
-        Instant lastReadAt
+        Instant lastReadAt,
+        long joinedSequence,
+        int membershipEpoch
 ) {
     public static ConversationMemberResponse from(ConversationMember member) {
         return new ConversationMemberResponse(
@@ -18,7 +20,9 @@ public record ConversationMemberResponse(
                 member.getUser().getDisplayName(),
                 member.getRole(),
                 member.getJoinedAt(),
-                member.getLastReadAt()
+                member.getLastReadAt(),
+                member.getJoinedSequence(),
+                member.getMembershipEpoch()
         );
     }
 }

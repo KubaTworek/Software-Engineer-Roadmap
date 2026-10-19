@@ -43,8 +43,9 @@ public class TryLockAccount {
                     return;
                 }
 
-            } catch (InterruptedException ignored) {
-                // Interrupted during tryLock timeout wait
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                return;
             } finally {
 
                 // Release locks that were successfully acquired

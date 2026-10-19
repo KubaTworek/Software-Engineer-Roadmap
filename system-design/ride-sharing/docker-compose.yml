@@ -9,6 +9,11 @@ services:
       - "5432:5432"
     volumes:
       - postgres_core:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rides -d ridesharing"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   postgres-warehouse:
     image: postgres:16
@@ -20,11 +25,21 @@ services:
       - "5434:5432"
     volumes:
       - postgres_warehouse:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U warehouse -d rides_warehouse"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   redis:
     image: redis:7
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.6.1
@@ -50,14 +65,19 @@ services:
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
 
   core-api:
+    profiles: ["distributed"]
     build: ./services/core-api
     depends_on:
-      - postgres-core
-      - redis
-      - kafka
+      postgres-core:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_started
     ports:
       - "8080:8080"
     environment:
+      SPRING_PROFILES_ACTIVE: distributed
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-core:5432/ridesharing
       SPRING_DATASOURCE_USERNAME: rides
       SPRING_DATASOURCE_PASSWORD: rides
@@ -74,6 +94,7 @@ services:
       APP_JWT_SECRET: change-me-change-me-change-me-change-me-change-me
 
   location-service:
+    profiles: ["distributed"]
     build: ./services/location-service
     depends_on:
       - redis
@@ -85,6 +106,7 @@ services:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
 
   realtime-gateway-1:
+    profiles: ["distributed"]
     build: ./services/realtime-gateway
     depends_on:
       - redis
@@ -98,6 +120,7 @@ services:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
 
   realtime-gateway-2:
+    profiles: ["distributed"]
     build: ./services/realtime-gateway
     depends_on:
       - redis
@@ -111,6 +134,7 @@ services:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
 
   pricing-service:
+    profiles: ["distributed"]
     build: ./services/pricing-service
     depends_on:
       - kafka
@@ -120,6 +144,7 @@ services:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
 
   fraud-service:
+    profiles: ["distributed"]
     build: ./services/fraud-service
     depends_on:
       - kafka
@@ -129,6 +154,7 @@ services:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
 
   data-warehouse-consumer:
+    profiles: ["distributed"]
     build: ./services/data-warehouse-consumer
     depends_on:
       - kafka
@@ -143,6 +169,7 @@ services:
 
 
   ml-eta-service:
+    profiles: ["distributed"]
     build: ./services/ml-eta-service
     depends_on:
       - kafka
@@ -153,6 +180,7 @@ services:
       APP_REGION: eu-central
 
   ml-matching-service:
+    profiles: ["distributed"]
     build: ./services/ml-matching-service
     depends_on:
       - kafka
@@ -163,6 +191,7 @@ services:
       APP_REGION: eu-central
 
   demand-prediction-service:
+    profiles: ["distributed"]
     build: ./services/demand-prediction-service
     depends_on:
       - kafka
@@ -173,6 +202,7 @@ services:
       APP_REGION: eu-central
 
   driver-positioning-service:
+    profiles: ["distributed"]
     build: ./services/driver-positioning-service
     depends_on:
       - demand-prediction-service
@@ -184,6 +214,7 @@ services:
       APP_REGION: eu-central
 
   dynamic-pricing-service:
+    profiles: ["distributed"]
     build: ./services/dynamic-pricing-service
     depends_on:
       - demand-prediction-service
@@ -195,6 +226,7 @@ services:
       APP_REGION: eu-central
 
   region-control-plane:
+    profiles: ["distributed"]
     build: ./services/region-control-plane
     depends_on:
       - kafka
@@ -205,6 +237,7 @@ services:
       APP_REGION: eu-central
 
   prometheus:
+    profiles: ["observability"]
     image: prom/prometheus:v2.52.0
     ports:
       - "9090:9090"

@@ -1,9 +1,9 @@
-package pl.jakubtworek.backend_engineering.stage_2.block_c.workshop.src.main.java.com.example.demoapi.web;
+package com.example.demoapi.web;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
-import pl.jakubtworek.backend_engineering.stage_2.block_c.workshop.src.main.java.com.example.demoapi.debug.DebugInfoService;
+import com.example.demoapi.debug.DebugInfoService;
 
 import java.util.Map;
 

@@ -2,13 +2,11 @@ package pl.jakubtworek.backend_engineering.stage_1.block_c.test;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
-import pl.jakubtworek.backend_engineering.stage_1.block_c.test.User;
-import pl.jakubtworek.backend_engineering.stage_1.block_c.test.UserRepository;
-import pl.jakubtworek.backend_engineering.stage_1.block_c.test.UserService;
-
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -47,5 +45,15 @@ public class UserServiceUnitTest {
 
         assertThat(result.getName())
                 .isEqualTo("John");
+        verify(userRepository).findById(1L);
+    }
+
+    @Test
+    void shouldExposeTheDomainMeaningOfAMissingUser() {
+        when(userRepository.findById(404L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> userService.getUser(404L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("User not found");
     }
 }

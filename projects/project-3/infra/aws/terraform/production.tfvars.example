@@ -1,0 +1,11 @@
+# Ten plik pokazuje różnicę między tanim laboratorium dev i profilem odpornym.
+# Sekrety podawaj przez TF_VAR_database_password / TF_VAR_mq_password albo CI secrets;
+# nie commituj ich do tfvars ani nie traktuj Terraform state jako secret managera.
+environment              = "production"
+container_image_tag      = "git-sha-immutable-tag"
+desired_count            = 2
+min_capacity             = 2
+max_capacity             = 12
+enable_high_availability = true
+protect_data             = true
+rds_backup_retention_days = 35

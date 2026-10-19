@@ -16,7 +16,7 @@ public class LoggingBeanAspect {
     /**
      * Intercepts all methods from PaymentServiceImpl.
      */
-    @Around("execution(* demo.proxy.PaymentServiceImpl.*(..))")
+    @Around("execution(* pl.jakubtworek.backend_engineering.stage_1.block_c.bean.PaymentServiceImpl.*(..))")
     public Object log(ProceedingJoinPoint joinPoint) throws Throwable {
 
         System.out.println(">>> BEFORE METHOD");

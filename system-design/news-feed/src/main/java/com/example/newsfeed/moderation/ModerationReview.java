@@ -23,4 +23,22 @@ public class ModerationReview {
     }
     public UUID getId() { return id; }
     public String getStatus() { return status; }
+    public UUID getEntityId() { return entityId; }
+    public String getEntityType() { return entityType; }
+    public double getAutomatedScore() { return automatedScore; }
+    public String getReason() { return reason; }
+    public UUID getReviewerId() { return reviewerId; }
+    public Instant getCreatedAt() { return createdAt; }
+    public Instant getReviewedAt() { return reviewedAt; }
+
+    /** Decyzja jest jednokrotna; ponowne kliknięcie nie może nadpisać audytu. */
+    public void decide(String decision, UUID reviewerId, String reason, Instant now) {
+        if (!"needs_review".equals(status)) {
+            throw new IllegalStateException("Moderation review has already been decided.");
+        }
+        this.status = decision;
+        this.reviewerId = reviewerId;
+        this.reviewedAt = now;
+        if (reason != null && !reason.isBlank()) this.reason = reason.trim();
+    }
 }

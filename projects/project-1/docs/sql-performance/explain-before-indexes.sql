@@ -1,5 +1,5 @@
 -- Run on a disposable local database only.
--- This intentionally removes Stage 5 indexes so you can observe sequential scans / expensive sorts.
+-- This intentionally removes the performance indexes so you can observe sequential scans / expensive sorts.
 
 DROP INDEX IF EXISTS idx_event_city_category_start_time;
 DROP INDEX IF EXISTS idx_events_city_category_starts_at;

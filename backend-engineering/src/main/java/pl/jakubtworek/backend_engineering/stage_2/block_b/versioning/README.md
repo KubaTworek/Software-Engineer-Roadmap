@@ -1,4 +1,20 @@
-# Wersjonowanie schematów i zgodność kontraktów zdarzeń
+# versioning
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `praktyka-produkcyjna`
+> - **Uczy:** versioning.
+> - **Typowy błąd:** Zmiana znaczenia istniejącego pola bez nowej wersji kontraktu.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=SchemaEvolutionTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** brak jawnej roli w nazwach klas; intencję przykładu określają opis i test, nie sam brak prefiksu.
+> - **Granica:** Fake broker sprawdza logikę obsługi; rebalance, offsety i trwałość wymagają brokera, a efekt zewnętrzny własnej idempotencji.
+<!-- material-card:end -->
+
+## Wersjonowanie schematów i zgodność kontraktów zdarzeń
+
+
 
 W systemach event-driven kontrakt zdarzenia pełni rolę publicznego API między serwisami. Gdy jeden serwis publikuje zdarzenie, inne usługi mogą zacząć od niego zależeć, często bez bezpośredniej wiedzy zespołu rozwijającego producenta. Z tego powodu zmiana struktury zdarzenia powinna być traktowana podobnie jak zmiana publicznego endpointu REST albo interfejsu biblioteki. Nie jest to wyłącznie techniczna modyfikacja klasy lub schematu, ale decyzja wpływająca na zgodność całego systemu.
 

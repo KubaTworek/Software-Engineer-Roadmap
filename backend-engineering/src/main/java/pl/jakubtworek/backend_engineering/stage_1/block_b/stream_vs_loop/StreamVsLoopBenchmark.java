@@ -6,14 +6,18 @@ import org.openjdk.jmh.annotations.Fork;
 import org.openjdk.jmh.annotations.Measurement;
 import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
+import org.openjdk.jmh.annotations.Param;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
+import pl.jakubtworek.backend_engineering.stage_1.block_b.benchmarking.BenchmarkDimension;
+import pl.jakubtworek.backend_engineering.stage_1.block_b.benchmarking.Measures;
 
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 
+@Measures(BenchmarkDimension.THROUGHPUT)
 @BenchmarkMode(Mode.Throughput)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 @Warmup(iterations = 5, time = 1)
@@ -22,7 +26,8 @@ import java.util.stream.IntStream;
 @State(Scope.Thread)
 public class StreamVsLoopBenchmark {
 
-    private static final int SIZE = 1_000_000;
+    @Param({"1000", "100000", "1000000"})
+    int size;
 
     private int[] primitiveArray;
     private List<Integer> boxedList;
@@ -31,15 +36,15 @@ public class StreamVsLoopBenchmark {
     public void setup() {
         // Primitive array avoids boxing.
         // This is usually the most allocation-friendly representation for hot numeric paths.
-        primitiveArray = new int[SIZE];
+        primitiveArray = new int[size];
 
-        for (int i = 0; i < SIZE; i++) {
+        for (int i = 0; i < size; i++) {
             primitiveArray[i] = i;
         }
 
         // This list intentionally contains boxed Integer values.
         // It is useful for showing the cost of boxing and object-based collections.
-        boxedList = IntStream.range(0, SIZE)
+        boxedList = IntStream.range(0, size)
                 .boxed()
                 .toList();
     }

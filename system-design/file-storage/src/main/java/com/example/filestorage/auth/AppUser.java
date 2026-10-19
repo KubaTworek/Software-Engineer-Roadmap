@@ -27,6 +27,9 @@ public class AppUser {
     @Column(name = "storage_used_bytes", nullable = false)
     private long storageUsedBytes;
 
+    @Column(name = "storage_reserved_bytes", nullable = false)
+    private long storageReservedBytes;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -42,6 +45,7 @@ public class AppUser {
         this.displayName = displayName;
         this.storageQuotaBytes = DEFAULT_STORAGE_QUOTA_BYTES;
         this.storageUsedBytes = 0L;
+        this.storageReservedBytes = 0L;
         this.createdAt = Instant.now();
         this.updatedAt = this.createdAt;
     }
@@ -50,11 +54,46 @@ public class AppUser {
         if (bytes < 0) {
             throw new IllegalArgumentException("Storage delta must not be negative");
         }
-        if (this.storageUsedBytes + bytes > this.storageQuotaBytes) {
+        if (this.storageUsedBytes + this.storageReservedBytes + bytes > this.storageQuotaBytes) {
             throw new IllegalArgumentException("Storage quota exceeded");
         }
         this.storageUsedBytes += bytes;
         this.updatedAt = Instant.now();
+    }
+
+    /**
+     * Rezerwuje miejsce już przy rozpoczęciu resumable uploadu. Bez oddzielnego
+     * licznika użytkownik mógłby wysłać dowolną liczbę tymczasowych chunków, a
+     * limit zostałby sprawdzony dopiero przy finalizacji.
+     */
+    public void reserveUpload(long bytes) {
+        if (bytes <= 0) {
+            throw new IllegalArgumentException("Reserved storage must be positive");
+        }
+        if (storageUsedBytes + storageReservedBytes + bytes > storageQuotaBytes) {
+            throw new IllegalArgumentException("Storage quota exceeded");
+        }
+        storageReservedBytes += bytes;
+        updatedAt = Instant.now();
+    }
+
+    /** Przenosi rezerwację do faktycznego użycia po atomowym zapisie metadanych. */
+    public void commitReservedStorage(long bytes) {
+        if (bytes <= 0 || storageReservedBytes < bytes) {
+            throw new IllegalStateException("Storage reservation is missing");
+        }
+        storageReservedBytes -= bytes;
+        storageUsedBytes += bytes;
+        updatedAt = Instant.now();
+    }
+
+    /** Zwalnia miejsce po abort, expiry albo nieodwracalnym błędzie finalizacji. */
+    public void releaseReservedStorage(long bytes) {
+        if (bytes < 0) {
+            throw new IllegalArgumentException("Storage delta must not be negative");
+        }
+        storageReservedBytes = Math.max(0, storageReservedBytes - bytes);
+        updatedAt = Instant.now();
     }
 
     public void releaseStorage(long bytes) {
@@ -71,6 +110,7 @@ public class AppUser {
     public String getDisplayName() { return displayName; }
     public long getStorageQuotaBytes() { return storageQuotaBytes; }
     public long getStorageUsedBytes() { return storageUsedBytes; }
+    public long getStorageReservedBytes() { return storageReservedBytes; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
 }

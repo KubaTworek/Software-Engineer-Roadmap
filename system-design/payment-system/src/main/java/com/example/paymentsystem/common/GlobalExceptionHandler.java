@@ -1,6 +1,7 @@
 package com.example.paymentsystem.common;
 
 import com.example.paymentsystem.idempotency.IdempotencyConflictException;
+import com.example.paymentsystem.idempotency.IdempotencyInProgressException;
 import com.example.paymentsystem.payment.PaymentException;
 import com.example.paymentsystem.psp.ProviderUnavailableException;
 import org.springframework.http.HttpStatus;
@@ -23,6 +24,18 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.CONFLICT)
     public ApiErrorResponse idem(IdempotencyConflictException e) {
         return error(HttpStatus.CONFLICT, e.getMessage(), Map.of());
+    }
+
+    @ExceptionHandler(IdempotencyInProgressException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public ApiErrorResponse idempotencyInProgress(IdempotencyInProgressException e) {
+        return error(HttpStatus.CONFLICT, e.getMessage(), Map.of());
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiErrorResponse badRequest(IllegalArgumentException e) {
+        return error(HttpStatus.BAD_REQUEST, e.getMessage(), Map.of());
     }
 
     @ExceptionHandler(ProviderUnavailableException.class)

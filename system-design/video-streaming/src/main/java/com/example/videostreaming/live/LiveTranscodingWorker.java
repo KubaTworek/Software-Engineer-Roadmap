@@ -10,7 +10,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -64,6 +63,7 @@ public class LiveTranscodingWorker {
      * - FAILED po błędzie.
      */
     private final LiveStreamRepository streams;
+    private final LiveSessionCoordinator coordinator;
 
     /**
      * Serwis storage/CDN.
@@ -100,10 +100,8 @@ public class LiveTranscodingWorker {
      * Klucz: liveStreamId.
      * Wartość: Future procesu sesji + czas startu.
      *
-     * Uwaga:
-     * To działa lokalnie per instancja. W produkcji przy wielu workerach
-     * potrzebny byłby distributed lock/lease, żeby dwa workery nie uruchomiły
-     * tej samej transmisji równolegle.
+     * Mapa służy wyłącznie do lokalnego lifecycle procesu. Poprawność między
+     * replikami zapewnia lease w bazie oraz rosnący fencing token.
      */
     private final Map<UUID, RunningLiveSession> running = new ConcurrentHashMap<>();
 
@@ -128,10 +126,12 @@ public class LiveTranscodingWorker {
     private final Timer sessionTimer;
 
     public LiveTranscodingWorker(LiveStreamRepository streams,
+                                 LiveSessionCoordinator coordinator,
                                  ObjectStorageService storage,
                                  LiveProperties props,
                                  MeterRegistry registry) {
         this.streams = streams;
+        this.coordinator = coordinator;
         this.storage = storage;
         this.props = props;
 
@@ -181,9 +181,15 @@ public class LiveTranscodingWorker {
             return;
         }
 
+        var token = coordinator.claim(event.liveStreamId());
+        if (token.isEmpty()) {
+            log.info("Live stream {} already has an active owner", event.liveStreamId());
+            return;
+        }
+
         LiveStream stream = streams.findById(event.liveStreamId()).orElseThrow();
 
-        Future<?> future = executor.submit(() -> runSession(stream.getId()));
+        Future<?> future = executor.submit(() -> runSession(stream.getId(), token.get()));
 
         running.put(stream.getId(), new RunningLiveSession(future, Instant.now()));
 
@@ -205,7 +211,6 @@ public class LiveTranscodingWorker {
      * domykany w finally w runSession przez destroyForcibly().
      */
     @RabbitListener(queues = "${app.messaging.live-stop-queue}")
-    @Transactional
     public void stop(VideoEvents.LiveStopRequested event) {
         RunningLiveSession session = running.remove(event.liveStreamId());
 
@@ -214,10 +219,8 @@ public class LiveTranscodingWorker {
             sessionTimer.record(java.time.Duration.between(session.startedAt(), Instant.now()));
         }
 
-        streams.findById(event.liveStreamId()).ifPresent(stream -> {
-            stream.markEnded();
-            streams.save(stream);
-        });
+        // Zwiększenie fencing tokenu zatrzymuje również właściciela na innej replice.
+        coordinator.stopAndFence(event.liveStreamId());
 
         stopCounter.increment();
 
@@ -240,7 +243,7 @@ public class LiveTranscodingWorker {
      *
      * To jest długotrwała metoda działająca w osobnym wątku.
      */
-    private void runSession(UUID liveStreamId) {
+    private void runSession(UUID liveStreamId, long fencingToken) {
         Path sessionDir = Path.of(props.workDir(), liveStreamId.toString());
         Process process = null;
 
@@ -273,7 +276,7 @@ public class LiveTranscodingWorker {
              *
              * Playback endpoint może zacząć zwracać CDN URL do index.m3u8.
              */
-            markLive(liveStreamId, masterKey, recordingKey);
+            coordinator.live(liveStreamId, fencingToken, masterKey, recordingKey);
 
             /*
              * Dopóki FFmpeg działa, regularnie synchronizujemy HLS do storage.
@@ -282,9 +285,14 @@ public class LiveTranscodingWorker {
              * FFmpeg pisze lokalnie, worker uploaduje zmiany do object storage,
              * a player/CDN czyta z publicznego CDN URL.
              */
-            while (!Thread.currentThread().isInterrupted() && process.isAlive()) {
+            while (!Thread.currentThread().isInterrupted() && process.isAlive()
+                    && coordinator.renew(liveStreamId, fencingToken)) {
                 syncHlsDirectory(hlsDir, hlsPrefix);
                 sleep(1000);
+            }
+
+            if (!coordinator.isOwner(liveStreamId, fencingToken) && process.isAlive()) {
+                process.destroy();
             }
 
             int exit = process.waitFor();
@@ -313,25 +321,27 @@ public class LiveTranscodingWorker {
              * Thread interrupted oznacza zwykle stop zainicjowany przez API.
              */
             if (exit == 0 || Thread.currentThread().isInterrupted()) {
-                markEnded(liveStreamId);
+                coordinator.ended(liveStreamId, fencingToken);
             } else {
-                markFailed(liveStreamId, "ffmpeg exited with code " + exit);
+                coordinator.failed(liveStreamId, fencingToken, "ffmpeg exited with code " + exit);
             }
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
 
             log.info("Live session {} interrupted; marking ended", liveStreamId);
 
-            markEnded(liveStreamId);
+            if (coordinator.isOwner(liveStreamId, fencingToken)) {
+                coordinator.ended(liveStreamId, fencingToken);
+            }
         } catch (Exception ex) {
             failureCounter.increment();
 
             log.error("Live session {} failed", liveStreamId, ex);
 
-            markFailed(
-                    liveStreamId,
-                    ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage()
-            );
+            if (coordinator.isOwner(liveStreamId, fencingToken)) {
+                coordinator.failed(liveStreamId, fencingToken,
+                        ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage());
+            }
         } finally {
             /*
              * Jeśli proces FFmpeg nadal żyje, ubijamy go.
@@ -391,8 +401,8 @@ public class LiveTranscodingWorker {
          * - independent_segments: segmenty mogą być dekodowane niezależnie.
          */
         String hlsFlags = stream.isDvrEnabled()
-                ? "delete_segments+append_list+program_date_time+independent_segments"
-                : "delete_segments+program_date_time+independent_segments";
+                ? "delete_segments+append_list+program_date_time+independent_segments+temp_file"
+                : "delete_segments+program_date_time+independent_segments+temp_file";
 
         Path recording = Path.of(props.workDir(), stream.getId().toString(), "recording.mp4");
         Path playlist = hlsDir.resolve("index.m3u8");
@@ -466,8 +476,20 @@ public class LiveTranscodingWorker {
             return;
         }
 
+        List<Path> completedFiles;
         try (var files = Files.walk(dir)) {
-            for (Path file : files.filter(Files::isRegularFile).toList()) {
+            completedFiles = files.filter(Files::isRegularFile)
+                    .filter(file -> !file.getFileName().toString().endsWith(".tmp"))
+                    .sorted(Comparator.comparing(file -> file.getFileName().toString().endsWith(".m3u8")))
+                    .toList();
+        }
+
+        /*
+         * Segmenty są publikowane przed playlistą. FFmpeg używa temp_file, więc
+         * nie wysyłamy aktywnie zapisywanego segmentu. Playlista jest commit
+         * markerem bieżącego okna live i nigdy nie powinna wyprzedzić segmentu.
+         */
+        for (Path file : completedFiles) {
                 String name = file.getFileName().toString();
 
                 String type = name.endsWith(".m3u8")
@@ -475,7 +497,6 @@ public class LiveTranscodingWorker {
                         : "video/mp2t";
 
                 storage.uploadFile(prefix + "/" + name, file, type);
-            }
         }
     }
 
@@ -485,43 +506,6 @@ public class LiveTranscodingWorker {
      * masterKey wskazuje na playlistę HLS.
      * recordingKey wskazuje na przyszłe nagranie MP4, jeśli recording jest włączony.
      */
-    @Transactional
-    protected void markLive(UUID id, String masterKey, String recordingKey) {
-        streams.findById(id).ifPresent(stream -> {
-            stream.markLive(masterKey, recordingKey);
-            streams.save(stream);
-        });
-    }
-
-    /**
-     * Oznacza stream jako ENDED.
-     *
-     * Jeśli stream jest już VOD_READY, nie cofamy statusu do ENDED.
-     */
-    @Transactional
-    protected void markEnded(UUID id) {
-        streams.findById(id).ifPresent(stream -> {
-            if (stream.getStatus() != LiveStatus.VOD_READY) {
-                stream.markEnded();
-            }
-
-            streams.save(stream);
-        });
-    }
-
-    /**
-     * Oznacza stream jako FAILED i zapisuje ostatni błąd.
-     *
-     * Dzięki temu admin widzi, dlaczego live pipeline się wywrócił.
-     */
-    @Transactional
-    protected void markFailed(UUID id, String error) {
-        streams.findById(id).ifPresent(stream -> {
-            stream.markFailed(error);
-            streams.save(stream);
-        });
-    }
-
     /**
      * Krótki sleep między synchronizacjami HLS.
      *

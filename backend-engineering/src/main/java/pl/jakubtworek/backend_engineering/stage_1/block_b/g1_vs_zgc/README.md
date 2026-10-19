@@ -1,4 +1,20 @@
-# Case 6 — G1 vs ZGC
+# g1 vs zgc
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** g1 vs zgc.
+> - **Typowy błąd:** Porównanie wyłącznie pauz GC bez throughputu, CPU i zużycia pamięci.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** brak jawnej roli w nazwach klas; intencję przykładu określają opis i test, nie sam brak prefiksu.
+> - **Granica:** Wynik eksperymentu opisuje tę maszynę i workload; nie jest uniwersalną liczbą produkcyjną.
+<!-- material-card:end -->
+
+## Case 6 — G1 vs ZGC
+
+
 
 ## Wprowadzenie
 
@@ -29,7 +45,7 @@ Ponieważ każdy collector optymalizuje inne właściwości systemu.
 
 ---
 
-# Fundamentalny problem Garbage Collection
+## Fundamentalny problem Garbage Collection
 
 GC musi rozwiązać bardzo trudny problem:
 
@@ -46,7 +62,7 @@ Największe napięcie występuje między:
 
 ---
 
-# Throughput vs Latency
+## Throughput vs Latency
 
 To najważniejszy kompromis.
 
@@ -77,7 +93,7 @@ Kosztem bywają:
 
 ---
 
-# G1 — kompromisowy collector general-purpose
+## G1 — kompromisowy collector general-purpose
 
 ## G1 GC
 
@@ -99,7 +115,7 @@ To collector kompromisowy.
 
 ---
 
-# Jak działa G1
+## Jak działa G1
 
 G1:
 - dzieli heap na regiony,
@@ -116,7 +132,7 @@ To znacznie bardziej zaawansowane podejście niż klasyczne generacyjne kolektor
 
 ---
 
-# Pause times w G1
+## Pause times w G1
 
 G1 wykonuje dużą część pracy współbieżnie, ale nadal posiada:
 - stop-the-world young collections,
@@ -137,7 +153,7 @@ Ale dla ultra-low-latency:
 
 ---
 
-# ZGC — collector low-latency
+## ZGC — collector low-latency
 
 ## ZGC
 
@@ -155,7 +171,7 @@ To fundamentalnie inna filozofia niż klasyczne throughput collectors.
 
 ---
 
-# Colored pointers i load barriers
+## Colored pointers i load barriers
 
 ZGC używa bardzo zaawansowanych mechanizmów:
 - colored pointers,
@@ -173,7 +189,7 @@ Ale ceną jest:
 
 ---
 
-# Dlaczego ZGC potrzebuje więcej CPU
+## Dlaczego ZGC potrzebuje więcej CPU
 
 To częste zaskoczenie.
 
@@ -197,7 +213,7 @@ On:
 
 ---
 
-# Heap size a wybór collectora
+## Heap size a wybór collectora
 
 Rozmiar heapu ma ogromne znaczenie.
 
@@ -227,7 +243,7 @@ ZGC został zaprojektowany właśnie po to, by ten problem ograniczyć.
 
 ---
 
-# Tail latency — prawdziwy problem produkcyjny
+## Tail latency — prawdziwy problem produkcyjny
 
 Średni czas odpowiedzi często nie ma dużego znaczenia.
 
@@ -255,7 +271,7 @@ często preferują collectory typu ZGC.
 
 ---
 
-# Dlaczego „niższe pause time” nie oznacza „szybszej aplikacji”
+## Dlaczego „niższe pause time” nie oznacza „szybszej aplikacji”
 
 To bardzo ważne.
 
@@ -281,7 +297,7 @@ często bardziej korzystają z:
 
 ---
 
-# Allocation rate nadal ma ogromne znaczenie
+## Allocation rate nadal ma ogromne znaczenie
 
 Collector nie usuwa problemu nadmiernych alokacji.
 
@@ -298,7 +314,7 @@ To bardzo ważna intuicja:
 
 ---
 
-# Co pokazuje to case study
+## Co pokazuje to case study
 
 Ten eksperyment celowo symuluje:
 - allocation pressure,
@@ -322,7 +338,7 @@ stają się wyraźnie widoczne.
 
 ---
 
-# Dlaczego JFR i GC logs są kluczowe
+## Dlaczego JFR i GC logs są kluczowe
 
 GC należy analizować empirycznie.
 
@@ -343,7 +359,7 @@ Dopiero wtedy można podejmować sensowne decyzje architektoniczne.
 
 ---
 
-# Najczęstszy błąd tuningowy
+## Najczęstszy błąd tuningowy
 
 Najczęstszy błąd wygląda tak:
 
@@ -360,7 +376,7 @@ Collector nie naprawia złego modelu pamięci aplikacji.
 
 ---
 
-# Najważniejsza intuicja praktyczna
+## Najważniejsza intuicja praktyczna
 
 Najbardziej praktyczny wniosek brzmi:
 
@@ -374,7 +390,7 @@ Istnieje tylko:
 
 ---
 
-# Najważniejsze wnioski
+## Najważniejsze wnioski
 
 Najbardziej użyteczny model mentalny wygląda tak:
 

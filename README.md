@@ -2,20 +2,29 @@
 
 Ta roadmapa prowadzi od solidnego poziomu Mid do Seniora i dalej w stronę dojrzałego inżyniera backendowego. Nie chodzi o „zaliczenie technologii”, tylko o zbudowanie umiejętności podejmowania świadomych decyzji technicznych, projektowania systemów, diagnozowania problemów produkcyjnych i pracy z realnymi ograniczeniami biznesowymi.
 
+Etapy porządkują kontekst problemu, a nie tempo nauki ani status zaliczenia.
+Aktualną mapę laboratoriów i przekrojowy indeks pojęć zawiera [kompendium backend-engineering](backend-engineering/README.md).
+
 ## Założenia
 
 - Stack główny: **Java, Spring, relacyjne bazy danych, systemy rozproszone**.
 - Projekty są ważniejsze niż sama teoria.
-- Każdy etap powinien kończyć się artefaktami: README, testami, wynikami load testów, diagramami, decyzjami architektonicznymi i wnioskami.
+- Zagadnienia warto zestawiać z artefaktami: README, testami, wynikami load testów, diagramami, decyzjami architektonicznymi i wnioskami.
 - Seniority nie oznacza znajomości większej liczby frameworków, tylko lepsze decyzje, lepszą diagnostykę i większy wpływ na system oraz zespół.
+
+## Mapa repozytorium
+
+- [`backend-engineering/`](backend-engineering/README.md) — wykonywalne laboratoria i kompendium wiedzy dla etapów 1–3;
+- [`projects/`](projects/README.md) — trzy projekty portfolio stosujące wiedzę z odpowiadających im etapów;
+- [`system-design/`](system-design/README.md) — niezależne studia popularnych problemów projektowania systemów.
 
 ---
 
-# Etap 1: 0–6 miesięcy — solidny Mid z fundamentem pod Seniora
+# Etap 1 — fundamenty backend engineering
 
 ## Cel etapu
 
-Po tym etapie powinieneś:
+Ten obszar pomaga rozwijać umiejętności:
 
 - rozumieć i kontrolować wydajność aplikacji na poziomie CPU, JVM, GC i DB,
 - pisać kod odporny na konkurencję, race condition i błędy transakcyjne,
@@ -25,6 +34,13 @@ Po tym etapie powinieneś:
 ---
 
 ## Blok A — [Java Concurrency](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_1/block_a/README.md)
+
+Pełny blok obejmuje także [virtual threads](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_1/block_a/virtual_threads/README.md),
+[Reactive Streams](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_1/block_a/reactive_streams/README.md) oraz
+[czas, DST i schedulery](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_1/block_a/temporal_correctness/README.md).
+Te laboratoria łączą model wykonania z ograniczonym downstreamem, demand/cancel
+i jednoznaczną interpretacją momentu wykonania.
+
 
 ### Zakres
 
@@ -109,15 +125,15 @@ Po tym etapie powinieneś:
   - testowanie timeoutów i błędów,
   - unikanie testów opartych wyłącznie o `Thread.sleep`.
 
-### Kryteria ukończenia
+### Pytania sprawdzające rozumienie
 
-- Potrafisz zreprodukować race condition w teście i wyjaśnić, dlaczego wynik jest niedeterministyczny.
-- Potrafisz celowo wywołać deadlock, zdiagnozować jego przyczynę i naprawić problem.
-- Potrafisz rozpoznać lost update, visibility problem i błędne użycie `volatile`.
-- Potrafisz dobrać odpowiedni mechanizm: `synchronized`, lock, typ atomowy, kolekcję concurrent albo izolację stanu.
-- Potrafisz użyć `ExecutorService` bez wycieków wątków i poprawnie zakończyć pulę.
-- Potrafisz obsłużyć anulowanie, timeout i wyjątek w `CompletableFuture`.
-- Potrafisz dobrać model równoległości do problemu, zamiast używać async „bo wygląda nowocześnie”.
+- Czy potrafisz zreprodukować race condition w teście i wyjaśnić, dlaczego wynik jest niedeterministyczny?
+- Czy potrafisz celowo wywołać deadlock, zdiagnozować jego przyczynę i naprawić problem?
+- Czy potrafisz rozpoznać lost update, visibility problem i błędne użycie `volatile`?
+- Czy potrafisz dobrać odpowiedni mechanizm: `synchronized`, lock, typ atomowy, kolekcję concurrent albo izolację stanu?
+- Czy potrafisz użyć `ExecutorService` bez wycieków wątków i poprawnie zakończyć pulę?
+- Czy potrafisz obsłużyć anulowanie, timeout i wyjątek w `CompletableFuture`?
+- Czy potrafisz dobrać model równoległości do problemu, zamiast używać async „bo wygląda nowocześnie”?
 
 ### Materiały
 
@@ -167,7 +183,7 @@ Po tym etapie powinieneś:
 - [`escape_analysis`](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_1/block_b/escape_analysis/README.md)
   - escape analysis,
   - scalar replacement,
-  - stack allocation jako optymalizacja JVM,
+  - eliminacja alokacji i scalar replacement — bez zakładania alokacji obiektu na stosie,
   - kiedy obiekt może zostać zoptymalizowany,
   - dlaczego kod źródłowy nie zawsze mówi całą prawdę o koszcie alokacji.
 
@@ -234,7 +250,7 @@ Po tym etapie powinieneś:
   - kiedy wirtualne wywołania są tanie,
   - kiedy utrudniają optymalizacje.
 
-- [`naive_jmh`](./src/main/java/pl/jakubtworek/backend_engineering/stage_1/block_b/naive_jmh/README.md)
+- [`naive_vs_jmh`](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_1/block_b/naive_vs_jmh/README.md)
   - podstawy JMH,
   - warm-up,
   - dead code elimination,
@@ -242,14 +258,14 @@ Po tym etapie powinieneś:
   - typowe błędy w mikrobenchmarkach,
   - dlaczego `System.nanoTime()` zwykle nie wystarcza.
 
-### Kryteria ukończenia
+### Pytania sprawdzające rozumienie
 
-- Potrafisz odpowiedzieć „dlaczego to jest wolne?” na podstawie profilu, metryk lub benchmarku.
-- Umiesz odróżnić problem CPU, IO, GC, alokacji, locków i bazy danych.
-- Potrafisz pokazać hotspot CPU lub alokacji i wyciągnąć z niego konkretny wniosek.
-- Rozumiesz wpływ heapu, liczby wątków i allocation rate na latency oraz throughput.
-- Potrafisz wykonać prosty benchmark w JMH bez najczęstszych błędów.
-- Nie diagnozujesz wydajności wyłącznie intuicją.
+- Czy potrafisz odpowiedzieć „dlaczego to jest wolne?” na podstawie profilu, metryk lub benchmarku?
+- Czy umiesz odróżnić problem CPU, IO, GC, alokacji, locków i bazy danych?
+- Czy potrafisz pokazać hotspot CPU lub alokacji i wyciągnąć z niego konkretny wniosek?
+- Czy rozumiesz wpływ heapu, liczby wątków i allocation rate na latency oraz throughput?
+- Czy potrafisz wykonać prosty benchmark w JMH bez najczęstszych błędów?
+- Czy nie diagnozujesz wydajności wyłącznie intuicją?
 
 ### Materiały
 
@@ -269,7 +285,7 @@ Po tym etapie powinieneś:
 
 ### Zakres
 
-- [`bean`](./bean)
+- [`bean`](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_1/block_c/bean/README.md)
   - lifecycle beanów,
   - kiedy powstaje bean,
   - dependency injection,
@@ -277,7 +293,7 @@ Po tym etapie powinieneś:
   - inicjalizacja i niszczenie beanów,
   - wpływ kolejności tworzenia beanów na aplikację.
 
-- [`configuration`](./configuration)
+- [`configuration`](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_1/block_c/configuration/README.md)
   - `@Configuration`,
   - `@Bean`,
   - component scanning,
@@ -285,7 +301,7 @@ Po tym etapie powinieneś:
   - properties i profile,
   - różnica między konfiguracją jawną a automatyczną.
 
-- [`aspect`](./aspect)
+- [`aspect`](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_1/block_c/aspect/README.md)
   - Spring AOP,
   - proxy,
   - proxy boundaries,
@@ -293,7 +309,7 @@ Po tym etapie powinieneś:
   - co przechodzi przez proxy, a co je omija,
   - wpływ AOP na `@Transactional`, security i logowanie.
 
-- [`transactional`](./transactional)
+- [`transactional`](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_1/block_c/transactional/README.md)
   - `@Transactional`,
   - `REQUIRED`, `REQUIRES_NEW`, `NESTED`,
   - isolation levels,
@@ -302,7 +318,7 @@ Po tym etapie powinieneś:
   - lazy loading i granice transakcji,
   - typowe przypadki, w których transakcja nie działa.
 
-- [`jpa`](./jpa)
+- [`jpa`](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_1/block_c/jpa/README.md)
   - persistence context,
   - dirty checking,
   - lazy vs eager loading,
@@ -311,7 +327,7 @@ Po tym etapie powinieneś:
   - transakcje w kontekście JPA,
   - typowe błędy przy pracy z encjami.
 
-- [`mvc`](./mvc)
+- [`mvc`](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_1/block_c/mvc/README.md)
   - Spring MVC request lifecycle,
   - controller, service, repository,
   - `DispatcherServlet`,
@@ -319,7 +335,7 @@ Po tym etapie powinieneś:
   - walidacja wejścia,
   - mapowanie odpowiedzi HTTP.
 
-- [`exception`](./exception)
+- [`exception`](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_1/block_c/exception/README.md)
   - globalny exception handling,
   - `@ControllerAdvice`,
   - mapowanie wyjątków na statusy HTTP,
@@ -327,7 +343,7 @@ Po tym etapie powinieneś:
   - brak wycieków informacji w komunikatach błędów,
   - rozróżnienie błędów domenowych, walidacyjnych i technicznych.
 
-- [`authorization`](./authorization)
+- [`authorization`](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_1/block_c/authorization/README.md)
   - różnica między authentication i authorization,
   - JWT access token i refresh token,
   - rotacja refresh tokenów,
@@ -337,25 +353,29 @@ Po tym etapie powinieneś:
   - `@PreAuthorize` i SpEL,
   - autoryzacja oparta o dane: właściciel, manager, HR, organizacja, tenant.
 
-- [`test`](./test)
+- [`test`](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_1/block_c/test/README.md)
   - testowanie Springa bez ładowania całego kontekstu,
   - testy warstwowe,
   - `@WebMvcTest`, `@DataJpaTest`, `@SpringBootTest`,
   - testowanie transakcji,
   - testowanie security,
   - mockowanie zależności,
-  - kiedy test integracyjny ma sens.
+  - kiedy test integracyjny ma sens,
+  - property-based testing i shrinking,
+  - stateful/model-based testing protokołów,
+  - mutation testing przez PIT,
+  - consumer-driven contracts.
 
-### Kryteria ukończenia
+### Pytania sprawdzające rozumienie
 
-- Potrafisz pokazać przypadek, w którym `@Transactional` nie działa, i wyjaśnić dlaczego.
-- Rozumiesz proxy boundaries i umiesz przewidzieć, które adnotacje Springa zostaną faktycznie zastosowane.
-- Potrafisz wyjaśnić lifecycle beana oraz moment powstania proxy.
-- Potrafisz rozpoznać problem z JPA: N+1, lazy loading, flush, dirty checking albo brak transakcji.
-- Potrafisz zaprojektować spójny error contract bez ujawniania szczegółów technicznych.
-- Rozumiesz, że autoryzacja nie kończy się na rolach.
-- Potrafisz zaimplementować dostęp zależny od danych: właściciel, manager, HR, organizacja, tenant.
-- Potrafisz dobrać typ testu Springa do problemu zamiast zawsze używać `@SpringBootTest`.
+- Czy potrafisz pokazać przypadek, w którym `@Transactional` nie działa, i wyjaśnić dlaczego?
+- Czy rozumiesz proxy boundaries i umiesz przewidzieć, które adnotacje Springa zostaną faktycznie zastosowane?
+- Czy potrafisz wyjaśnić lifecycle beana oraz moment powstania proxy?
+- Czy potrafisz rozpoznać problem z JPA: N+1, lazy loading, flush, dirty checking albo brak transakcji?
+- Czy potrafisz zaprojektować spójny error contract bez ujawniania szczegółów technicznych?
+- Czy rozumiesz, że autoryzacja nie kończy się na rolach?
+- Czy potrafisz zaimplementować dostęp zależny od danych: właściciel, manager, HR, organizacja, tenant?
+- Czy potrafisz dobrać typ testu Springa do problemu zamiast zawsze używać `@SpringBootTest`?
 
 ### Materiały
 
@@ -373,6 +393,11 @@ Po tym etapie powinieneś:
 ---
 
 ## Blok D — [Bazy danych i performance](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_1/block_d/README.md)
+
+Uzupełnieniem SQL i NoSQL są [silniki wyszukiwania](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_1/block_d/search_engine/README.md):
+indeks odtwarzalny ze źródła prawdy, ranking, wersjonowanie dokumentów,
+tombstone i paginacja wyników.
+
 
 ### Zakres
 
@@ -494,17 +519,15 @@ Po tym etapie powinieneś:
         - conflict resolution,
       - konsekwencje spójności dla UX i logiki biznesowej.
 
-### Kryteria ukończenia
+### Pytania sprawdzające rozumienie
 
-### Kryteria ukończenia
-
-- Potrafisz dobrać indeks do zapytania i uzasadnić koszt zapisu oraz odczytu.
-- Umiesz poprawić zapytanie lub indeks na podstawie `EXPLAIN ANALYZE`.
-- Potrafisz dobrać isolation level i locking do konkretnego problemu biznesowego.
-- Potrafisz rozpoznać N+1 i wybrać sensowną strategię naprawy.
-- Rozumiesz różnicę między offset pagination a keyset pagination.
-- Potrafisz dobrać typ bazy NoSQL do access patternu, a nie do mody.
-- Potrafisz uzasadnić kompromis między spójnością, dostępnością i przepustowością.
+- Czy potrafisz dobrać indeks do zapytania i uzasadnić koszt zapisu oraz odczytu?
+- Czy umiesz poprawić zapytanie lub indeks na podstawie `EXPLAIN ANALYZE`?
+- Czy potrafisz dobrać isolation level i locking do konkretnego problemu biznesowego?
+- Czy potrafisz rozpoznać N+1 i wybrać sensowną strategię naprawy?
+- Czy rozumiesz różnicę między offset pagination a keyset pagination?
+- Czy potrafisz dobrać typ bazy NoSQL do access patternu, a nie do mody?
+- Czy potrafisz uzasadnić kompromis między spójnością, dostępnością i przepustowością?
 
 ### Materiały
 
@@ -526,6 +549,11 @@ Po tym etapie powinieneś:
 ### Zakres
 
 - Refaktoryzacja istniejącego kodu bez rewrite’u.
+- Characterization tests dla czasu, losowości i statycznych zależności.
+- Golden master dla trudnego kontraktu legacy.
+- Branch by abstraction, shadow comparison i stopniowe przełączanie implementacji.
+- Bezpieczna ewolucja kontraktu V1 → V2.
+- Rozpoznawanie „czystych” zmian, które przypadkiem zmieniają semantykę.
 - Granice odpowiedzialności klas:
   - domain,
   - application,
@@ -538,11 +566,13 @@ Po tym etapie powinieneś:
   - testy regresyjne,
   - testy negatywne.
 
-### Kryteria ukończenia
+### Pytania sprawdzające rozumienie
 
 - Refaktor zwiększa czytelność i testowalność bez zmiany zachowania systemu.
 - Testy łapią regresje, a nie tylko happy path.
-- Potrafisz uzasadnić, dlaczego dany test jest unit, integration albo end-to-end.
+- Czy potrafisz uzasadnić, dlaczego dany test jest unit, integration albo end-to-end?
+- Czy potrafisz zabezpieczyć nieznane zachowanie przed utworzeniem seamów?
+- Czy potrafisz rozłożyć większą refaktoryzację na wdrażalne kroki i odróżnić refaktoryzację od zmiany biznesowej?
 
 ### Materiały
 
@@ -559,7 +589,39 @@ Po tym etapie powinieneś:
 
 ---
 
-# Etap 2: 6–12 miesięcy — Mid+ → Senior
+## Blok F — [Networking dla backend developera](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_1/block_f/README.md)
+
+### Zakres
+
+- DNS caching, negative TTL i rotacja adresów instancji.
+- Pool acquisition, connect, TLS handshake, read timeout i deadline requestu.
+- Keep-alive, ograniczona pula połączeń oraz usuwanie stale socketów.
+- Koszt TLS 1.2/1.3 i ograniczenia 0-RTT.
+- HTTP/1.1 kontra HTTP/2 multiplexing i limit równoległych strumieni.
+- Ephemeral ports, `TIME_WAIT`, limity socketów i wpływ NAT.
+- Kolejność timeoutów klienta, proxy, load balancera i downstreamu.
+- Retry amplification na warstwach klient → proxy → service mesh.
+- FIN, RST, half-close, silent blackhole i heartbeat.
+
+### Pytania sprawdzające rozumienie
+
+- Czy potrafisz wskazać fazę, w której wystąpił timeout, zamiast mówić tylko „sieć nie działa”?
+- Czy rozumiesz, dlaczego zmiana DNS nie przenosi istniejącego keep-alive connection?
+- Czy umiesz dobrać limit puli, timeout oczekiwania i lifetime połączenia do downstreamu oraz LB?
+- Czy potrafisz policzyć zwielokrotnienie retry i wyznaczyć jednego właściciela polityki?
+- Rozróżniasz EOF, reset i brak odpowiedzi wymagający timeoutu lub heartbeatów.
+- Diagnozujesz wyczerpanie portów i socketów przed zmianą parametrów kernela.
+
+### Materiały
+
+- dokumentacja Java networking i używanego klienta HTTP,
+- RFC 9110 oraz RFC 9113,
+- *High Performance Browser Networking*,
+- dokumentacja timeoutów używanego reverse proxy, load balancera i service mesha.
+
+---
+
+# Etap 2 — architektura, integracje i operacje
 
 ## Temat przewodni
 
@@ -578,9 +640,15 @@ Po tym etapie powinieneś:
 
 ## Blok A — [Architektura: myślenie, nie frameworki](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_a/README.md)
 
+Kontrakty rozwijają [projektowanie API](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_a/api_design/README.md),
+[GraphQL](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_a/graphql/README.md) i [gRPC](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_a/grpc/README.md).
+Czytaj je razem: wspólnym problemem jest granica usługi, a różnice dotyczą modelu
+zapytań, kompatybilności, kosztu wywołania i propagacji deadline.
+
+
 ### Zakres
 
-- [`monolith_vs_microservices`](./src/main/java/pl/jakubtworek/backend_engineering/stage_2/monolith_vs_microservices/README.md)
+- [`monolith_vs_microservices`](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_a/monolith_vs_microservices/README.md)
   - monolit,
   - modular monolith,
   - mikroserwisy,
@@ -588,7 +656,7 @@ Po tym etapie powinieneś:
   - granice, przy których monolit przestaje wystarczać,
   - problemy sieci, latency i eventual consistency.
 
-- [`ddd_strategy`](./src/main/java/pl/jakubtworek/backend_engineering/stage_2/ddd_strategy/README.md)
+- [`ddd_strategy`](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_a/ddd_strategy/README.md)
   - DDD strategiczne,
   - bounded context,
   - ubiquitous language,
@@ -596,7 +664,7 @@ Po tym etapie powinieneś:
   - ownership,
   - relacje między zespołami a granicami systemu.
 
-- [`ddd_tactic`](./src/main/java/pl/jakubtworek/backend_engineering/stage_2/ddd_tactic/README.md)
+- [`ddd_tactic`](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_a/ddd_tactic/README.md)
   - DDD taktyczne,
   - aggregate,
   - entity,
@@ -605,7 +673,7 @@ Po tym etapie powinieneś:
   - domain service,
   - granice transakcji.
 
-- [`clean_architecture`](./src/main/java/pl/jakubtworek/backend_engineering/stage_2/clean_architecture/README.md)
+- [`clean_architecture`](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_a/clean_architecture/README.md)
   - Hexagonal Architecture,
   - Clean Architecture,
   - domena bez Springa,
@@ -613,7 +681,7 @@ Po tym etapie powinieneś:
   - porty i adaptery,
   - framework jako szczegół implementacyjny.
 
-- [`use_case`](./src/main/java/pl/jakubtworek/backend_engineering/stage_2/use_case/README.md)
+- [`use_case`](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_a/use_case/README.md)
   - modelowanie przypadków użycia,
   - application service,
   - input/output port,
@@ -621,7 +689,7 @@ Po tym etapie powinieneś:
   - oddzielenie logiki aplikacyjnej od domenowej,
   - granice odpowiedzialności use case’a.
 
-- [`integration`](./src/main/java/pl/jakubtworek/backend_engineering/stage_2/integration/README.md)
+- [`integration`](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_a/integration/README.md)
   - integracja między modułami i systemami,
   - API synchroniczne vs asynchroniczne,
   - kontrakty integracyjne,
@@ -629,15 +697,15 @@ Po tym etapie powinieneś:
   - eventual consistency,
   - odporność na błędy integracji.
 
-### Kryteria ukończenia
+### Pytania sprawdzające rozumienie
 
-- Potrafisz wskazać konkretne punkty bólu, przy których modular monolith przestaje wystarczać.
-- Umiesz uzasadnić wybór monolitu, modular monolith albo mikroserwisów bez modnych haseł.
-- Potrafisz wyznaczyć bounded context na podstawie domeny, ownershipu i języka biznesowego.
-- Rozumiesz różnicę między agregatem, encją, value objectem i use case’em.
-- Potrafisz zaprojektować domenę bez zależności od Springa.
-- Rozumiesz, co boli bardziej: wspólna baza czy sieć, latency i eventual consistency.
-- Umiesz rozdzielić argumenty techniczne od organizacyjnych.
+- Czy potrafisz wskazać konkretne punkty bólu, przy których modular monolith przestaje wystarczać?
+- Czy umiesz uzasadnić wybór monolitu, modular monolith albo mikroserwisów bez modnych haseł?
+- Czy potrafisz wyznaczyć bounded context na podstawie domeny, ownershipu i języka biznesowego?
+- Czy rozumiesz różnicę między agregatem, encją, value objectem i use case’em?
+- Czy potrafisz zaprojektować domenę bez zależności od Springa?
+- Czy rozumiesz, co boli bardziej: wspólna baza czy sieć, latency i eventual consistency?
+- Czy umiesz rozdzielić argumenty techniczne od organizacyjnych?
 
 ### Materiały
 
@@ -655,6 +723,12 @@ Po tym etapie powinieneś:
 ---
 
 ## Blok B — [Integracje i asynchroniczność](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_b/README.md)
+
+Blok obejmuje także [WebSocket](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_b/websocket/README.md)
+— lifecycle połączenia, wolnego klienta i reconnect — oraz
+[CDC i rekoncyliację](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_b/cdc_reconciliation/README.md),
+czyli odbudowę projekcji i naprawę danych bez powtarzania efektów biznesowych.
+
 
 ### Zakres
 
@@ -701,15 +775,15 @@ Po tym etapie powinieneś:
   - replay,
   - diagnozowanie problemów w przepływie asynchronicznym.
 
-### Kryteria ukończenia
+### Pytania sprawdzające rozumienie
 
-- Potrafisz zaprojektować konsumenta odpornego na duplikaty eventów.
-- Potrafisz bezpiecznie obsłużyć sytuację, w której konsument pada w połowie operacji.
-- Rozumiesz, dlaczego exactly-once nie powinno być głównym celem projektu.
-- Potrafisz zastosować retry, backoff, jitter, DLQ i replay bez psucia danych.
-- Potrafisz zaprojektować eventy tak, żeby dało się je wersjonować.
-- Potrafisz pracować ze stanami przejściowymi i eventual consistency.
-- System nie psuje danych, gdy event przyjdzie dwa razy, retry odpali się równolegle albo event dotrze z opóźnieniem.
+- Czy potrafisz zaprojektować konsumenta odpornego na duplikaty eventów?
+- Czy potrafisz bezpiecznie obsłużyć sytuację, w której konsument pada w połowie operacji?
+- Czy rozumiesz, dlaczego exactly-once nie powinno być głównym celem projektu?
+- Czy potrafisz zastosować retry, backoff, jitter, DLQ i replay bez psucia danych?
+- Czy potrafisz zaprojektować eventy tak, żeby dało się je wersjonować?
+- Czy potrafisz pracować ze stanami przejściowymi i eventual consistency?
+- Czy system nie psuje danych, gdy event przyjdzie dwa razy, retry odpali się równolegle albo event dotrze z opóźnieniem?
 
 ### Materiały
 
@@ -731,50 +805,28 @@ Po tym etapie powinieneś:
 
 ### Zakres
 
-- [`docker`](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_c/docker/README.md)
-  - Dockerfile,
-  - multi-stage build,
-  - małe obrazy,
-  - szybkie buildy,
-  - `.dockerignore`,
-  - uruchamianie aplikacji z konfiguracją przez zmienne środowiskowe.
+Stage 2C rozwija jedną aplikację referencyjną zamiast czterech podobnych projektów:
 
-- [`kubernetes`](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_c/kubernetes/README.md)
-  - Pod,
-  - Deployment,
-  - Service,
-  - ConfigMap,
-  - Secret,
-  - readiness probe,
-  - liveness probe,
-  - restart policy,
-  - rolling update.
+1. [`workshop`](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_c/workshop/README.md) — kod aplikacji, lifecycle, probe’y, graceful shutdown i testy kontraktowe.
+2. [`configuration`](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_c/configuration/README.md) — konfiguracja runtime, ConfigMap, Secret, `emptyDir` kontra PVC.
+3. [`docker`](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_c/docker/README.md) — multi-stage build, cache warstw, niezmienny obraz, użytkownik non-root i obsługa `SIGTERM`.
+4. [`kubernetes`](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_c/kubernetes/README.md) — Deployment, Service, trzy probe’y, resources, securityContext, HPA i bezpieczny rolling update.
+5. [`progressive_delivery`](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_c/progressive_delivery/README.md) — canary analysis, automatyczny rollback, shadow traffic, kill switch, game day, runbook i postmortem.
 
-- [`configuration`](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_c/configuration/README.md)
-  - konfiguracja aplikacji per środowisko,
-  - zmienne środowiskowe,
-  - profile aplikacji,
-  - ConfigMap vs Secret,
-  - konfiguracja obrazu vs konfiguracja runtime,
-  - typowe błędy przy przenoszeniu aplikacji z local na cluster.
+Całość łączy lokalny przepływ kind/minikube z decyzją po wdrożeniu: build i load obrazu, `kubectl apply`, obserwacja rolloutu, analiza metryk oraz kontrolowana promocja lub rollback.
 
-- [`workshop`](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_c/workshop/README.md)
-  - lokalny klaster przez kind albo minikube,
-  - build obrazu,
-  - push albo load obrazu do klastra,
-  - `kubectl apply`,
-  - sprawdzanie statusu poda,
-  - logi, eventy i opis zasobów,
-  - prosty pipeline: build, test, build image, opcjonalny deploy.
+### Pytania sprawdzające rozumienie
 
-### Kryteria ukończenia
-
-- Potrafisz zbudować obraz aplikacji i uruchomić go lokalnie.
-- Potrafisz wdrożyć aplikację na lokalny klaster przez kind albo minikube.
-- Rozumiesz, co dzieje się po `kubectl apply`.
-- Potrafisz sprawdzić problem przez `kubectl logs`, `describe`, eventy i status zasobów.
-- Wiesz, gdzie szukać przyczyny, gdy aplikacja działa lokalnie, ale nie działa na klastrze.
-- Umiesz odróżnić problem aplikacji, konfiguracji, sieci i infrastruktury.
+- Czy potrafisz zbudować obraz aplikacji i uruchomić go lokalnie?
+- Czy potrafisz wdrożyć aplikację na lokalny klaster przez kind albo minikube?
+- Czy rozumiesz, co dzieje się po `kubectl apply`?
+- Czy potrafisz sprawdzić problem przez `kubectl logs`, `describe`, eventy i status zasobów?
+- Czy wiesz, gdzie szukać przyczyny, gdy aplikacja działa lokalnie, ale nie działa na klastrze?
+- Czy umiesz odróżnić problem aplikacji, konfiguracji, sieci i infrastruktury?
+- Czy potrafisz zatrzymać promocję przy małej próbce i wykonać automatyczny rollback przy regresji error rate lub p99?
+- Czy umiesz uruchomić shadow bez efektów biznesowych i zaprojektować kill switch nadrzędny wobec targetingu?
+- Czy weryfikujesz zgodność obu wersji aplikacji z live schema przed rolloutem i rollbackiem?
+- Czy potrafisz przygotować ograniczony game day oraz przetestować runbook, timeline i kryteria recovery?
 
 ### Materiały
 
@@ -790,7 +842,41 @@ Po tym etapie powinieneś:
 
 ---
 
-# Etap 3: 12–24 miesiące — Senior
+## Blok D — [Application Security i Secure SDLC](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_d/README.md)
+
+### Zakres
+
+- threat modeling, aktywa i trust boundaries,
+- SSRF i kontrolowany egress,
+- path traversal, request size i bezpieczny pipeline uploadu,
+- allowlisted deserialization i ochrona przed mass assignment,
+- zarządzanie sekretami i protokół rotacji,
+- encryption in transit/at rest wraz z ownershipem kluczy,
+- różnice między HTTPS, CORS, CSRF i security headers,
+- logowanie bez tokenów, sekretów i PII,
+- dependency/container scanning, SBOM, podpis, provenance i pinning po digest,
+- negatywne testy oraz fail-closed release gate.
+
+### Pytania sprawdzające rozumienie
+
+- Czy potrafisz narysować przepływy danych i wskazać przekraczane granice zaufania?
+- Czy nie pobierasz dowolnego URL ani pliku tylko dlatego, że przeszedł walidację składni?
+- Czy rozumiesz, dlaczego CORS nie jest autoryzacją, a CSRF zależy od sposobu transportu credentiala?
+- Czy potrafisz rotować sekret bez przebudowy obrazu i bez bezterminowego akceptowania starej wersji?
+- Czy umiesz przypisać odpowiedzialność za TLS, encryption at rest, klucze, eksporty i backupy?
+- Czy pipeline blokuje artefakt bez dowodów: SBOM, skanu, podpisu, provenance i niezmiennego digestu?
+- Testujesz przede wszystkim odmowę, brak efektu ubocznego i brak wycieku w odpowiedzi lub logu.
+
+### Materiały
+
+- OWASP ASVS i OWASP Cheat Sheet Series,
+- OWASP SAMM,
+- NIST Secure Software Development Framework,
+- dokumentacja używanego secret managera, KMS i narzędzi supply-chain.
+
+---
+
+# Etap 3 — skalowanie, niezawodność i cloud
 
 ## Temat przewodni
 
@@ -837,15 +923,28 @@ Po tym etapie powinieneś:
   - jitter,
   - rate limiting: per IP, per API key, token bucket, sliding window,
   - circuit breaker,
-  - retry, backoff i graceful degradation.
+  - retry, backoff i graceful degradation,
+  - propagacja deadline i podział budżetu czasu,
+  - przejście od JMH do testów całej usługi: load, stress, spike i soak,
+  - open/closed workload, coordinated omission i hipoteza capacity,
+  - p95/p99, saturation, kontrolowana degradacja i ocena autoskalowania,
+  - twarde kryteria przerwania eksperymentu,
+  - izolacja tenantów w danych, cache, eventach i kontekście requestu,
+  - noisy-neighbor protection przez per-tenant quota i bulkhead,
+  - klasyfikacja PII, retention, anonimizacja oraz audyt dostępu,
+  - propagacja usunięcia do cache, downstreamów i procesu odtwarzania backupu,
+  - współdzielony retry budget i retry storm,
+  - osobne bulkheady dla zależności,
+  - bounded queue, backpressure i load shedding,
+  - timeout klienta kontra anulowanie downstreamu.
 
-### Kryteria ukończenia
+### Pytania sprawdzające rozumienie
 
-- Potrafisz narysować system i wskazać jego główne bottlenecki.
-- Potrafisz oszacować, który element padnie przy określonym RPS i dlaczego.
-- Umiesz dobrać cache, rate limiting, autoscaling albo circuit breaker do konkretnego problemu.
-- Rozumiesz różnicę między poprawą throughputu a obniżeniem latency.
-- Potrafisz uzasadnić decyzje na podstawie założeń, metryk i ograniczeń systemu.
+- Czy potrafisz narysować system i wskazać jego główne bottlenecki?
+- Czy potrafisz oszacować, który element padnie przy określonym RPS i dlaczego?
+- Czy umiesz dobrać cache, rate limiting, autoscaling albo circuit breaker do konkretnego problemu?
+- Czy rozumiesz różnicę między poprawą throughputu a obniżeniem latency?
+- Czy potrafisz uzasadnić decyzje na podstawie założeń, metryk i ograniczeń systemu?
 
 ### Materiały
 
@@ -899,14 +998,14 @@ Po tym etapie powinieneś:
   - runbooki dla typowych awarii,
   - reakcja na DB down, Redis down, broker lag i error rate spike.
 
-### Kryteria ukończenia
+### Pytania sprawdzające rozumienie
 
-- Potrafisz wskazać metrykę, która potwierdza problem z systemem.
-- Potrafisz przejść od metryki do logów, trace’ów i technicznej hipotezy.
-- Umiesz użyć correlation ID do prześledzenia requestu przez zależności downstream.
-- Potrafisz rozróżnić problem latency, error rate, saturation i dependency failure.
-- Potrafisz zaprojektować alert, który opisuje realny objaw problemu.
-- Masz runbook dla typowych awarii: DB down, Redis down, broker lag i spike błędów.
+- Czy potrafisz wskazać metrykę, która potwierdza problem z systemem?
+- Czy potrafisz przejść od metryki do logów, trace’ów i technicznej hipotezy?
+- Czy umiesz użyć correlation ID do prześledzenia requestu przez zależności downstream?
+- Czy potrafisz rozróżnić problem latency, error rate, saturation i dependency failure?
+- Czy potrafisz zaprojektować alert, który opisuje realny objaw problemu?
+- Czy masz runbook dla typowych awarii: DB down, Redis down, broker lag i spike błędów?
 
 ### Materiały
 
@@ -939,27 +1038,38 @@ Wybierz jeden cloud provider, najlepiej AWS albo GCP, i poznaj go praktycznie.
   - RDS lub odpowiednik,
   - read replicas,
   - backupy,
-  - restore.
+  - restore i regularny restore drill,
+  - mierzalne RPO i RTO,
+  - HA kontra regionalne disaster recovery.
 - Networking:
   - VPC,
   - public/private subnets,
   - security groups,
   - routing.
+- Operacje i bezpieczeństwo:
+  - Infrastructure as Code i wykrywanie driftu,
+  - workload identity i minimalne IAM,
+  - regionalny failover i fencing starego primary,
+  - rollback obrazu oraz kompatybilne migracje expand/contract,
+  - degradacja przy utracie bazy, cache i brokera.
 - Koszt vs wydajność:
   - główne cost drivers,
   - autoscaling vs overprovisioning,
   - cache jako narzędzie wydajności i oszczędności.
 
-### Kryteria ukończenia
+### Pytania sprawdzające rozumienie
 
-- Potrafisz wdrożyć prostą aplikację u wybranego cloud providera.
-- Rozumiesz różnicę między compute, storage i networkingiem w praktycznym deployu.
-- Potrafisz skonfigurować stateless workload z autoscalingiem.
-- Potrafisz wyjaśnić podstawy VPC, subnetów, routingu i security groups.
-- Potrafisz uruchomić managed database z backupem, restore i opcjonalną read replicą.
-- Potrafisz wskazać główne cost drivers danego rozwiązania.
-- Potrafisz odróżnić overprovisioning od sensownego autoscalingu.
-- Potrafisz powiedzieć: „To rozwiązanie jest technicznie poprawne, ale zbyt drogie. Zróbmy inaczej.”
+- Czy potrafisz wdrożyć prostą aplikację u wybranego cloud providera?
+- Czy rozumiesz różnicę między compute, storage i networkingiem w praktycznym deployu?
+- Czy potrafisz skonfigurować stateless workload z autoscalingiem?
+- Czy potrafisz wyjaśnić podstawy VPC, subnetów, routingu i security groups?
+- Czy potrafisz uruchomić managed database z backupem, restore i opcjonalną read replicą?
+- Czy potrafisz zmierzyć RPO/RTO i udowodnić restore testem integralności oraz critical journey?
+- Czy potrafisz odtworzyć desired state z IaC, wykryć drift i ograniczyć IAM per workload?
+- Czy potrafisz przeprowadzić failover bez split-brain oraz ocenić, czy rollback aplikacji jest zgodny ze schematem?
+- Czy potrafisz wskazać główne cost drivers danego rozwiązania?
+- Czy potrafisz odróżnić overprovisioning od sensownego autoscalingu?
+- Czy potrafisz powiedzieć: „To rozwiązanie jest technicznie poprawne, ale zbyt drogie. Zróbmy inaczej.”?
 
 ### Materiały
 
@@ -1151,7 +1261,7 @@ Rekomendowana kolejność projektów i ćwiczeń:
 
 # Jak pracować z tą roadmapą
 
-## Zasada 1: nie przechodź dalej bez artefaktów
+## Zasada 1: łącz opis z wykonywalnym dowodem
 
 Każdy większy blok powinien zostawić po sobie coś konkretnego:
 
@@ -1165,7 +1275,7 @@ Każdy większy blok powinien zostawić po sobie coś konkretnego:
 - wynik profilingu,
 - analizę `EXPLAIN ANALYZE`.
 
-Sama przeczytana książka nie jest dowodem kompetencji.
+Opis teorii zestawiaj z kodem i obserwacją: jaki niezmiennik sprawdzono, w jakim środowisku i czego wynik nie dowodzi.
 
 ## Zasada 2: projekty mają udowadniać decyzje
 
@@ -1203,11 +1313,11 @@ Bez tego łatwo zrobić „optymalizację”, która tylko skomplikuje system.
 
 ---
 
-# Minimalna definicja „done” dla całej roadmapy
+# Jak oceniać rozumienie materiału
 
-Możesz uznać roadmapę za realnie przepracowaną, jeśli masz:
+Poniższe artefakty pomagają sprawdzić rozumienie i odkryć luki. Nie są warunkiem „ukończenia” kompendium:
 
-- minimum 3 solidne projekty techniczne,
+- projekty pokazujące lokalną poprawność, granice integracji i awarie rozproszone,
 - testy concurrency i testy negatywne security,
 - przynajmniej jeden projekt z event-driven flow,
 - przynajmniej jeden projekt z pełną obserwowalnością,
@@ -1237,480 +1347,9 @@ To jest różnica między pisaniem kodu a dojrzałą inżynierią.
 
 ---
 
-# TODO
+## Utrzymanie dokumentacji
 
-## 1. API Design
-
-- Czym jest API i czym różni się API publiczne, prywatne i wewnętrzne.
-- REST vs GraphQL:
-    - kiedy REST jest wystarczający,
-    - kiedy GraphQL rozwiązuje realny problem,
-    - overfetching i underfetching,
-    - resolver N+1,
-    - query complexity,
-    - autoryzacja na poziomie pól i zasobów.
-- HTTP methods:
-    - GET,
-    - POST,
-    - PUT,
-    - PATCH,
-    - DELETE.
-- Safe vs idempotent methods:
-    - które metody powinny być bezpieczne,
-    - które powinny być idempotentne,
-    - dlaczego ma to znaczenie przy retry.
-- HTTP status codes:
-    - 2xx,
-    - 3xx,
-    - 4xx,
-    - 5xx.
-- Stateless vs Stateful APIs:
-    - stateless request,
-    - sesja po stronie serwera,
-    - skalowanie API,
-    - konsekwencje dla load balancingu.
-- API contract:
-    - request/response schema,
-    - walidacja wejścia,
-    - error contract,
-    - backward compatibility,
-    - wersjonowanie API.
-- Idempotency:
-    - idempotency key,
-    - duplikaty requestów,
-    - retry po timeoutach,
-    - operacje finansowe i płatności.
-- Rate limiting vs throttling:
-    - limit per user,
-    - limit per IP,
-    - limit per API key,
-    - token bucket,
-    - sliding window,
-    - ochrona przed nadużyciami i przeciążeniem.
-
----
-
-## 2. Authentication & Authorization
-
-- Authentication vs Authorization:
-    - kim jesteś,
-    - co możesz zrobić.
-- Session-based authentication:
-    - session ID,
-    - cookies,
-    - server-side session store,
-    - sticky sessions,
-    - konsekwencje dla skalowania.
-- JWT:
-    - access token,
-    - refresh token,
-    - expiry,
-    - rotacja refresh tokenów,
-    - revocation problem,
-    - ryzyka zbyt długiego TTL.
-- OAuth 2.0:
-    - authorization code flow,
-    - login przez Google/GitHub,
-    - różnica między authentication a delegated authorization.
-- Resource ownership:
-    - właściciel zasobu,
-    - organizacja,
-    - tenant,
-    - role,
-    - permission checks na poziomie danych.
-- Security boundaries:
-    - nie ufać frontendowi,
-    - nie ufać samemu `userId` z requestu,
-    - walidować dostęp po stronie backendu.
-
----
-
-## 3. Databases & Data Handling
-
-- SQL vs NoSQL:
-    - kiedy relacyjna baza jest lepsza,
-    - kiedy dokumentowa baza ma sens,
-    - kiedy key-value store wystarczy,
-    - kiedy wide-column store jest dobrym wyborem,
-    - kiedy grafowa baza rzeczywiście pomaga.
-- ACID:
-    - atomicity,
-    - consistency,
-    - isolation,
-    - durability,
-    - praktyczne znaczenie ACID w backendzie.
-- Transakcje:
-    - granice transakcji,
-    - commit,
-    - rollback,
-    - transakcje aplikacyjne vs bazodanowe.
-- Isolation levels:
-    - READ COMMITTED,
-    - REPEATABLE READ,
-    - SERIALIZABLE,
-    - dirty reads,
-    - non-repeatable reads,
-    - phantom reads.
-- Indexes:
-    - B-tree index,
-    - composite index,
-    - selectivity,
-    - indeks pod konkretny query pattern,
-    - koszt indeksu przy zapisie.
-- Execution plans:
-    - EXPLAIN,
-    - EXPLAIN ANALYZE,
-    - sequential scan,
-    - index scan,
-    - nested loop,
-    - hash join.
-- Normalization vs denormalization:
-    - kiedy normalizacja chroni spójność,
-    - kiedy denormalizacja przyspiesza odczyt,
-    - koszt duplikacji danych,
-    - spójność danych zdenormalizowanych.
-- Pagination:
-    - offset pagination,
-    - cursor-based pagination,
-    - keyset pagination,
-    - stabilne sortowanie,
-    - problem duplikatów i pominięć.
-- Sharding & partitioning:
-    - partycjonowanie tabel,
-    - shard key,
-    - hot partitions,
-    - routing zapytań,
-    - koszt operacyjny shardingu.
-- Read replicas:
-    - skalowanie odczytu,
-    - replication lag,
-    - read-your-writes problem,
-    - kiedy nie czytać z repliki.
-- Write scaling:
-    - batching,
-    - partitioning,
-    - queue-based writes,
-    - ograniczenia pojedynczej bazy.
-- Handling duplicate records:
-    - unique constraints,
-    - UPSERT,
-    - natural key vs surrogate key,
-    - idempotency key,
-    - deduplikacja po stronie DB vs aplikacji.
-- Optimistic vs pessimistic locking:
-    - version column,
-    - `SELECT FOR UPDATE`,
-    - lock wait,
-    - deadlock,
-    - kiedy lock jest poprawnym trade-offem.
-
----
-
-## 4. Caching & Performance
-
-- Czym jest cache i po co go używać.
-- Gdzie cache’ować:
-    - browser/client cache,
-    - CDN,
-    - API gateway,
-    - application cache,
-    - Redis,
-    - database cache.
-- Cache patterns:
-    - cache-aside,
-    - read-through,
-    - write-through,
-    - write-behind.
-- Cache eviction:
-    - TTL,
-    - LRU,
-    - LFU,
-    - manual invalidation.
-- Cache consistency:
-    - stale cache,
-    - cache invalidation,
-    - write-read race,
-    - read-your-writes problem.
-- Cache stampede:
-    - single-flight,
-    - jitter,
-    - request coalescing,
-    - background refresh.
-- Negative caching:
-    - cache’owanie braku danych,
-    - ryzyko blokowania świeżo utworzonych zasobów.
-- CDN and edge caching:
-    - statyczne assety,
-    - publiczne treści,
-    - cache headers,
-    - invalidacja CDN.
-- Kiedy cache może popsuć system:
-    - pokazanie starych danych,
-    - pokazanie danych nieuprawnionemu użytkownikowi,
-    - nieaktualny stan płatności,
-    - błędne liczniki,
-    - niespójne read modele.
-- Performance basics:
-    - latency,
-    - throughput,
-    - p50/p95/p99,
-    - bottleneck,
-    - saturation,
-    - CPU-bound vs IO-bound.
-
----
-
-## 5. Distributed Systems & Scaling
-
-- Horizontal vs vertical scaling:
-    - skalowanie instancji,
-    - skalowanie maszyny,
-    - limity obu podejść.
-- Stateless services:
-    - dlaczego łatwiej je skalować,
-    - gdzie trzymać stan,
-    - konsekwencje dla sesji.
-- Load balancing:
-    - round-robin,
-    - least connections,
-    - weighted routing,
-    - consistent hashing,
-    - health checks,
-    - sticky sessions.
-- Microservices vs monolith:
-    - monolith,
-    - modular monolith,
-    - microservices,
-    - koszty sieci,
-    - koszty operacyjne,
-    - granice domenowe,
-    - ownership zespołów.
-- Service-to-service communication:
-    - sync HTTP/gRPC,
-    - async messaging,
-    - temporal coupling,
-    - latency coupling,
-    - failure propagation.
-- Message queues:
-    - Kafka,
-    - RabbitMQ,
-    - SQS,
-    - topic,
-    - queue,
-    - partition,
-    - offset,
-    - consumer group.
-- Ordering:
-    - ordering per partition,
-    - global ordering jako kosztowna iluzja,
-    - partycjonowanie po aggregate ID.
-- Delivery semantics:
-    - at-most-once,
-    - at-least-once,
-    - effectively-once,
-    - exactly-once jako ograniczona gwarancja techniczna.
-- Event-driven architecture:
-    - event jako fakt biznesowy,
-    - event notification vs event-carried state transfer,
-    - schema versioning,
-    - backward compatibility,
-    - replay.
-- CQRS:
-    - command model,
-    - query model,
-    - projection,
-    - read model,
-    - eventual consistency,
-    - rebuild projekcji.
-- Saga pattern:
-    - distributed transaction vs saga,
-    - choreography,
-    - orchestration,
-    - compensation action,
-    - partial failure,
-    - idempotentne kroki sagi.
-
----
-
-## 6. Reliability & Real-World Failure Handling
-
-- Retry:
-    - kiedy retry ma sens,
-    - kiedy retry pogarsza awarię,
-    - retry storm,
-    - exponential backoff,
-    - jitter.
-- Timeouts:
-    - timeout klienta,
-    - timeout serwera,
-    - timeout do dependency,
-    - brak timeoutu jako ukryty błąd produkcyjny.
-- Circuit breaker:
-    - closed,
-    - open,
-    - half-open,
-    - ochrona zależności downstream,
-    - fallback.
-- Graceful degradation:
-    - partial response,
-    - fallback response,
-    - degraded mode,
-    - wyłączanie mniej ważnych funkcji.
-- Backpressure:
-    - kolejki,
-    - limity,
-    - odrzucanie nadmiarowego ruchu,
-    - ochrona bazy i downstreamów.
-- Load shedding:
-    - kontrolowane odrzucanie requestów,
-    - priorytetyzacja ruchu,
-    - zachowanie systemu pod przeciążeniem.
-- Handling race conditions:
-    - lost update,
-    - check-then-act,
-    - read-modify-write,
-    - overselling,
-    - duplikaty requestów.
-- Distributed locking:
-    - kiedy ludzie próbują go używać,
-    - lock lease,
-    - timeout locka,
-    - fencing token,
-    - split brain,
-    - kiedy lepsza jest idempotencja albo optimistic locking.
-- Idempotent consumers:
-    - deduplication table,
-    - unique event ID,
-    - retry bez duplikowania skutków ubocznych.
-- DLQ:
-    - kiedy event trafia do DLQ,
-    - replay,
-    - manual repair,
-    - runbook dla DLQ.
-- Reconciliation:
-    - porównanie lokalnego stanu ze źródłem prawdy,
-    - naprawa stuck states,
-    - szczególnie ważne w płatnościach.
-- Data repair:
-    - naprawa błędnych projekcji,
-    - naprawa zdublowanych danych,
-    - korekta po błędnym deployu.
-- Handling traffic spikes:
-    - viral load,
-    - autoscaling delay,
-    - cache pre-warming,
-    - rate limiting,
-    - graceful degradation.
-
----
-
-## 7. Observability
-
-- Logs:
-    - structured logs,
-    - JSON logs,
-    - correlation ID,
-    - request ID,
-    - user ID,
-    - tenant ID,
-    - logowanie błędów bez utraty kontekstu.
-- Metrics:
-    - request count,
-    - error rate,
-    - latency p50/p95/p99,
-    - saturation,
-    - queue depth,
-    - cache hit ratio,
-    - DB latency,
-    - consumer lag.
-- Tracing:
-    - distributed tracing,
-    - trace ID,
-    - span ID,
-    - propagation context,
-    - API → service → DB → broker.
-- Alerting:
-    - alerty symptomowe,
-    - error rate,
-    - latency,
-    - saturation,
-    - dependency failure,
-    - unikanie alert fatigue.
-- Dashboards:
-    - golden signals,
-    - RED metrics,
-    - USE metrics,
-    - dashboard dla API,
-    - dashboard dla DB,
-    - dashboard dla brokera.
-- Runbooks:
-    - DB down,
-    - Redis down,
-    - broker lag,
-    - stuck payments,
-    - failed deployments,
-    - DLQ growth.
-
----
-
-## 8. Deployment & Operations
-
-- Deployment strategies:
-    - rolling deployment,
-    - blue-green deployment,
-    - canary deployment,
-    - feature flags.
-- Rollback:
-    - kiedy rollback jest możliwy,
-    - kiedy potrzebny jest forward fix,
-    - rollback aplikacji vs rollback migracji DB.
-- Database migrations:
-    - backward-compatible migration,
-    - expand-contract pattern,
-    - zero-downtime migration,
-    - migracje dużych tabel.
-- Operational readiness:
-    - health check,
-    - readiness probe,
-    - liveness probe,
-    - graceful shutdown,
-    - connection draining.
-- Configuration:
-    - config per environment,
-    - secrets,
-    - feature toggles,
-    - runtime config vs build-time config.
-- Incident handling:
-    - detekcja,
-    - diagnoza,
-    - mitigation,
-    - rollback,
-    - data repair,
-    - postmortem.
-- SLO/SLA/Error budget:
-    - co obiecujesz użytkownikowi,
-    - jak mierzysz niezawodność,
-    - kiedy zatrzymać feature development i poprawiać stabilność.
-
----
-
-## 9. Security & Privacy w System Design
-
-- TLS everywhere.
-- Walidacja wejścia.
-- Rate limiting endpointów publicznych.
-- Ochrona przed brute force.
-- Ochrona przed replay attack.
-- Secret rotation.
-- Principle of least privilege.
-- Tenant isolation.
-- Access control na poziomie danych.
-- Audit log dla operacji krytycznych.
-- Nie logować sekretów, tokenów, numerów kart i danych wrażliwych.
-- Privacy by design:
-    - block,
-    - mute,
-    - private resources,
-    - usuwanie danych,
-    - minimalizacja danych.
-
+Z katalogu głównego repozytorium uruchom `pwsh -File scripts/check-documentation.ps1`.
+Kontrola sprawdza lokalne odsyłacze, karty laboratoriów, wskazane moduły i testy
+oraz zgodność profili infrastrukturalnych z CI. Nie zastępuje uruchomienia
+wskazanych testów ani merytorycznego przeglądu komentarzy.

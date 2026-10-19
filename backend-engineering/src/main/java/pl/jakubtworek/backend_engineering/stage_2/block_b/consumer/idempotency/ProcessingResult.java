@@ -24,6 +24,12 @@ public enum ProcessingResult {
     RETRYABLE_FAILURE,
 
     /**
+     * A failure was classified as transient, but did not recover within the
+     * configured retry budget.
+     */
+    RETRIES_EXHAUSTED,
+
+    /**
      * Processing failed with a non-retryable error and should go to DLQ.
      */
     NON_RETRYABLE_FAILURE

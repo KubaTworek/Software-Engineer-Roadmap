@@ -1,11 +1,12 @@
-package pl.jakubtworek.backend_engineering.stage_2.block_c.workshop.src.main.java.com.example.demoapi.web;
+package com.example.demoapi.web;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
-import pl.jakubtworek.backend_engineering.stage_2.block_c.workshop.src.main.java.com.example.demoapi.health.ApplicationHealthState;
-import pl.jakubtworek.backend_engineering.stage_2.block_c.workshop.src.main.java.com.example.demoapi.config.AppProperties;
+import com.example.demoapi.health.ApplicationHealthState;
+import com.example.demoapi.config.AppProperties;
+import com.example.demoapi.config.SecretProperties;
 
 import java.lang.management.ManagementFactory;
 import java.util.Map;
@@ -14,10 +15,16 @@ import java.util.Map;
 public class ApiController {
 
     private final AppProperties properties;
+    private final SecretProperties secrets;
     private final ApplicationHealthState healthState;
 
-    public ApiController(AppProperties properties, ApplicationHealthState healthState) {
+    public ApiController(
+            AppProperties properties,
+            SecretProperties secrets,
+            ApplicationHealthState healthState
+    ) {
         this.properties = properties;
+        this.secrets = secrets;
         this.healthState = healthState;
     }
 
@@ -33,7 +40,8 @@ public class ApiController {
                 "application", properties.getName(),
                 "status", "ok",
                 "imageTag", properties.getImageTag(),
-                "commitSha", properties.getCommitSha()
+                "commitSha", properties.getCommitSha(),
+                "databaseDsn", secrets.maskedDatabaseDsn()
         ));
     }
 

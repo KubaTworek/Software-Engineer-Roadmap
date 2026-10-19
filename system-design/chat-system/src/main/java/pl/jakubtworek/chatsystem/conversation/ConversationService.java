@@ -122,8 +122,12 @@ public class ConversationService {
          * Pobieramy aktualnego użytkownika i drugiego uczestnika.
          * Jeśli którykolwiek nie istnieje, przerywamy operację.
          */
-        AppUser currentUser = getUser(currentUserId, "Current user not found");
-        AppUser participant = getUser(request.participantId(), "Participant not found");
+        String directKey = directKey(currentUserId, request.participantId());
+        List<UUID> orderedIds = java.util.stream.Stream.of(currentUserId, request.participantId()).sorted().toList();
+        List<AppUser> lockedUsers = userRepository.lockUsers(orderedIds);
+        if (lockedUsers.size() != 2) throw new NotFoundException("Conversation participant not found");
+        AppUser currentUser = lockedUsers.stream().filter(u -> u.getId().equals(currentUserId)).findFirst().orElseThrow();
+        AppUser participant = lockedUsers.stream().filter(u -> u.getId().equals(request.participantId())).findFirst().orElseThrow();
 
         /*
          * Blokady są sprawdzane przed utworzeniem rozmowy.
@@ -141,7 +145,7 @@ public class ConversationService {
          * - User B tworzy rozmowę z User A,
          * - backend tworzy dwie różne konwersacje.
          */
-        return memberRepository.findDirectConversationBetween(currentUserId, participant.getId())
+        return conversationRepository.findByDirectKey(directKey)
                 .map(existing -> toResponse(
                         existing,
                         memberRepository.findMembersByConversationId(existing.getId()),
@@ -155,7 +159,7 @@ public class ConversationService {
                      * W direct conversation role nie mają dużego znaczenia,
                      * ale upraszcza to model, bo każdy członek zawsze ma jakąś rolę.
                      */
-                    Conversation conversation = new Conversation(ConversationType.DIRECT);
+                    Conversation conversation = new Conversation(ConversationType.DIRECT, directKey);
 
                     ConversationMember memberA =
                             new ConversationMember(conversation, currentUser, ConversationRole.OWNER);
@@ -170,6 +174,11 @@ public class ConversationService {
 
                     return toResponse(saved, saved.getMembers(), currentUserId);
                 });
+    }
+
+    private String directKey(UUID first, UUID second) {
+        return java.util.stream.Stream.of(first.toString(), second.toString()).sorted()
+                .collect(java.util.stream.Collectors.joining(":"));
     }
 
     /**
@@ -323,7 +332,9 @@ public class ConversationService {
             ensureCanManageRoles(conversationId, currentUserId);
         }
 
-        ConversationMember member = new ConversationMember(conversation, user, role);
+        int nextEpoch = memberRepository.findLatestEpoch(conversationId, user.getId()) + 1;
+        ConversationMember member = new ConversationMember(
+                conversation, user, role, conversation.getNextSequence(), nextEpoch);
         conversation.addMember(member);
 
         conversationRepository.save(conversation);
@@ -441,7 +452,12 @@ public class ConversationService {
                 currentUserId
         );
 
-        memberRepository.delete(target);
+        /*
+         * Nie kasujemy rekordu. Zakres epoki jest potrzebny do audytu i do decyzji,
+         * których wiadomości nie wolno ujawnić po ponownym dołączeniu użytkownika.
+         */
+        target.leave(conversation.getNextSequence() - 1, java.time.Instant.now());
+        memberRepository.save(target);
 
         /*
          * Jeśli użytkownik usuwa sam siebie, zwracamy stan sprzed usunięcia.

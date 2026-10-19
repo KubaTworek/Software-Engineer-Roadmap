@@ -2,6 +2,9 @@ package com.example.paymentsystem.reporting;
 
 import com.example.paymentsystem.payment.*;
 import org.springframework.stereotype.Service;
+import java.util.Map;
+import java.util.function.ToLongFunction;
+import java.util.stream.Collectors;
 
 /**
  * Serwis odpowiedzialny za budowanie raportu biznesowego platformy płatniczej.
@@ -78,9 +81,7 @@ public class ReportingService {
          *
          * Przy płatnościach manual capture może być mniejszy niż amount.
          */
-        long totalVolume = payments.stream()
-                .mapToLong(Payment::getCapturedAmount)
-                .sum();
+        Map<String, Long> totalVolume = totalsByCurrency(payments, Payment::getCapturedAmount);
 
         /**
          * Liczymy przychód platformy z prowizji.
@@ -92,9 +93,7 @@ public class ReportingService {
          * platform fee = 1000
          * merchant amount = 9000
          */
-        long fees = payments.stream()
-                .mapToLong(Payment::getPlatformFeeAmount)
-                .sum();
+        Map<String, Long> fees = totalsByCurrency(payments, Payment::getPlatformFeeAmount);
 
         /**
          * Liczymy kwotę netto należną merchantom.
@@ -104,9 +103,7 @@ public class ReportingService {
          * Ta metryka pokazuje, ile pieniędzy powinno finalnie trafić
          * do sprzedawców przed refundami, chargebackami i payoutami.
          */
-        long merchantNet = payments.stream()
-                .mapToLong(Payment::getMerchantAmount)
-                .sum();
+        Map<String, Long> merchantNet = totalsByCurrency(payments, Payment::getMerchantAmount);
 
         /**
          * Składamy odpowiedź raportową.
@@ -143,12 +140,18 @@ public class ReportingService {
                 /**
                  * Liczba płatności obsłużonych przez poszczególnych providerów.
                  *
-                 * To jest szczególnie ważne w Stage 6,
+                 * To jest szczególnie ważne przy routingu wielu PSP,
                  * bo system ma routing między wieloma PSP.
                  */
                 repository.countByProvider(PaymentProvider.STRIPE_MOCK),
                 repository.countByProvider(PaymentProvider.ADYEN_MOCK),
                 repository.countByProvider(PaymentProvider.PAYU_MOCK)
         );
+    }
+
+    private Map<String, Long> totalsByCurrency(java.util.List<Payment> payments,
+                                                ToLongFunction<Payment> amount) {
+        return payments.stream().collect(Collectors.groupingBy(Payment::getCurrency,
+                Collectors.summingLong(amount)));
     }
 }

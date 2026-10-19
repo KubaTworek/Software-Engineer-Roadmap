@@ -85,7 +85,8 @@ public class RateLimiterProperties {
      * Konfiguracja publikowania usage events.
      *
      * Usage events mogą trafiać np. do Kafki
-     * i służyć do analityki, dashboardów oraz billingu.
+     * i służyć do analityki i dashboardów. Strumień best effort nie jest
+     * wiarygodnym źródłem billingu.
      */
     private UsageEvents usageEvents = new UsageEvents();
 
@@ -96,14 +97,6 @@ public class RateLimiterProperties {
      * niezależny od krótkich limitów typu requests per minute.
      */
     private Quotas quotas = new Quotas();
-
-    /**
-     * Konfiguracja lokalnego cache'a konfiguracji.
-     *
-     * W docelowej platformie dynamiczny config może pochodzić z bazy danych
-     * albo Config Service. Cache ogranicza częstotliwość kosztownych odczytów.
-     */
-    private ConfigCache configCache = new ConfigCache();
 
     /**
      * Lista reguł rate limitingu.
@@ -136,9 +129,6 @@ public class RateLimiterProperties {
 
     public Quotas getQuotas() { return quotas; }
     public void setQuotas(Quotas quotas) { this.quotas = quotas; }
-
-    public ConfigCache getConfigCache() { return configCache; }
-    public void setConfigCache(ConfigCache configCache) { this.configCache = configCache; }
 
     public List<Rule> getRules() { return rules; }
     public void setRules(List<Rule> rules) { this.rules = rules; }
@@ -207,14 +197,9 @@ public class RateLimiterProperties {
          *
          * Niższa wartość zwykle oznacza wyższy priorytet.
          *
-         * Priorytety pomagają przy:
-         * - sortowaniu reguł,
-         * - override'ach,
-         * - debugowaniu kolejności dopasowania.
-         *
-         * Przykład:
-         * tenant override może mieć priority=10,
-         * a plan default priority=1000.
+         * Priorytet ustala wyłącznie deterministyczną kolejność oceny.
+         * Polityki są kumulatywne, więc niższy numer nie wyłącza reguły planu
+         * ani reguły globalnej.
          */
         private int priority = 1000;
 
@@ -287,10 +272,13 @@ public class RateLimiterProperties {
          */
         private RegionMode regionMode = RegionMode.REGIONAL;
 
+        /** MONITOR records would-deny decisions without rejecting business traffic. */
+        private EnforcementMode enforcementMode = EnforcementMode.ENFORCE;
+
         /**
          * Tenant, dla którego obowiązuje reguła.
          *
-         * Używane dla reguł typu TENANT albo override'ów tenantowych.
+         * Używane dla kumulatywnych reguł typu TENANT.
          */
         private String tenantId;
 
@@ -369,6 +357,9 @@ public class RateLimiterProperties {
         public RegionMode getRegionMode() { return regionMode; }
         public void setRegionMode(RegionMode regionMode) { this.regionMode = regionMode; }
 
+        public EnforcementMode getEnforcementMode() { return enforcementMode; }
+        public void setEnforcementMode(EnforcementMode value) { this.enforcementMode = value; }
+
         public String getTenantId() { return tenantId; }
         public void setTenantId(String tenantId) { this.tenantId = tenantId; }
 
@@ -420,6 +411,14 @@ public class RateLimiterProperties {
          */
         private long defaultWindowSeconds = 60;
 
+        /**
+         * Twarda granica pamięci trybu awaryjnego. Atakujący może tworzyć nowe
+         * principals szybciej niż okresowe sprzątanie starych okien; po
+         * osiągnięciu granicy fallback ma odmawiać nowym bucketom zamiast
+         * ryzykować OOM całej instancji.
+         */
+        private int maxBuckets = 100_000;
+
         public boolean isEnabled() { return enabled; }
         public void setEnabled(boolean enabled) { this.enabled = enabled; }
 
@@ -428,6 +427,9 @@ public class RateLimiterProperties {
 
         public long getDefaultWindowSeconds() { return defaultWindowSeconds; }
         public void setDefaultWindowSeconds(long defaultWindowSeconds) { this.defaultWindowSeconds = defaultWindowSeconds; }
+
+        public int getMaxBuckets() { return maxBuckets; }
+        public void setMaxBuckets(int maxBuckets) { this.maxBuckets = maxBuckets; }
     }
 
     /**
@@ -443,6 +445,21 @@ public class RateLimiterProperties {
      * która jest używana przy obsłudze X-Forwarded-For.
      */
     public static class Security {
+
+        /** Token protects the control plane; production supplies it from a secret manager. */
+        private String adminToken = "local-admin-token";
+        private List<String> previousAdminTokens = new ArrayList<>();
+        private String identityHmacSecret = "local-identity-hmac-secret";
+        private String gatewayAssertionHmacSecret = "local-gateway-assertion-secret";
+
+        /** When enabled, source IP alone is insufficient to trust identity assertions. */
+        private boolean requireSignedIdentityHeaders;
+        private String identitySignatureHeader = "X-Identity-Signature";
+        private String identityTimestampHeader = "X-Identity-Timestamp";
+        private long identitySignatureMaxAgeSeconds = 30;
+
+        /** Identity asserted by headers is trusted only after a controlled gateway. */
+        private boolean identityHeadersFromTrustedProxiesOnly = true;
 
         /**
          * Lista zaufanych proxy/load balancerów.
@@ -480,6 +497,33 @@ public class RateLimiterProperties {
 
         public List<String> getTrustedProxies() { return trustedProxies; }
         public void setTrustedProxies(List<String> trustedProxies) { this.trustedProxies = trustedProxies; }
+
+        public String getAdminToken() { return adminToken; }
+        public void setAdminToken(String adminToken) { this.adminToken = adminToken; }
+
+        public List<String> getPreviousAdminTokens() { return previousAdminTokens; }
+        public void setPreviousAdminTokens(List<String> tokens) { this.previousAdminTokens = tokens; }
+
+        public String getIdentityHmacSecret() { return identityHmacSecret; }
+        public void setIdentityHmacSecret(String secret) { this.identityHmacSecret = secret; }
+
+        public String getGatewayAssertionHmacSecret() { return gatewayAssertionHmacSecret; }
+        public void setGatewayAssertionHmacSecret(String value) { this.gatewayAssertionHmacSecret = value; }
+
+        public boolean isRequireSignedIdentityHeaders() { return requireSignedIdentityHeaders; }
+        public void setRequireSignedIdentityHeaders(boolean value) { this.requireSignedIdentityHeaders = value; }
+
+        public String getIdentitySignatureHeader() { return identitySignatureHeader; }
+        public void setIdentitySignatureHeader(String value) { this.identitySignatureHeader = value; }
+
+        public String getIdentityTimestampHeader() { return identityTimestampHeader; }
+        public void setIdentityTimestampHeader(String value) { this.identityTimestampHeader = value; }
+
+        public long getIdentitySignatureMaxAgeSeconds() { return identitySignatureMaxAgeSeconds; }
+        public void setIdentitySignatureMaxAgeSeconds(long value) { this.identitySignatureMaxAgeSeconds = value; }
+
+        public boolean isIdentityHeadersFromTrustedProxiesOnly() { return identityHeadersFromTrustedProxiesOnly; }
+        public void setIdentityHeadersFromTrustedProxiesOnly(boolean value) { this.identityHeadersFromTrustedProxiesOnly = value; }
 
         public String getApiKeyHeader() { return apiKeyHeader; }
         public void setApiKeyHeader(String apiKeyHeader) { this.apiKeyHeader = apiKeyHeader; }
@@ -528,7 +572,7 @@ public class RateLimiterProperties {
     }
 
     /**
-     * Konfiguracja billing quotas.
+     * Konfiguracja estymacji quota online.
      *
      * Quota to długoterminowy limit zużycia,
      * np. miesięczny limit requestów dla tenanta.
@@ -555,32 +599,6 @@ public class RateLimiterProperties {
     }
 
     /**
-     * Konfiguracja lokalnego cache'a dynamicznej konfiguracji.
-     *
-     * Przydaje się, gdy reguły pochodzą z zewnętrznego Config Service
-     * albo bazy danych.
-     */
-    public static class ConfigCache {
-
-        /**
-         * Maksymalna liczba wpisów w cache'u.
-         */
-        private long maximumSize = 10000;
-
-        /**
-         * Czas życia wpisu po zapisie.
-         *
-         * Po tym czasie wpis powinien zostać odświeżony.
-         */
-        private long expireAfterWriteSeconds = 30;
-
-        public long getMaximumSize() { return maximumSize; }
-        public void setMaximumSize(long maximumSize) { this.maximumSize = maximumSize; }
-
-        public long getExpireAfterWriteSeconds() { return expireAfterWriteSeconds; }
-        public void setExpireAfterWriteSeconds(long expireAfterWriteSeconds) { this.expireAfterWriteSeconds = expireAfterWriteSeconds; }
-    }
-
     /**
      * Typ reguły rate limitingu.
      *
@@ -645,4 +663,10 @@ public class RateLimiterProperties {
          */
         GLOBAL_APPROXIMATE
     }
+
+    public enum EnforcementMode {
+        ENFORCE,
+        MONITOR
+    }
+
 }

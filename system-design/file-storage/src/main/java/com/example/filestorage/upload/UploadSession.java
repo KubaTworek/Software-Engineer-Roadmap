@@ -50,6 +50,19 @@ public class UploadSession {
     @Column(name = "expires_at", nullable = false)
     private Instant expiresAt;
 
+    @Column(name = "final_object_key")
+    private String finalObjectKey;
+
+    @Column(name = "final_file_id")
+    private UUID finalFileId;
+
+    @Column(name = "assembling_started_at")
+    private Instant assemblingStartedAt;
+
+    @Version
+    @Column(name = "row_version", nullable = false)
+    private long rowVersion;
+
     protected UploadSession() {}
 
     public UploadSession(UUID userId, UUID parentFolderId, String filename, String contentType,
@@ -72,14 +85,61 @@ public class UploadSession {
     }
 
     public void markChunkUploaded() {
+        if (!isWritable()) {
+            throw new IllegalStateException("Upload session is no longer writable");
+        }
+        if (uploadedChunks >= totalChunks) {
+            /*
+             * Licznik nie może przekroczyć liczby części zadeklarowanej przy
+             * rozpoczęciu uploadu. Ponowne zgłoszenie tego samego chunku powinno
+             * zostać odfiltrowane po kluczu (sessionId, chunkIndex), a nie sztucznie
+             * zwiększać postęp sesji.
+             */
+            throw new IllegalStateException("All declared chunks are already uploaded");
+        }
         this.uploadedChunks += 1;
         this.status = UploadStatus.IN_PROGRESS;
         this.updatedAt = Instant.now();
     }
 
     public void markCompleted() {
+        if (uploadedChunks != totalChunks) {
+            /*
+             * Metadane pliku nie mogą wskazywać COMPLETED, dopóki storage nie ma
+             * kompletu części. Chroni to download przed opublikowaniem niepełnego
+             * obiektu po retry albo równoległym wywołaniu complete.
+             */
+            throw new IllegalStateException("Cannot complete upload with missing chunks");
+        }
         this.status = UploadStatus.COMPLETED;
         this.updatedAt = Instant.now();
+    }
+
+    public void startAssembling(String objectKey, Instant now) {
+        if (status == UploadStatus.ASSEMBLING && objectKey.equals(finalObjectKey)) {
+            return;
+        }
+        if (!isWritable(now) || uploadedChunks != totalChunks) {
+            throw new IllegalStateException("Upload is not ready for assembly");
+        }
+        status = UploadStatus.ASSEMBLING;
+        finalObjectKey = objectKey;
+        assemblingStartedAt = now;
+        updatedAt = now;
+    }
+
+    public void markCompleted(UUID fileId, Instant now) {
+        if (status != UploadStatus.ASSEMBLING) {
+            throw new IllegalStateException("Only an assembling upload can be completed");
+        }
+        finalFileId = fileId;
+        status = UploadStatus.COMPLETED;
+        updatedAt = now;
+    }
+
+    public void markFailed(Instant now) {
+        status = UploadStatus.FAILED;
+        updatedAt = now;
     }
 
     public void markExpired() {
@@ -98,7 +158,11 @@ public class UploadSession {
     }
 
     public boolean isWritable() {
-        return (status == UploadStatus.INITIATED || status == UploadStatus.IN_PROGRESS) && expiresAt.isAfter(Instant.now());
+        return isWritable(Instant.now());
+    }
+
+    public boolean isWritable(Instant now) {
+        return (status == UploadStatus.INITIATED || status == UploadStatus.IN_PROGRESS) && expiresAt.isAfter(now);
     }
 
     public UUID getId() { return id; }
@@ -115,4 +179,8 @@ public class UploadSession {
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
     public Instant getExpiresAt() { return expiresAt; }
+    public String getFinalObjectKey() { return finalObjectKey; }
+    public UUID getFinalFileId() { return finalFileId; }
+    public Instant getAssemblingStartedAt() { return assemblingStartedAt; }
+    public long getRowVersion() { return rowVersion; }
 }

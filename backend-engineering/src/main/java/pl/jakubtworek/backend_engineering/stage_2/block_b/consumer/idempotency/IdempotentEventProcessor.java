@@ -1,6 +1,6 @@
 package pl.jakubtworek.backend_engineering.stage_2.block_b.consumer.idempotency;
 
-import com.example.ecommerce.consumer.ConsumedEvent;
+import pl.jakubtworek.backend_engineering.stage_2.block_b.consumer.ConsumedEvent;
 
 /**
  * Generic wrapper for idempotent event handling.

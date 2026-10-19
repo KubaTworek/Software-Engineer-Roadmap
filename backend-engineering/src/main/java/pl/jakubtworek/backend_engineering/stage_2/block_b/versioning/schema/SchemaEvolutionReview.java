@@ -13,13 +13,23 @@ public class SchemaEvolutionReview {
     private final CompatibilityMode compatibilityMode;
 
     public SchemaEvolutionReview(CompatibilityMode compatibilityMode) {
+        if (compatibilityMode == null) {
+            throw new IllegalArgumentException("Compatibility mode is required");
+        }
         this.compatibilityMode = compatibilityMode;
     }
 
     /**
-     * Reviews a list of schema changes and returns whether they are acceptable.
+     * Reviews format-independent change heuristics.
+     *
+     * <p>A successful result is permission to continue to the real schema
+     * compatibility check, not proof of Avro or Protobuf compatibility.</p>
      */
     public SchemaCompatibilityResult review(List<SchemaChange> changes) {
+        if (changes == null) {
+            throw new IllegalArgumentException("Schema changes cannot be null");
+        }
+
         boolean hasUnsafeChange = changes.stream()
                 .anyMatch(change -> !change.isUsuallySafe());
 
@@ -32,7 +42,7 @@ public class SchemaEvolutionReview {
 
         return SchemaCompatibilityResult.success(
                 compatibilityMode,
-                "Schema changes appear safe for compatible evolution."
+                "Changes pass the high-level review; format-specific compatibility must still be verified."
         );
     }
 }

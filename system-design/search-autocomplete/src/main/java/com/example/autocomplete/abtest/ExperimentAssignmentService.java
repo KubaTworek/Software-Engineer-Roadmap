@@ -51,7 +51,9 @@ public class ExperimentAssignmentService {
          *
          * Modulo 100 daje prosty procentowy podział ruchu.
          */
-        int bucket = Math.abs(key.hashCode()) % 100;
+        // floorMod obsługuje również Integer.MIN_VALUE, dla którego Math.abs
+        // pozostaje liczbą ujemną i psuje rozkład bucketów.
+        int bucket = Math.floorMod(key.hashCode(), 100);
 
         /*
          * 60% ruchu trafia do wariantu kontrolnego.

@@ -46,7 +46,10 @@ public class NotificationWorker {
                 default -> "generic";
             };
 
-            emailClient.sendTransactionalEmail(template, event.getPayloadJson());
+            emailClient.sendTransactionalEmail(
+                    "outbox-" + event.getId(),
+                    template,
+                    event.getPayloadJson());
             processed.save(new ProcessedNotificationEvent(event.getId()));
             sent.increment();
         }

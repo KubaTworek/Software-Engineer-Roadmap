@@ -30,8 +30,13 @@ spring:
     # Domyślne hasło lokalnego RabbitMQ.
     password: guest
 
+    # Durable click relay marks an outbox row as sent only after this broker ACK.
+    publisher-confirm-type: correlated
+
     listener:
       simple:
+        # Instrumentacja listenera odtwarza kontekst trace z nagłówków AMQP.
+        observation-enabled: true
         retry:
           # Włącza retry dla listenerów RabbitMQ.
           # Jeśli consumer nie przetworzy wiadomości, Spring spróbuje ponownie.
@@ -46,6 +51,11 @@ spring:
           # Mnożnik backoffu.
           # Przy 500ms i multiplier=2 kolejne opóźnienia będą rosnąć wykładniczo.
           multiplier: 2
+
+    template:
+      # RabbitTemplate wstrzykuje standardowy kontekst trace do wiadomości;
+      # requestId pozostaje niezależnym identyfikatorem biznesowym.
+      observation-enabled: true
 
   data:
     redis:
@@ -79,6 +89,9 @@ spring:
   flyway:
     # Włącza migracje Flyway przy starcie aplikacji.
     enabled: true
+    # Wspólne migracje działają również na H2. Katalog producenta zawiera
+    # fizyczne optymalizacje, których semantyka DDL zależy od silnika.
+    locations: classpath:db/migration,classpath:db/vendor/{vendor}
 
 server:
   # Port HTTP aplikacji.
@@ -88,6 +101,11 @@ app:
   # Publiczny bazowy URL usługi.
   # Używany do budowania krótkich linków zwracanych w odpowiedziach API.
   public-base-url: http://localhost:8080
+
+  trusted-proxies:
+    # Forwarded headers are ignored unless the direct peer belongs to this list.
+    # Add only the CIDR ranges of load balancers/CDNs controlled by the deployment.
+    cidrs: []
 
   datasource:
     # Czy włączyć routing read/write z read replica.
@@ -121,7 +139,9 @@ app:
 
     # TTL pozytywnych lookupów edge.
     # Dotyczy aktywnych linków, które edge/CDN może cache'ować.
-    edge-cache-ttl: PT10M
+    # Krótki TTL ogranicza okno, w którym edge może jeszcze zwracać link
+    # zablokowany chwilę wcześniej. Dłuższy TTL wymaga aktywnej invalidacji CDN.
+    edge-cache-ttl: PT5S
 
     # TTL negatywnych lookupów edge.
     # Dotyczy np. nieistniejących, wygasłych albo zablokowanych linków.
@@ -134,21 +154,46 @@ app:
     # Token używany przez edge worker/CDN do autoryzacji requestów do /internal/edge.
     # Lokalna wartość jest OK do developmentu, ale produkcyjnie musi być secretem.
     internal-token: ${EDGE_INTERNAL_TOKEN:local-edge-token}
+    # During rotation both current and previous tokens are accepted briefly.
+    previous-internal-tokens: []
 
     # Nagłówek Cache-Control ustawiany na publicznych redirectach.
     # public pozwala cache'ować odpowiedź przez CDN/proxy.
-    # max-age=60 oznacza cache po stronie klienta/proxy przez 60 sekund.
-    # stale-while-revalidate=300 pozwala używać starej odpowiedzi podczas odświeżania przez 300 sekund.
-    cache-control-for-redirects: public, max-age=60, stale-while-revalidate=300
+    # Nie używamy stale-while-revalidate: stara odpowiedź mogłaby po blokadzie
+    # nadal kierować użytkownika do zabronionego celu.
+    cache-control-for-redirects: public, max-age=5
 
   cache:
     # Domyślny TTL cache dla mapowania shortCode -> longUrl w Redisie.
     # Jeżeli link ma expiresAt wcześniej niż 24h, cache powinien dostać krótszy TTL.
     url-ttl: PT24H
 
+  projection-outbox:
+    # Szybka ścieżka aktualizuje projekcje po commitcie, a relay ponawia pracę,
+    # gdy Redis albo zewnętrzny magazyn były chwilowo niedostępne.
+    relay-enabled: true
+    poll-delay: PT1S
+    lease: PT30S
+    batch-size: 100
+    max-attempts: 8
+
+  idempotency:
+    # Marker musi żyć przynajmniej tak długo, jak klient może bezpiecznie ponowić
+    # żądanie utworzenia linku. Cleanup usuwa wyłącznie wygasłe rekordy.
+    retention: PT24H
+    cleanup-delay: PT1H
+
   queue:
     # Włącza publikowanie i konsumowanie eventów kolejki.
     enabled: true
+    # false keeps redirect independent from PostgreSQL analytics writes; true
+    # persists click intent before returning and trades latency for durability.
+    durable-publishing: false
+    publish-outbox-delay: PT1S
+    publish-outbox-lease: PT30S
+    publish-outbox-batch-size: 100
+    publish-outbox-max-attempts: 8
+    publisher-confirm-timeout: PT5S
 
     # Exchange RabbitMQ dla eventów kliknięć.
     click-exchange: url-shortener.clicks.exchange
@@ -190,6 +235,8 @@ app:
     # Salt używany do hashowania adresów IP.
     # W produkcji musi być zmieniony i przechowywany jako secret.
     ip-hash-salt: change-me-in-production
+    raw-event-retention: P30D
+    retention-cleanup-delay: PT6H
 
   abuse:
     # Włącza mechanizmy wykrywania nadużyć.
@@ -225,6 +272,7 @@ app:
     # Prosty token administracyjny używany przez endpointy admin.
     # Lokalnie OK, ale produkcyjnie powinien być zastąpiony przez OAuth2/OIDC, mTLS albo IAM.
     token: local-admin-token
+    previous-tokens: []
 
   enterprise:
     # Włącza Enterprise API.
@@ -236,6 +284,7 @@ app:
     # Salt do hashowania API key.
     # Produkcyjnie powinien pochodzić z secreta i nie powinien być commitowany do repo.
     api-key-hash-salt: ${ENTERPRISE_API_KEY_HASH_SALT:change-me-enterprise-salt}
+    previous-api-key-hash-salts: []
 
     # Maksymalna liczba URL-i w jednym requestcie bulk create.
     bulk-max-size: 100
@@ -247,6 +296,11 @@ app:
     idempotency-ttl: PT24H
 
 management:
+  tracing:
+    sampling:
+      # Pełne próbkowanie ułatwia laboratorium. Produkcja powinna dobrać je do
+      # budżetu telemetrycznego i ewentualnego tail samplingu.
+      probability: 1.0
   endpoints:
     web:
       exposure:

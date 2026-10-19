@@ -26,9 +26,9 @@ public class ExecutorExperiment {
     private static void runExperiment(ThreadPoolExecutor executor,
                                       TaskProcessor processor,
                                       int tasks) throws InterruptedException {
-
-        // ThreadMXBean allows inspecting JVM thread statistics
-        ThreadMXBean threadBean = ManagementFactory.getThreadMXBean();
+        try {
+            // ThreadMXBean allows inspecting JVM thread statistics
+            ThreadMXBean threadBean = ManagementFactory.getThreadMXBean();
 
         // Baseline measurements before tasks are submitted
         long memoryBefore = usedMemory();              // memory used by JVM
@@ -60,9 +60,23 @@ public class ExecutorExperiment {
         // Helps observe memory pressure caused by thread creation or queued tasks
         System.out.println("Memory delta: " + (memoryAfter - memoryBefore) / 1024 + " KB");
 
-        // Difference in the total number of JVM threads
-        // Shows how many additional threads were created during execution
-        System.out.println("Thread count delta: " + (threadCountAfter - threadCountBefore));
+            // Difference in the total number of JVM threads
+            // Shows how many additional threads were created during execution
+            System.out.println("Thread count delta: " + (threadCountAfter - threadCountBefore));
+        } finally {
+            shutdownAndAwaitTermination(executor);
+        }
+    }
+
+    private static void shutdownAndAwaitTermination(ExecutorService executor)
+            throws InterruptedException {
+        executor.shutdown();
+        if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
+            executor.shutdownNow();
+            if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("Executor did not terminate");
+            }
+        }
     }
 
     /**

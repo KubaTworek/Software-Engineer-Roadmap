@@ -3,6 +3,8 @@ package pl.jakubtworek.marketplace.integration.kafka.api;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import pl.jakubtworek.marketplace.integration.kafka.*;
+import pl.jakubtworek.marketplace.security.SecurityAuditLog;
+import org.springframework.security.core.Authentication;
 
 import java.util.UUID;
 
@@ -51,13 +53,16 @@ public class KafkaAdminController {
      * błędu, np. po poprawieniu kodu konsumenta albo danych.
      */
     private final DlqReplayService replayService;
+    private final SecurityAuditLog audit;
 
     public KafkaAdminController(
             DlqEventRepository dlqRepository,
-            DlqReplayService replayService
+            DlqReplayService replayService,
+            SecurityAuditLog audit
     ) {
         this.dlqRepository = dlqRepository;
         this.replayService = replayService;
+        this.audit = audit;
     }
 
     /**
@@ -78,10 +83,10 @@ public class KafkaAdminController {
     @GetMapping("/dlq")
     public ResponseEntity<?> dlq(@RequestParam(required = false) DlqEventStatus status) {
         if (status == null) {
-            return ResponseEntity.ok(dlqRepository.findAll());
+            return ResponseEntity.ok(dlqRepository.findAll().stream().map(KafkaAdminController::summary).toList());
         }
 
-        return ResponseEntity.ok(dlqRepository.findByStatus(status, 100));
+        return ResponseEntity.ok(dlqRepository.findByStatus(status, 100).stream().map(KafkaAdminController::summary).toList());
     }
 
     /**
@@ -97,9 +102,17 @@ public class KafkaAdminController {
      * W przyszłości może być wykonywany asynchronicznie.
      */
     @PostMapping("/dlq/{id}/replay")
-    public ResponseEntity<Void> replay(@PathVariable UUID id) {
+    public ResponseEntity<Void> replay(@PathVariable UUID id, Authentication authentication) {
         replayService.replay(id);
+        audit.dlqReplay(authentication == null ? "local-unsecured" : authentication.getName(), id);
 
         return ResponseEntity.accepted().build();
+    }
+
+    private static java.util.Map<String, Object> summary(DlqEvent event) {
+        return java.util.Map.of(
+                "id", event.id(), "eventId", event.envelope().eventId(),
+                "eventType", event.envelope().eventType(), "status", event.status(),
+                "attempts", event.attempts(), "failedAt", event.failedAt());
     }
 }

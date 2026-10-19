@@ -5,6 +5,7 @@ import org.springframework.stereotype.Component;
 import pl.jakubtworek.chatsystem.message.MessageResponse;
 import pl.jakubtworek.chatsystem.message.ReceiptResponse;
 import pl.jakubtworek.chatsystem.presence.PresenceResponse;
+import pl.jakubtworek.chatsystem.conversation.ConversationMemberRepository;
 
 import java.util.UUID;
 
@@ -27,23 +28,23 @@ public class RealtimeMessagePublisher {
     /**
      * Główny obiekt Springa do wysyłania wiadomości STOMP.
      *
-     * convertAndSend(...) wysyła event na publiczny topic,
-     * np. do wszystkich klientów subskrybujących daną konwersację.
-     *
      * convertAndSendToUser(...) wysyła event prywatnie do konkretnego użytkownika,
-     * np. ACK wysłania wiadomości albo błąd operacji.
+     * np. event rozmowy, ACK wysłania wiadomości albo błąd operacji. Lista
+     * odbiorców jest odczytywana z aktualnego membershipu przy publikacji.
      */
     private final SimpMessagingTemplate messagingTemplate;
+    private final ConversationMemberRepository members;
 
-    public RealtimeMessagePublisher(SimpMessagingTemplate messagingTemplate) {
+    public RealtimeMessagePublisher(SimpMessagingTemplate messagingTemplate, ConversationMemberRepository members) {
         this.messagingTemplate = messagingTemplate;
+        this.members = members;
     }
 
     /**
      * Publikuje nową wiadomość do wszystkich klientów subskrybujących daną konwersację.
      *
-     * Destination:
-     * /topic/conversations/{conversationId}
+     * Destination każdego aktualnego członka:
+     * /user/queue/conversations/{conversationId}
      *
      * Event:
      * message.created
@@ -52,19 +53,14 @@ public class RealtimeMessagePublisher {
      * Frontend używa go do natychmiastowego dodania wiadomości do widoku czatu.
      */
     public void publishMessageCreated(MessageResponse message) {
-        String destination = "/topic/conversations/" + message.conversationId();
-
-        messagingTemplate.convertAndSend(
-                destination,
-                RealtimeEvent.of("message.created", message)
-        );
+        publishPrivately(message.conversationId(), "message.created", message);
     }
 
     /**
      * Publikuje aktualizację statusu wiadomości.
      *
-     * Destination:
-     * /topic/conversations/{conversationId}
+     * Destination każdego aktualnego członka:
+     * /user/queue/conversations/{conversationId}
      *
      * Event:
      * message.receipt.updated
@@ -77,19 +73,14 @@ public class RealtimeMessagePublisher {
      * bez odświeżania strony.
      */
     public void publishReceiptUpdated(ReceiptResponse receipt) {
-        String destination = "/topic/conversations/" + receipt.conversationId();
-
-        messagingTemplate.convertAndSend(
-                destination,
-                RealtimeEvent.of("message.receipt.updated", receipt)
-        );
+        publishPrivately(receipt.conversationId(), "message.receipt.updated", receipt);
     }
 
     /**
      * Publikuje typing indicator.
      *
-     * Destination:
-     * /topic/conversations/{conversationId}
+     * Destination każdego aktualnego członka:
+     * /user/queue/conversations/{conversationId}
      *
      * Event:
      * typing.updated
@@ -103,19 +94,14 @@ public class RealtimeMessagePublisher {
      * po kilku sekundach.
      */
     public void publishTyping(TypingEvent typingEvent) {
-        String destination = "/topic/conversations/" + typingEvent.conversationId();
-
-        messagingTemplate.convertAndSend(
-                destination,
-                RealtimeEvent.of("typing.updated", typingEvent)
-        );
+        publishPrivately(typingEvent.conversationId(), "typing.updated", typingEvent);
     }
 
     /**
      * Publikuje zmianę presence użytkownika w kontekście konkretnej konwersacji.
      *
-     * Destination:
-     * /topic/conversations/{conversationId}
+     * Destination każdego aktualnego członka:
+     * /user/queue/conversations/{conversationId}
      *
      * Event:
      * presence.updated
@@ -127,12 +113,7 @@ public class RealtimeMessagePublisher {
      * nie powinien być traktowany tak krytycznie jak zapis wiadomości.
      */
     public void publishPresence(UUID conversationId, PresenceResponse presence) {
-        String destination = "/topic/conversations/" + conversationId;
-
-        messagingTemplate.convertAndSend(
-                destination,
-                RealtimeEvent.of("presence.updated", presence)
-        );
+        publishPrivately(conversationId, "presence.updated", presence);
     }
 
     /**
@@ -184,6 +165,18 @@ public class RealtimeMessagePublisher {
                 "/queue/errors",
                 RealtimeEvent.of("error", new WsError(code, message))
         );
+    }
+
+    /**
+     * Fan-out do prywatnych kolejek jest droższy od jednego publicznego topicu, ale uprawnienie jest
+     * oceniane na podstawie aktualnego membershipu przy każdym evencie. Usunięty członek nie zachowuje
+     * dostępu tylko dlatego, że jego stara subskrypcja nadal istnieje na gatewayu.
+     */
+    private void publishPrivately(UUID conversationId, String type, Object payload) {
+        var event = RealtimeEvent.of(type, payload);
+        members.findMembersByConversationId(conversationId).forEach(member ->
+                messagingTemplate.convertAndSendToUser(member.getUser().getId().toString(),
+                        "/queue/conversations/" + conversationId, event));
     }
 
     /**

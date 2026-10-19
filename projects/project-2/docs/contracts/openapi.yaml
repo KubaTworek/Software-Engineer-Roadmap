@@ -1,0 +1,47 @@
+openapi: 3.1.0
+info:
+  title: Marketplace Ordering API
+  version: 1.0.0
+paths:
+  /api/orders:
+    post:
+      summary: Place an order
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          schema: { type: string, maxLength: 128 }
+      responses:
+        '201': { description: Created }
+        '200': { description: Idempotent replay }
+        '400': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+  /api/orders/{id}:
+    get:
+      summary: Read an order and its ETag
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Current representation
+          headers:
+            ETag: { schema: { type: string } }
+        '404': { $ref: '#/components/responses/Problem' }
+components:
+  responses:
+    Problem:
+      description: RFC 9457 problem response
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+  schemas:
+    Problem:
+      type: object
+      required: [type, title, status]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }

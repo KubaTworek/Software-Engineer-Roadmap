@@ -22,6 +22,19 @@ public class ExponentialBackoffWithJitter implements RetryBackoffStrategy {
             double multiplier,
             double jitterRatio
     ) {
+        if (initialDelay == null || initialDelay.isNegative()) {
+            throw new IllegalArgumentException("Initial delay cannot be negative");
+        }
+        if (maxDelay == null || maxDelay.isNegative() || maxDelay.compareTo(initialDelay) < 0) {
+            throw new IllegalArgumentException("Max delay cannot be smaller than initial delay");
+        }
+        if (!Double.isFinite(multiplier) || multiplier < 1.0) {
+            throw new IllegalArgumentException("Multiplier must be finite and at least 1.0");
+        }
+        if (!Double.isFinite(jitterRatio) || jitterRatio < 0.0 || jitterRatio > 1.0) {
+            throw new IllegalArgumentException("Jitter ratio must be between 0.0 and 1.0");
+        }
+
         this.initialDelay = initialDelay;
         this.maxDelay = maxDelay;
         this.multiplier = multiplier;
@@ -38,6 +51,10 @@ public class ExponentialBackoffWithJitter implements RetryBackoffStrategy {
      */
     @Override
     public Duration calculateDelay(int attemptNumber) {
+        if (attemptNumber <= 0) {
+            throw new IllegalArgumentException("Attempt number must be positive");
+        }
+
         double exponentialDelayMillis = initialDelay.toMillis()
                 * Math.pow(multiplier, attemptNumber - 1);
 

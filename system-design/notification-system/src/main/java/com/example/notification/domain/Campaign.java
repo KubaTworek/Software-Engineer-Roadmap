@@ -14,8 +14,10 @@ public class Campaign {
     private final List<Channel> channels;
     private final Map<String, Object> payload;
     private CampaignStatus status;
-    private final Instant createdAt;
+    private Instant createdAt;
     private Instant updatedAt;
+    private int nextRecipientIndex;
+    private int failedRecipients;
 
     public Campaign(UUID id, String tenantId, String name, NotificationType notificationType,
                     List<String> userIds, List<Channel> channels, Map<String, Object> payload) {
@@ -41,8 +43,22 @@ public class Campaign {
     public CampaignStatus getStatus() { return status; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
+    public int getNextRecipientIndex() { return nextRecipientIndex; }
+    public int getFailedRecipients() { return failedRecipients; }
 
     public void markRunning() { this.status = CampaignStatus.RUNNING; this.updatedAt = Instant.now(); }
     public void markCompleted() { this.status = CampaignStatus.COMPLETED; this.updatedAt = Instant.now(); }
     public void markCancelled() { this.status = CampaignStatus.CANCELLED; this.updatedAt = Instant.now(); }
+    public void recipientProcessed() { this.nextRecipientIndex++; this.updatedAt = Instant.now(); }
+    public void recipientFailed() { this.nextRecipientIndex++; this.failedRecipients++; this.updatedAt = Instant.now(); }
+    public boolean hasMoreRecipients() { return nextRecipientIndex < userIds.size(); }
+    public static Campaign restore(UUID id, String tenantId, String name, NotificationType type,
+                                   List<String> users, List<Channel> channels, Map<String, Object> payload,
+                                   CampaignStatus status, Instant createdAt, Instant updatedAt,
+                                   int nextRecipientIndex, int failedRecipients) {
+        Campaign campaign = new Campaign(id, tenantId, name, type, users, channels, payload);
+        campaign.status = status; campaign.createdAt = createdAt; campaign.updatedAt = updatedAt;
+        campaign.nextRecipientIndex = nextRecipientIndex; campaign.failedRecipients = failedRecipients;
+        return campaign;
+    }
 }

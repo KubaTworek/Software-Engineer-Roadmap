@@ -1,6 +1,7 @@
 package pl.jakubtworek.backend_engineering.stage_1.block_b.object_pooling;
 
 import java.util.ArrayDeque;
+import java.util.Objects;
 
 public final class ReusableBufferPool {
 
@@ -9,6 +10,12 @@ public final class ReusableBufferPool {
     private final int maxSize;
 
     public ReusableBufferPool(int maxSize, int payloadSizeBytes) {
+        if (maxSize < 0) {
+            throw new IllegalArgumentException("maxSize must not be negative");
+        }
+        if (payloadSizeBytes <= 0) {
+            throw new IllegalArgumentException("payloadSizeBytes must be greater than zero");
+        }
         this.maxSize = maxSize;
         this.payloadSizeBytes = payloadSizeBytes;
 
@@ -33,7 +40,7 @@ public final class ReusableBufferPool {
     public void release(ReusableBuffer buffer) {
         // Resetting is required for correctness.
         // It may reduce allocation pressure, but it adds CPU work.
-        buffer.reset();
+        Objects.requireNonNull(buffer, "buffer must not be null").reset();
 
         if (objects.size() < maxSize) {
             objects.addLast(buffer);

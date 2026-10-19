@@ -13,4 +13,9 @@ public record KafkaEventMessage<T>(
         MessageKey key,
         T payload
 ) {
+    public KafkaEventMessage {
+        if (topic == null || key == null || payload == null) {
+            throw new IllegalArgumentException("Topic, key and payload are required");
+        }
+    }
 }

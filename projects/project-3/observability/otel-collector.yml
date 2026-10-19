@@ -1,0 +1,45 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        # Od nowszych wersji Collectora domyślny localhost nie jest osiągalny
+        # z innych kontenerów. Jawne bind address tworzy rzeczywistą granicę sieciową.
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+  attributes/redact:
+    actions:
+      - key: http.request.header.authorization
+        action: delete
+      - key: enduser.id
+        action: delete
+  tail_sampling:
+    decision_wait: 5s
+    num_traces: 50000
+    policies:
+      - name: errors
+        type: status_code
+        status_code: {status_codes: [ERROR]}
+      - name: slow
+        type: latency
+        latency: {threshold_ms: 1500}
+      - name: baseline
+        type: probabilistic
+        probabilistic: {sampling_percentage: 10}
+  batch:
+
+exporters:
+  otlphttp/tempo:
+    endpoint: http://tempo:4318
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, attributes/redact, tail_sampling, batch]
+      exporters: [otlphttp/tempo]

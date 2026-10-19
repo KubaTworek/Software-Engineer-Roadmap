@@ -1,4 +1,20 @@
-# Integracja i konsystencja – wspólna baza danych, sieć i eventual consistency
+# integration
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `praktyka-produkcyjna`
+> - **Uczy:** integration.
+> - **Typowy błąd:** Publikowanie wewnętrznego modelu domeny jako stabilnego kontraktu integracyjnego.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** `IdempotentEventConsumer` = `correct`; `IdempotentEventConsumer` = `production-boundary`, `TransactionalOutboxPublisher` = `production-boundary`.
+> - **Granica:** Test granicy modułu lub lokalnej transakcji nie gwarantuje atomowości między procesami ani zgodności niezależnie wdrażanych klientów.
+<!-- material-card:end -->
+
+## Integracja i konsystencja – wspólna baza danych, sieć i eventual consistency
+
+
 
 ## Wprowadzenie
 

@@ -2,6 +2,7 @@ CREATE DATABASE IF NOT EXISTS observability;
 
 CREATE TABLE IF NOT EXISTS observability.logs
 (
+    event_id UUID,
     tenant_id LowCardinality(String),
     timestamp DateTime64(3, 'UTC'),
     ingested_at DateTime64(3, 'UTC') DEFAULT now64(3),
@@ -12,10 +13,29 @@ CREATE TABLE IF NOT EXISTS observability.logs
     message String,
     attributes_json String
 )
-ENGINE = MergeTree
+ENGINE = ReplacingMergeTree(ingested_at)
 PARTITION BY toYYYYMMDD(timestamp)
-ORDER BY (tenant_id, service, level, timestamp)
-TTL timestamp + INTERVAL 30 DAY DELETE;
+ORDER BY (tenant_id, service, level, timestamp, event_id)
+TTL toDateTime(timestamp) + INTERVAL 30 DAY DELETE;
+
+CREATE TABLE IF NOT EXISTS observability.metric_histograms
+(
+    event_id UUID,
+    tenant_id LowCardinality(String),
+    metric_name LowCardinality(String),
+    timestamp DateTime64(3, 'UTC'),
+    ingested_at DateTime64(3, 'UTC') DEFAULT now64(3),
+    count UInt64,
+    sum Float64,
+    explicit_bounds Array(Float64),
+    bucket_counts Array(UInt64),
+    labels_json String,
+    exemplar_trace_id String
+)
+ENGINE = ReplacingMergeTree(ingested_at)
+PARTITION BY toYYYYMMDD(timestamp)
+ORDER BY (tenant_id, metric_name, timestamp, event_id)
+TTL toDateTime(timestamp) + INTERVAL 30 DAY DELETE;
 
 CREATE TABLE IF NOT EXISTS observability.logs_bloom_filters
 (
@@ -26,15 +46,17 @@ CREATE TABLE IF NOT EXISTS observability.logs_bloom_filters
     bloom_size UInt32,
     hash_count UInt8,
     bloom_bits String,
+    segment_id UUID DEFAULT generateUUIDv4(),
     created_at DateTime64(3, 'UTC') DEFAULT now64(3)
 )
-ENGINE = ReplacingMergeTree(created_at)
+ENGINE = MergeTree
 PARTITION BY toYYYYMMDD(bucket_start)
-ORDER BY (tenant_id, service, level, bucket_start)
-TTL bucket_start + INTERVAL 30 DAY DELETE;
+ORDER BY (tenant_id, service, level, bucket_start, segment_id)
+TTL toDateTime(bucket_start) + INTERVAL 30 DAY DELETE;
 
 CREATE TABLE IF NOT EXISTS observability.metrics_samples
 (
+    event_id UUID,
     tenant_id LowCardinality(String),
     metric_name LowCardinality(String),
     timestamp DateTime64(3, 'UTC'),
@@ -44,10 +66,10 @@ CREATE TABLE IF NOT EXISTS observability.metrics_samples
     service LowCardinality(String) DEFAULT JSONExtractString(labels_json, 'service'),
     host String DEFAULT JSONExtractString(labels_json, 'host')
 )
-ENGINE = MergeTree
+ENGINE = ReplacingMergeTree(ingested_at)
 PARTITION BY toYYYYMMDD(timestamp)
-ORDER BY (tenant_id, metric_name, service, timestamp)
-TTL timestamp + INTERVAL 30 DAY DELETE;
+ORDER BY (tenant_id, metric_name, service, timestamp, event_id)
+TTL toDateTime(timestamp) + INTERVAL 30 DAY DELETE;
 
 CREATE TABLE IF NOT EXISTS observability.metrics_rollup_1m
 (
@@ -58,12 +80,13 @@ CREATE TABLE IF NOT EXISTS observability.metrics_rollup_1m
     avg_value Float64,
     min_value Float64,
     max_value Float64,
-    sample_count UInt64
+    sample_count UInt64,
+    updated_at DateTime64(3, 'UTC') DEFAULT now64(3)
 )
-ENGINE = ReplacingMergeTree
+ENGINE = ReplacingMergeTree(updated_at)
 PARTITION BY toYYYYMMDD(bucket_start)
 ORDER BY (tenant_id, metric_name, JSONExtractString(labels_json, 'service'), bucket_start, labels_json)
-TTL bucket_start + INTERVAL 90 DAY DELETE;
+TTL toDateTime(bucket_start) + INTERVAL 90 DAY DELETE;
 
 CREATE TABLE IF NOT EXISTS observability.metrics_rollup_5m
 (
@@ -74,12 +97,13 @@ CREATE TABLE IF NOT EXISTS observability.metrics_rollup_5m
     avg_value Float64,
     min_value Float64,
     max_value Float64,
-    sample_count UInt64
+    sample_count UInt64,
+    updated_at DateTime64(3, 'UTC') DEFAULT now64(3)
 )
-ENGINE = ReplacingMergeTree
+ENGINE = ReplacingMergeTree(updated_at)
 PARTITION BY toYYYYMMDD(bucket_start)
 ORDER BY (tenant_id, metric_name, JSONExtractString(labels_json, 'service'), bucket_start, labels_json)
-TTL bucket_start + INTERVAL 365 DAY DELETE;
+TTL toDateTime(bucket_start) + INTERVAL 365 DAY DELETE;
 
 CREATE TABLE IF NOT EXISTS observability.metrics_rollup_1h
 (
@@ -90,12 +114,13 @@ CREATE TABLE IF NOT EXISTS observability.metrics_rollup_1h
     avg_value Float64,
     min_value Float64,
     max_value Float64,
-    sample_count UInt64
+    sample_count UInt64,
+    updated_at DateTime64(3, 'UTC') DEFAULT now64(3)
 )
-ENGINE = ReplacingMergeTree
+ENGINE = ReplacingMergeTree(updated_at)
 PARTITION BY toYYYYMM(bucket_start)
 ORDER BY (tenant_id, metric_name, JSONExtractString(labels_json, 'service'), bucket_start, labels_json)
-TTL bucket_start + INTERVAL 730 DAY DELETE;
+TTL toDateTime(bucket_start) + INTERVAL 730 DAY DELETE;
 
 CREATE TABLE IF NOT EXISTS observability.alert_events
 (
@@ -111,36 +136,7 @@ CREATE TABLE IF NOT EXISTS observability.alert_events
 ENGINE = MergeTree
 PARTITION BY toYYYYMMDD(evaluated_at)
 ORDER BY (tenant_id, rule_id, evaluated_at)
-TTL evaluated_at + INTERVAL 30 DAY DELETE;
-
--- Phase 3: self-service tenants and API keys.
-CREATE TABLE IF NOT EXISTS observability.tenants
-(
-    tenant_id String,
-    display_name String,
-    status LowCardinality(String),
-    plan LowCardinality(String),
-    primary_region LowCardinality(String),
-    retention_days UInt16,
-    created_at DateTime64(3, 'UTC') DEFAULT now64(3),
-    updated_at DateTime64(3, 'UTC') DEFAULT now64(3)
-)
-ENGINE = ReplacingMergeTree(updated_at)
-ORDER BY tenant_id;
-
-CREATE TABLE IF NOT EXISTS observability.tenant_api_keys
-(
-    tenant_id String,
-    key_id String,
-    token_hash String,
-    name String,
-    roles Array(String),
-    status LowCardinality(String),
-    created_at DateTime64(3, 'UTC') DEFAULT now64(3),
-    expires_at Nullable(DateTime64(3, 'UTC'))
-)
-ENGINE = ReplacingMergeTree(created_at)
-ORDER BY (tenant_id, key_id);
+TTL toDateTime(evaluated_at) + INTERVAL 30 DAY DELETE;
 
 -- Phase 3: advanced cardinality accounting.
 CREATE TABLE IF NOT EXISTS observability.metric_cardinality_hourly
@@ -156,7 +152,7 @@ CREATE TABLE IF NOT EXISTS observability.metric_cardinality_hourly
 ENGINE = ReplacingMergeTree(created_at)
 PARTITION BY toYYYYMMDD(bucket_start)
 ORDER BY (tenant_id, metric_name, label_key, label_value_hash, bucket_start)
-TTL bucket_start + INTERVAL 30 DAY DELETE;
+TTL toDateTime(bucket_start) + INTERVAL 30 DAY DELETE;
 
 CREATE TABLE IF NOT EXISTS observability.metric_series_registry
 (
@@ -176,6 +172,7 @@ ORDER BY (tenant_id, metric_name, labels_hash);
 -- not a replacement for Elasticsearch/OpenSearch.
 CREATE TABLE IF NOT EXISTS observability.log_fulltext_terms
 (
+    event_id UUID,
     tenant_id LowCardinality(String),
     service LowCardinality(String),
     level LowCardinality(String),
@@ -185,10 +182,10 @@ CREATE TABLE IF NOT EXISTS observability.log_fulltext_terms
     sample_trace_ids Array(String),
     updated_at DateTime64(3, 'UTC') DEFAULT now64(3)
 )
-ENGINE = SummingMergeTree(doc_count)
+ENGINE = ReplacingMergeTree(updated_at)
 PARTITION BY toYYYYMMDD(bucket_start)
-ORDER BY (tenant_id, service, level, bucket_start, term)
-TTL bucket_start + INTERVAL 30 DAY DELETE;
+ORDER BY (tenant_id, service, level, bucket_start, term, event_id)
+TTL toDateTime(bucket_start) + INTERVAL 30 DAY DELETE;
 
 -- Phase 3: trace spans for log/metric/trace correlation.
 CREATE TABLE IF NOT EXISTS observability.trace_spans
@@ -209,7 +206,7 @@ CREATE TABLE IF NOT EXISTS observability.trace_spans
 ENGINE = MergeTree
 PARTITION BY toYYYYMMDD(start_time)
 ORDER BY (tenant_id, trace_id, service, start_time)
-TTL start_time + INTERVAL 30 DAY DELETE;
+TTL toDateTime(start_time) + INTERVAL 30 DAY DELETE;
 
 -- Phase 3: anomaly events and regional replication state.
 CREATE TABLE IF NOT EXISTS observability.anomaly_events
@@ -228,7 +225,7 @@ CREATE TABLE IF NOT EXISTS observability.anomaly_events
 ENGINE = MergeTree
 PARTITION BY toYYYYMMDD(detected_at)
 ORDER BY (tenant_id, metric_name, service, detected_at)
-TTL detected_at + INTERVAL 90 DAY DELETE;
+TTL toDateTime(detected_at) + INTERVAL 90 DAY DELETE;
 
 CREATE TABLE IF NOT EXISTS observability.region_replication_events
 (
@@ -244,8 +241,17 @@ CREATE TABLE IF NOT EXISTS observability.region_replication_events
 ENGINE = MergeTree
 PARTITION BY toYYYYMMDD(event_time)
 ORDER BY (tenant_id, source_region, target_region, stream_name, event_time)
-TTL event_time + INTERVAL 30 DAY DELETE;
+TTL toDateTime(event_time) + INTERVAL 30 DAY DELETE;
 
-INSERT INTO observability.tenants (tenant_id, display_name, status, plan, primary_region, retention_days)
-SELECT 'demo', 'Demo Tenant', 'active', 'dev', 'local', 30
-WHERE NOT EXISTS (SELECT 1 FROM observability.tenants WHERE tenant_id = 'demo');
+CREATE TABLE IF NOT EXISTS observability.restore_drill_rows
+(
+    drill_id UUID,
+    tenant_id LowCardinality(String),
+    object_key String,
+    row_number UInt64,
+    payload_json String,
+    restored_at DateTime('UTC') DEFAULT now()
+)
+ENGINE = MergeTree
+ORDER BY (tenant_id, drill_id, row_number)
+TTL restored_at + INTERVAL 1 DAY DELETE;

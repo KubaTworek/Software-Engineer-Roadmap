@@ -10,8 +10,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
+import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.Clock;
 import java.util.Base64;
 import java.util.UUID;
 
@@ -24,15 +26,18 @@ public class AuthService {
     private final AuthTokenRepository authTokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final SecureRandom secureRandom = new SecureRandom();
+    private final Clock clock;
 
     public AuthService(
             UserRepository userRepository,
             AuthTokenRepository authTokenRepository,
-            PasswordEncoder passwordEncoder
+            PasswordEncoder passwordEncoder,
+            Clock clock
     ) {
         this.userRepository = userRepository;
         this.authTokenRepository = authTokenRepository;
         this.passwordEncoder = passwordEncoder;
+        this.clock = clock;
     }
 
     @Transactional
@@ -48,7 +53,7 @@ public class AuthService {
             throw new ConflictException("Username is already taken.");
         }
 
-        Instant now = Instant.now();
+        Instant now = clock.instant();
         User user = new User(
                 UUID.randomUUID(),
                 normalizedEmail,
@@ -92,10 +97,10 @@ public class AuthService {
             throw new UnauthorizedException("Missing Bearer token.");
         }
 
-        AuthToken authToken = authTokenRepository.findByToken(token)
+        AuthToken authToken = authTokenRepository.findByToken(hashToken(token))
                 .orElseThrow(() -> new UnauthorizedException("Invalid token."));
 
-        if (authToken.isExpired(Instant.now())) {
+        if (authToken.isExpired(clock.instant())) {
             throw new UnauthorizedException("Token expired.");
         }
 
@@ -107,10 +112,10 @@ public class AuthService {
         secureRandom.nextBytes(bytes);
         String token = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
 
-        Instant now = Instant.now();
+        Instant now = clock.instant();
         AuthToken authToken = new AuthToken(
                 UUID.randomUUID(),
-                token,
+                hashToken(token),
                 user,
                 now,
                 now.plus(TOKEN_TTL)
@@ -118,5 +123,15 @@ public class AuthService {
 
         authTokenRepository.save(authToken);
         return token;
+    }
+
+    private String hashToken(String token) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(token.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest);
+        } catch (java.security.NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 unavailable", impossible);
+        }
     }
 }

@@ -1,3 +1,17 @@
+# Deterministyczne testowanie współbieżności
+
+<!-- material-card:start -->
+> [!IMPORTANT]
+> **Karta materiału**
+> - **Zakres:** `fundament`
+> - **Uczy:** Deterministyczne testowanie współbieżności.
+> - **Typowy błąd:** Zastąpienie kontrolowanego przeplotu arbitralnym Thread.sleep.
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=DeadlockDetectionTest,RaceConditionDetectionTest" test`
+> - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
+> - **Role klas:** brak jawnej roli w nazwach klas; intencję przykładu określają opis i test, nie sam brak prefiksu.
+> - **Granica:** Test kontroluje wybrany przeplot w JVM; pojedyncze uruchomienie nie dowodzi wszystkich zachowań dopuszczonych przez JMM ani wydajności pod obciążeniem.
+<!-- material-card:end -->
+
 Testowanie współbieżności w aplikacjach wielowątkowych
 ==================================================
 
@@ -63,18 +77,21 @@ Takie podejście zwiększa prawdopodobieństwo rzeczywistego przeplatania operac
 
 * * * * *
 
-Powtarzalność testów współbieżności
-===================================
+Powtarzalność nie zastępuje kontroli przeplotu
+==============================================
 
-Ze względu na niedeterministyczny charakter problemów współbieżności istotne jest **wielokrotne wykonywanie tych samych scenariuszy testowych**.
+Wielokrotne wykonywanie scenariusza może zwiększyć szansę trafienia na niekorzystny harmonogram, ale nie powinno być podstawową asercją testu jednostkowego.
 
-Powtarzanie testów pozwala:
+Test typu „uruchom 5000 razy i zobacz, czy błąd wystąpi” ma istotne wady:
 
--   zwiększyć prawdopodobieństwo wystąpienia niekorzystnego harmonogramu wątków,
--   wykryć błędy pojawiające się jedynie w specyficznych warunkach,
--   zwiększyć wiarygodność testów automatycznych.
+-   może przejść mimo istniejącego błędu,
+-   jego wynik zależy od sprzętu i obciążenia maszyny,
+-   tworzy niepotrzebnie dużo wątków i wydłuża CI,
+-   trudno z niego wywnioskować, jaki przeplot faktycznie wystąpił.
 
-W praktyce oznacza to uruchamianie tego samego testu wielokrotnie w jednej sesji testowej.
+Lepszym rozwiązaniem jest użycie `CountDownLatch`, `CyclicBarrier` lub kontrolowanych atrap, aby zatrzymać wątki w konkretnych punktach i wymusić badany przeplot. `RaceConditionDetectionTest` pokazuje deterministyczne odtworzenie lost update: oba wątki odczytują starą wartość przed dopuszczeniem któregokolwiek zapisu.
+
+Testy obciążeniowe i długotrwałe testy typu stress nadal mają wartość, ale powinny być oddzielone od szybkiego, deterministycznego zestawu testów jednostkowych.
 
 * * * * *
 
@@ -131,7 +148,7 @@ W projektowaniu testów współbieżnych warto stosować następujące zasady:
 
 -   synchronizować moment rozpoczęcia pracy wątków,
 -   zawsze oczekiwać na zakończenie wszystkich wątków,
--   powtarzać scenariusze testowe wielokrotnie,
+-   wymuszać interesujące przeploty za pomocą prymitywów synchronizacyjnych,
 -   utrzymywać testy możliwie deterministyczne,
 -   minimalizować zależność od środowiska uruchomieniowego.
 
@@ -147,7 +164,7 @@ Testowanie współbieżności wymaga innego podejścia niż testowanie kodu jedn
 Skuteczne testy współbieżności powinny:
 
 -   wymuszać jednoczesne wykonywanie operacji przez wiele wątków,
--   powtarzać scenariusze testowe wielokrotnie,
+-   deterministycznie odtwarzać krytyczne przeploty, gdy jest to możliwe,
 -   deterministycznie kontrolować moment rozpoczęcia i zakończenia pracy wątków.
 
 Takie podejście znacząco zwiększa prawdopodobieństwo wykrycia błędów współbieżności jeszcze na etapie testów automatycznych.

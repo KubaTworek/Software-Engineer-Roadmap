@@ -9,6 +9,7 @@ import pl.jakubtworek.booking.exception.NotFoundException;
 import pl.jakubtworek.booking.repository.ReservationRepository;
 
 import java.util.UUID;
+import java.time.Clock;
 
 /**
  * Serwis odpowiedzialny za transakcyjne zmiany statusu rezerwacji
@@ -42,12 +43,14 @@ public class ReservationStatusService {
      * do zbudowania ReservationResponse.
      */
     private final ReservationRepository reservationRepository;
+    private final Clock clock;
 
     /**
      * Constructor injection.
      */
-    public ReservationStatusService(ReservationRepository reservationRepository) {
+    public ReservationStatusService(ReservationRepository reservationRepository, Clock clock) {
         this.reservationRepository = reservationRepository;
+        this.clock = clock;
     }
 
     /**
@@ -73,7 +76,7 @@ public class ReservationStatusService {
                 .orElseThrow(() -> new NotFoundException("Reservation not found: " + reservationId));
 
         try {
-            reservation.confirm();
+            reservation.confirm(clock.instant());
         } catch (IllegalStateException e) {
             /*
              * IllegalStateException pochodzi z encji domenowej.
@@ -107,7 +110,7 @@ public class ReservationStatusService {
                 .orElseThrow(() -> new NotFoundException("Reservation not found: " + reservationId));
 
         try {
-            reservation.markPaymentTimeout();
+            reservation.markPaymentTimeout(clock.instant());
         } catch (IllegalStateException e) {
             throw new BusinessRuleException(e.getMessage());
         }
@@ -148,6 +151,7 @@ public class ReservationStatusService {
                 reservation.getCustomer().getEmail(),
                 reservation.getStatus(),
                 reservation.getCreatedAt(),
+                reservation.getExpiresAt(),
                 reservation.getConfirmedAt(),
                 reservation.getCancelledAt()
         );

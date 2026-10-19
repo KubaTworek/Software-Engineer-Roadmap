@@ -1,6 +1,7 @@
 package pl.jakubtworek.backend_engineering.stage_1.block_a.fork_join;
 
 import java.util.concurrent.RecursiveTask;
+import java.util.Objects;
 
 /**
  * Task that calculates the sum of a portion of an array.
@@ -24,7 +25,10 @@ public class ArraySumTask extends RecursiveTask<Long> {
     private final int end;
 
     public ArraySumTask(int[] array, int start, int end) {
-        this.array = array;
+        this.array = Objects.requireNonNull(array, "array must not be null");
+        if (start < 0 || end < start || end > array.length) {
+            throw new IllegalArgumentException("range must satisfy 0 <= start <= end <= array.length");
+        }
         this.start = start;
         this.end = end;
     }

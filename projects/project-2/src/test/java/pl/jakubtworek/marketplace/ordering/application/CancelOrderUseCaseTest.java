@@ -21,7 +21,7 @@ class CancelOrderUseCaseTest {
         CancelOrderUseCase useCase = new CancelOrderUseCase(repository, eventPublisher);
         Order order = Order.place(
                 CustomerId.of(UUID.randomUUID()),
-                List.of(new OrderLine(ProductId.newId(), 1, Money.of("10.00", "PLN"))),
+                List.of(new OrderLine(UUID.randomUUID(), 1, Money.of("10.00", "PLN"))),
                 UUID.randomUUID()
         );
         order.clearDomainEvents();

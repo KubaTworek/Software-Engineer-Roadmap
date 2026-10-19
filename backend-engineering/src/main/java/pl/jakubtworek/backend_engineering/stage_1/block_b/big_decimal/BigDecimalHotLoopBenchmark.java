@@ -1,11 +1,14 @@
 package pl.jakubtworek.backend_engineering.stage_1.block_b.big_decimal;
 
 import org.openjdk.jmh.annotations.*;
+import pl.jakubtworek.backend_engineering.stage_1.block_b.benchmarking.BenchmarkDimension;
+import pl.jakubtworek.backend_engineering.stage_1.block_b.benchmarking.Measures;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.concurrent.TimeUnit;
 
+@Measures(BenchmarkDimension.ALLOCATION)
 @BenchmarkMode(Mode.Throughput)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 @Warmup(iterations = 5, time = 1)
@@ -48,26 +51,6 @@ public class BigDecimalHotLoopBenchmark {
     }
 
     @Benchmark
-    public BigDecimal bigDecimalHotLoop() {
-        // This benchmark intentionally uses BigDecimal inside a hot loop.
-        //
-        // BigDecimal is immutable.
-        // Every add() and multiply() creates a new BigDecimal result.
-        //
-        // This creates both:
-        // - CPU cost from decimal arithmetic,
-        // - allocation pressure from temporary objects.
-        BigDecimal total = BigDecimal.ZERO;
-
-        for (int i = 0; i < SIZE; i++) {
-            BigDecimal tax = prices[i].multiply(rates[i]);
-            total = total.add(tax);
-        }
-
-        return total;
-    }
-
-    @Benchmark
     public BigDecimal bigDecimalHotLoopWithRounding() {
         // Rounding inside the loop makes the cost even more visible.
         //
@@ -87,25 +70,6 @@ public class BigDecimalHotLoopBenchmark {
     }
 
     @Benchmark
-    public long scaledLongHotLoop() {
-        // This version uses scaled integer arithmetic.
-        //
-        // Prices are stored in cents.
-        // Rates are stored in basis points, where 10_000 means 100%.
-        //
-        // This avoids BigDecimal allocation in the hot loop
-        // and usually reduces CPU and GC pressure dramatically.
-        long totalTaxInCents = 0;
-
-        for (int i = 0; i < SIZE; i++) {
-            long taxInCents = (pricesInCents[i] * ratesBasisPoints[i]) / 10_000;
-            totalTaxInCents += taxInCents;
-        }
-
-        return totalTaxInCents;
-    }
-
-    @Benchmark
     public BigDecimal scaledLongThenConvertAtBoundary() {
         // This version performs hot-loop arithmetic using scaled integers,
         // then converts to BigDecimal only at the API / domain boundary.
@@ -115,7 +79,8 @@ public class BigDecimalHotLoopBenchmark {
         long totalTaxInCents = 0;
 
         for (int i = 0; i < SIZE; i++) {
-            long taxInCents = (pricesInCents[i] * ratesBasisPoints[i]) / 10_000;
+            // HALF_UP for positive values: add half of the divisor before division.
+            long taxInCents = (pricesInCents[i] * ratesBasisPoints[i] + 5_000) / 10_000;
             totalTaxInCents += taxInCents;
         }
 

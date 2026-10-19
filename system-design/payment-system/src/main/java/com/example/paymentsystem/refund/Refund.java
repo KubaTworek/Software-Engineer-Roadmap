@@ -28,6 +28,8 @@ public class Refund {
     private Instant updatedAt;
     @Column(name = "idempotency_key")
     private String idempotencyKey;
+    @Column(name = "provider_refund_id")
+    private String providerRefundId;
 
     protected Refund() {
     }
@@ -38,7 +40,7 @@ public class Refund {
         this.paymentId = paymentId;
         this.amount = amount;
         this.currency = currency;
-        this.status = RefundStatus.SUCCEEDED;
+        this.status = RefundStatus.PROCESSING;
         this.reason = reason;
         this.createdAt = now;
         this.updatedAt = now;
@@ -64,4 +66,28 @@ public class Refund {
     public String getReason() {
         return reason;
     }
+
+    public void succeed(String providerRefundId) {
+        if (!(status == RefundStatus.PROCESSING || status == RefundStatus.UNKNOWN)) {
+            throw new IllegalStateException("Refund cannot succeed from " + status);
+        }
+        this.providerRefundId = providerRefundId;
+        this.status = RefundStatus.SUCCEEDED;
+        this.updatedAt = Instant.now();
+    }
+
+    public void unknown() {
+        if (status != RefundStatus.PROCESSING) throw new IllegalStateException("Refund is not processing");
+        status = RefundStatus.UNKNOWN;
+        updatedAt = Instant.now();
+    }
+
+    public void failed() {
+        if (status != RefundStatus.PROCESSING) throw new IllegalStateException("Refund is not processing");
+        status = RefundStatus.FAILED;
+        updatedAt = Instant.now();
+    }
+
+    public RefundStatus getStatus() { return status; }
+    public String getProviderRefundId() { return providerRefundId; }
 }

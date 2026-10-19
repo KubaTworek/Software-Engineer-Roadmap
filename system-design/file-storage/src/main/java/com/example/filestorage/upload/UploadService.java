@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.io.InputStream;
 import java.security.MessageDigest;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HexFormat;
@@ -122,6 +123,8 @@ public class UploadService {
      * Asynchroniczny indeks wyszukiwania.
      */
     private final SearchIndexService searchIndexService;
+    private final UploadFinalizationCoordinator finalizationCoordinator;
+    private final Clock clock;
 
     public UploadService(UploadSessionRepository uploadSessionRepository,
                          UploadChunkRepository uploadChunkRepository,
@@ -131,7 +134,9 @@ public class UploadService {
                          StorageService storageService,
                          FileVersionRepository fileVersionRepository,
                          ChangeLogService changeLogService,
-                         SearchIndexService searchIndexService) {
+                         SearchIndexService searchIndexService,
+                         UploadFinalizationCoordinator finalizationCoordinator,
+                         Clock clock) {
         this.uploadSessionRepository = uploadSessionRepository;
         this.uploadChunkRepository = uploadChunkRepository;
         this.fileMetadataRepository = fileMetadataRepository;
@@ -141,6 +146,8 @@ public class UploadService {
         this.fileVersionRepository = fileVersionRepository;
         this.changeLogService = changeLogService;
         this.searchIndexService = searchIndexService;
+        this.finalizationCoordinator = finalizationCoordinator;
+        this.clock = clock;
     }
 
     /**
@@ -200,6 +207,15 @@ public class UploadService {
         folderService.ensureFileNameAvailable(userId, request.parentFolderId(), filename);
 
         /*
+         * Tymczasowe chunki również zużywają realny storage. Rezerwujemy quota
+         * przed wydaniem pierwszego presigned URL, a nie dopiero przy complete.
+         */
+        AppUser user = userRepository.findByIdForUpdate(userId)
+                .orElseThrow(() -> new NoSuchElementException("User not found"));
+        user.reserveUpload(request.totalSizeBytes());
+        userRepository.save(user);
+
+        /*
          * Liczba chunków liczona z zaokrągleniem w górę.
          */
         int totalChunks = Math.toIntExact(
@@ -216,7 +232,7 @@ public class UploadService {
                 request.chunkSizeBytes(),
                 totalChunks,
                 normalizeHash(request.expectedSha256()),
-                Instant.now().plus(SESSION_TTL)
+                clock.instant().plus(SESSION_TTL)
         );
 
         UploadSession saved = uploadSessionRepository.save(session);
@@ -282,7 +298,7 @@ public class UploadService {
                 objectKey,
                 url,
                 "PUT",
-                Instant.now().plus(PRESIGNED_URL_TTL)
+                clock.instant().plus(PRESIGNED_URL_TTL)
         );
     }
 
@@ -399,169 +415,8 @@ public class UploadService {
      * - aktualizujemy indeks wyszukiwania,
      * - usuwamy tymczasowe chunki.
      */
-    @Transactional
     public FileResponse completeUpload(UUID userId, UUID uploadId) {
-        /*
-         * Blokada sesji chroni przed równoległą finalizacją tego samego uploadu.
-         */
-        UploadSession session = uploadSessionRepository.findByIdAndUserIdForUpdate(uploadId, userId)
-                .orElseThrow(() -> new NoSuchElementException("Upload session not found"));
-
-        validateSessionWritable(session);
-
-        List<UploadChunk> chunks = uploadChunkRepository.findAllByUploadSessionIdOrderByChunkIndexAsc(uploadId);
-
-        /*
-         * Wszystkie chunki muszą być potwierdzone.
-         */
-        if (chunks.size() != session.getTotalChunks()) {
-            throw new IllegalArgumentException(
-                    "Upload is incomplete. Uploaded chunks: %d/%d".formatted(chunks.size(), session.getTotalChunks())
-            );
-        }
-
-        /*
-         * Chunks muszą być kompletne i w kolejności 0..N-1.
-         * Bez tego compose utworzyłby uszkodzony plik.
-         */
-        for (int i = 0; i < chunks.size(); i++) {
-            if (chunks.get(i).getChunkIndex() != i) {
-                throw new IllegalArgumentException("Upload has missing or unordered chunks");
-            }
-        }
-
-        /*
-         * Ponowna walidacja folderu i nazwy.
-         * Od initiate do complete mogło minąć dużo czasu.
-         */
-        folderService.validateParentFolder(userId, session.getParentFolderId());
-        folderService.ensureFileNameAvailable(userId, session.getParentFolderId(), session.getFilename());
-
-        /*
-         * Quota rezerwujemy dopiero przy finalizacji.
-         * Niedokończone uploady nie zużywają miejsca użytkownika w systemie logicznym.
-         */
-        AppUser user = userRepository.findByIdForUpdate(userId)
-                .orElseThrow(() -> new NoSuchElementException("User not found"));
-
-        user.reserveStorage(session.getTotalSizeBytes());
-
-        String finalObjectKey = "users/%s/files/%s/%s".formatted(
-                userId,
-                UUID.randomUUID(),
-                session.getFilename()
-        );
-
-        /*
-         * Dla jednego chunka wystarczy copy.
-         * Dla wielu chunków używamy compose, żeby storage złożył finalny obiekt.
-         */
-        if (chunks.size() == 1) {
-            storageService.copy(
-                    finalObjectKey,
-                    chunks.getFirst().getObjectKey(),
-                    session.getContentType()
-            );
-        } else {
-            storageService.compose(
-                    finalObjectKey,
-                    chunks.stream()
-                            .map(UploadChunk::getObjectKey)
-                            .toList(),
-                    session.getContentType()
-            );
-        }
-
-        /*
-         * Finalny hash liczymy po złożeniu pliku.
-         * Jeśli klient podał expectedSha256, porównujemy całość.
-         */
-        String finalSha256 = sha256(storageService.download(finalObjectKey));
-
-        if (session.getExpectedSha256() != null && !session.getExpectedSha256().equals(finalSha256)) {
-            /*
-             * Jeśli finalny plik nie zgadza się z oczekiwanym hashem,
-             * usuwamy błędny finalny obiekt i oznaczamy sesję jako FAILED.
-             */
-            storageService.delete(finalObjectKey);
-            session.markFailed();
-            uploadSessionRepository.save(session);
-
-            throw new IllegalArgumentException("Final file SHA-256 mismatch");
-        }
-
-        /*
-         * Tworzymy metadane nowego pliku.
-         */
-        FileMetadata metadata = new FileMetadata(
-                userId,
-                session.getParentFolderId(),
-                session.getFilename(),
-                session.getFilename(),
-                session.getContentType(),
-                session.getTotalSizeBytes(),
-                finalObjectKey,
-                finalSha256
-        );
-
-        FileMetadata savedFile = fileMetadataRepository.save(metadata);
-
-        /*
-         * Nowy plik dostaje pierwszą wersję.
-         */
-        FileVersion version = fileVersionRepository.save(
-                new FileVersion(
-                        savedFile.getId(),
-                        1,
-                        finalObjectKey,
-                        session.getContentType(),
-                        session.getTotalSizeBytes(),
-                        finalSha256,
-                        userId,
-                        false
-                )
-        );
-
-        savedFile.setInitialVersion(version.getId());
-        savedFile = fileMetadataRepository.save(savedFile);
-
-        /*
-         * Zapis quota po reserveStorage().
-         */
-        userRepository.save(user);
-
-        /*
-         * Changelog dla synchronizacji klientów.
-         */
-        changeLogService.record(
-                userId,
-                savedFile.getOwnerId(),
-                ResourceType.FILE,
-                savedFile.getId(),
-                "FILE_CREATED",
-                "{\"name\":\"" + savedFile.getName() + "\"}"
-        );
-
-        /*
-         * Indeks wyszukiwania aktualizujemy asynchronicznie.
-         */
-        searchIndexService.reindexFileAsync(savedFile.getId());
-
-        /*
-         * Sesja staje się zakończona.
-         */
-        session.markCompleted();
-        uploadSessionRepository.save(session);
-
-        /*
-         * Chunks są artefaktami tymczasowymi.
-         * Po utworzeniu finalnego obiektu można je usunąć,
-         * żeby nie generowały kosztów storage.
-         */
-        chunks.forEach(chunk -> storageService.delete(chunk.getObjectKey()));
-        uploadChunkRepository.deleteAllByUploadSessionId(uploadId);
-
-        return FileResponse.from(savedFile);
+        return finalizationCoordinator.complete(userId, uploadId);
     }
 
     /**
@@ -574,6 +429,10 @@ public class UploadService {
         UploadSession session = uploadSessionRepository.findByIdAndUserIdForUpdate(uploadId, userId)
                 .orElseThrow(() -> new NoSuchElementException("Upload session not found"));
 
+        if (session.getStatus() == UploadStatus.COMPLETED) {
+            throw new IllegalStateException("Completed upload cannot be aborted");
+        }
+
         List<UploadChunk> chunks = uploadChunkRepository.findAllByUploadSessionIdOrderByChunkIndexAsc(uploadId);
 
         /*
@@ -585,6 +444,11 @@ public class UploadService {
 
         session.markAborted();
         uploadSessionRepository.save(session);
+
+        userRepository.findByIdForUpdate(userId).ifPresent(user -> {
+            user.releaseReservedStorage(session.getTotalSizeBytes());
+            userRepository.save(user);
+        });
     }
 
     /**
@@ -609,7 +473,7 @@ public class UploadService {
                         UploadStatus.IN_PROGRESS,
                         UploadStatus.FAILED
                 ),
-                Instant.now()
+                clock.instant()
         );
 
         for (UploadSession session : expired) {
@@ -628,6 +492,11 @@ public class UploadService {
              */
             session.markExpired();
             uploadSessionRepository.save(session);
+
+            userRepository.findByIdForUpdate(session.getUserId()).ifPresent(user -> {
+                user.releaseReservedStorage(session.getTotalSizeBytes());
+                userRepository.save(user);
+            });
         }
     }
 
@@ -652,7 +521,7 @@ public class UploadService {
      * - wygasłe czasowo.
      */
     private void validateSessionWritable(UploadSession session) {
-        if (!session.isWritable()) {
+        if (!session.isWritable(clock.instant())) {
             throw new IllegalStateException("Upload session is not writable or has expired");
         }
     }

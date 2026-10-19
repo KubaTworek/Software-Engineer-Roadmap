@@ -1,6 +1,7 @@
 package com.example.filestorage.sync;
 
 import com.example.filestorage.sharing.ResourceType;
+import com.example.filestorage.sharing.ResourcePermissionRepository;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,9 +26,11 @@ public class ChangeLogService {
      * Każdy wpis reprezentuje jedną zmianę w zasobie, np. FILE_CREATED, FILE_DELETED.
      */
     private final ChangeLogRepository repository;
+    private final ResourcePermissionRepository permissions;
 
-    public ChangeLogService(ChangeLogRepository repository) {
+    public ChangeLogService(ChangeLogRepository repository, ResourcePermissionRepository permissions) {
         this.repository = repository;
+        this.permissions = permissions;
     }
 
     /**
@@ -68,7 +71,7 @@ public class ChangeLogService {
                        UUID resourceId,
                        String operation,
                        String payload) {
-        repository.save(
+        ChangeLog change = repository.save(
                 new ChangeLog(
                         actorUserId,
                         ownerId,
@@ -76,8 +79,12 @@ public class ChangeLogService {
                         resourceId,
                         operation,
                         payload
-                )
-        );
+                ));
+        repository.addAudience(change.getId(), ownerId);
+        List<UUID> sharedAudience = resourceType == ResourceType.FILE
+                ? permissions.findActiveAudienceForFile(resourceId)
+                : permissions.findActiveAudienceForFolder(resourceId);
+        sharedAudience.forEach(userId -> repository.addAudience(change.getId(), userId));
     }
 
     /**
@@ -113,7 +120,7 @@ public class ChangeLogService {
          * Jeśli prosimy o 501 rekordów przy limicie 500 i dostajemy 501,
          * to znaczy, że hasMore = true.
          */
-        List<ChangeLog> rows = repository.findAllByOwnerIdAndIdGreaterThanOrderByIdAsc(
+        List<ChangeLog> rows = repository.findVisibleChanges(
                 ownerId,
                 Math.max(cursor, 0),
                 PageRequest.of(0, safeLimit + 1)

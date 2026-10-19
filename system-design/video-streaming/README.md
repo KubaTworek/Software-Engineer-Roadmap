@@ -1,6 +1,90 @@
 # Video Streaming Platform — System Design
 
+<!-- reading-guide:start -->
+## Ścieżki czytania
+
+| Cel czytania | Punkt wejścia |
+| --- | --- |
+| Teoria i model problemu | [8. Adaptacyjny streaming](#8-adaptacyjny-streaming) |
+| Implementacja i jej dowody | [Przepływ wykonywalnej implementacji](#przepływ-wykonywalnej-implementacji) |
+| Uruchomienie i eksperymenty | [Uruchomienie i weryfikacja](#uruchomienie-i-weryfikacja) |
+| Ograniczenia i scenariusze awarii | [25. Obsługa błędów](#25-obsługa-błędów) |
+
+Wspólne mechanizmy i ich testy znajdziesz w [indeksie pojęć backend-engineering](../../backend-engineering/README.md#globalny-indeks-pojęć). Tutaj śledź ich konsekwencje dla opisywanego systemu.
+Diagramy docelowe i warianty rozwoju czytaj razem z mapą implementacji; sam opis architektury nie oznacza, że wszystkie jej komponenty są uruchamiane w laboratorium.
+<!-- reading-guide:end -->
+
+## Zacznij tutaj
+
+MinIO w laboratorium jest budowany z [oficjalnego commitu 0d7408fc9969](https://github.com/minio/minio/tree/0d7408fc9969caf07de6a8c3a84f9fbb10a6739e)
+przez [docker/minio.Dockerfile](docker/minio.Dockerfile), ponieważ poprzedni obraz
+rejestru stał się niedostępny. Testcontainers (jeśli dany test używa MinIO) i Compose
+korzystają z lokalnego przepisu budowania; nie jest potrzebne logowanie do Quay.
+Pierwszy build wymaga dostępu do GitHub, rejestru obrazów bazowych i modułów Go,
+trwa dłużej oraz potrzebuje więcej pamięci niż samo pobranie obrazu. Warstwy
+kompilacji są cache'owane przez Docker. Dla Compose użyj `docker compose build minio`
+przed uruchomieniem usługi.
+To przypięta wersja edukacyjna, nie rekomendacja bezpieczeństwa dla produkcji;
+licencja AGPL jest dołączana do obrazu w `/licenses/minio/LICENSE`.
+
+| Pytanie | Odpowiedź |
+| --- | --- |
+| Najważniejszy niezmiennik | Materiał może być publikowany dopiero, gdy manifest wskazuje kompletne i dostępne warianty, do których widz ma uprawnienia. |
+| Krytyczny przepływ | Upload → trwały rekord → transkodowanie → packaging HLS/DASH → publikacja manifestu → CDN → autoryzowany playback i QoE. |
+| Rekomendowany test | `mvnw.cmd test` — szybkie kontrakty domenowe; `mvnw.cmd -Pinfrastructure-tests test` — PostgreSQL, MinIO, Redis i RabbitMQ w Testcontainers. |
+| Świadome ograniczenia | DRM jest modelem polityki, CDN jest reprezentowany przez URL i cache headers, a testy nie oceniają perceptualnej jakości obrazu ani wieloregionowej dostępności segmentów. |
+
 Kompleksowy projekt architektury systemu do streamingu wideo typu **VOD + opcjonalnie live streaming**. Dokument zakłada platformę podobną do Netflix/YouTube pod względem głównych komponentów technicznych: upload, transkodowanie, packaging, CDN, playback, autoryzacja, wyszukiwanie, rekomendacje i analityka jakości odtwarzania.
+
+### Jak czytać laboratorium
+
+Projekt łączy opis docelowej architektury z wykonywalnym, celowo mniejszym
+modulitem. Teoria odpowiada na pytanie „jak skaluje się platforma”, a kod pokazuje
+granice poprawności, których nie wolno zgubić również przed rozbiciem na usługi.
+
+| Problem | Gwarancja pokazana w kodzie | Najważniejszy test | Granica produkcyjna |
+| --- | --- | --- | --- |
+| publikacja VOD | segmenty → variant playlists → master manifest; master jest commit markerem | `HlsArtifactPublisherTest` | brak walidacji jakości obrazu i dźwięku |
+| upload i zlecenie pracy | obiekt istnieje, `complete` jest idempotentne, job i outbox powstają w jednej transakcji | `PostgreSqlMediaPipelineInfrastructureTest` | relay jest at-least-once, więc consumer pozostaje idempotentny |
+| wielu workerów | krótki lease wybiera właściciela, fencing token odrzuca spóźniony zapis | `TranscodingJobFencingTest`, `LiveStreamFencingTest` | baza koordynuje ownership; nie zastępuje kontroli zasobów FFmpeg |
+| prywatny playback | plan, geo-policy i podpis wygasający w czasie są osobnymi decyzjami | `EntitlementServiceTest`, `SignedCookieServiceTest` | przykładowy DRM nie jest serwerem licencji Widevine/FairPlay |
+| adresy storage | backend używa hosta wewnętrznego, klient dostaje publiczny origin bez utraty podpisu | `ObjectStorageServiceTest`, `MinioObjectContractInfrastructureTest` | produkcyjnie preferowany jest CDN lub prywatny origin |
+| telemetryka QoE | kontrolowany słownik i ograniczone pola chronią pipeline przed śmieciowymi danymi | `QoeDtosValidationTest` | agregacje i SLO wymagają osobnego systemu analitycznego |
+
+### Przepływ wykonywalnej implementacji
+
+```text
+create upload → presigned PUT → verify object → DB transaction: job + outbox
+       → RabbitMQ → claim lease/fencing token → FFmpeg ABR ladder
+       → upload segments → upload variants → publish master last
+       → READY → explicit publish → entitlement → signed playback
+```
+
+Najważniejsza różnica między statusem `READY` i `PUBLISHED` jest celowa:
+ukończenie technicznego przetwarzania nie oznacza jeszcze decyzji redakcyjnej o
+udostępnieniu treści. Analogicznie sukces uploadu nie oznacza sukcesu
+transkodowania, a HTTP 200 z playback API nie dowodzi, że każdy segment jest
+dostępny w każdym regionie CDN.
+
+### Uruchomienie i weryfikacja
+
+```powershell
+# szybkie testy bez lokalnego PostgreSQL, Redisa, MinIO i RabbitMQ
+.\mvnw.cmd --batch-mode --no-transfer-progress clean verify
+
+# rzeczywiste kontrakty infrastruktury; wymagany działający Docker
+.\mvnw.cmd --batch-mode --no-transfer-progress -Pinfrastructure-tests test
+
+# kompletne środowisko demonstracyjne
+Copy-Item .env.example .env
+docker compose up --build
+```
+
+Profil `prod` uruchamia walidator fail-closed: odrzuca demonstracyjne sekrety,
+domyślne credentials MinIO oraz niesecure cookie. Lokalny admin jest tworzony
+wyłącznie po jawnym `APP_DEMO_ADMIN_ENABLED=true`; migracje nie zasiewają aktywnego
+hasła. Alerty i procedury reakcji znajdują się w `ops/video-alerts.yml` oraz
+`ops/RUNBOOK.md`.
 
 ---
 

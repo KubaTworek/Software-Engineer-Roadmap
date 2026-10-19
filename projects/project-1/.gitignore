@@ -1,4 +1,5 @@
 target/
+.jqwik-database
 .idea/
 *.iml
 .vscode/

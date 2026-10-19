@@ -8,6 +8,14 @@ public record ProfilingConfig(
         int mixedWaitMillis
 ) {
 
+    public ProfilingConfig {
+        requirePositive(durationSeconds, "durationSeconds");
+        requirePositive(cpuIterations, "cpuIterations");
+        requireNonNegative(simulatedIoMillis, "simulatedIoMillis");
+        requirePositive(mixedCpuIterations, "mixedCpuIterations");
+        requireNonNegative(mixedWaitMillis, "mixedWaitMillis");
+    }
+
     public static ProfilingConfig fromArgs(String[] args) {
         // Defaults are chosen to make both CPU-bound and wait-bound behavior visible in JFR.
         int durationSeconds = 60;
@@ -29,6 +37,8 @@ public record ProfilingConfig(
                 mixedCpuIterations = Integer.parseInt(arg.substring("--mixedCpuIterations=".length()));
             } else if (arg.startsWith("--mixedWaitMillis=")) {
                 mixedWaitMillis = Integer.parseInt(arg.substring("--mixedWaitMillis=".length()));
+            } else {
+                throw new IllegalArgumentException("Unsupported argument: " + arg);
             }
         }
 
@@ -39,5 +49,17 @@ public record ProfilingConfig(
                 mixedCpuIterations,
                 mixedWaitMillis
         );
+    }
+
+    private static void requirePositive(int value, String name) {
+        if (value <= 0) {
+            throw new IllegalArgumentException(name + " must be greater than zero");
+        }
+    }
+
+    private static void requireNonNegative(int value, String name) {
+        if (value < 0) {
+            throw new IllegalArgumentException(name + " must not be negative");
+        }
     }
 }
