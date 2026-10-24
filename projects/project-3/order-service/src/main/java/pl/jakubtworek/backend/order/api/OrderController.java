@@ -37,9 +37,11 @@ public class OrderController {
      * - graceful degradation do PAYMENT_PENDING.
      */
     private final OrderService service;
+    private final pl.jakubtworek.backend.common.security.AuthenticatedActor actor;
 
-    public OrderController(OrderService service) {
+    public OrderController(OrderService service, pl.jakubtworek.backend.common.security.AuthenticatedActor actor) {
         this.service = service;
+        this.actor = actor;
     }
 
     /**
@@ -66,7 +68,8 @@ public class OrderController {
     @PostMapping
     OrderResponse create(@Valid @RequestBody CreateOrderRequest request,
                          @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
-        return service.create(request, idempotencyKey);
+        String owner=actor.userId(request.userId());
+        return service.create(new CreateOrderRequest(request.reservationId(), owner), idempotencyKey);
     }
 
     /**
@@ -81,6 +84,6 @@ public class OrderController {
      */
     @GetMapping("/{id}")
     OrderResponse get(@PathVariable UUID id) {
-        return service.get(id);
+        var result=service.get(id); actor.requireOwner(result.userId()); return result;
     }
 }

@@ -34,9 +34,11 @@ public class ReservationController {
      * Warstwa aplikacyjna odpowiedzialna za przypadki użycia związane z rezerwacjami.
      */
     private final ReservationService service;
+    private final pl.jakubtworek.backend.common.security.AuthenticatedActor actor;
 
-    public ReservationController(ReservationService service) {
+    public ReservationController(ReservationService service, pl.jakubtworek.backend.common.security.AuthenticatedActor actor) {
         this.service = service;
+        this.actor = actor;
     }
 
     /**
@@ -58,7 +60,7 @@ public class ReservationController {
      */
     @PostMapping
     ReservationResponse create(@Valid @RequestBody CreateReservationRequest request) {
-        return service.create(request);
+        return service.create(new CreateReservationRequest(request.eventId(), actor.userId(request.userId()), request.quantity()));
     }
 
     /**
@@ -73,7 +75,7 @@ public class ReservationController {
      */
     @GetMapping("/{id}")
     ReservationResponse get(@PathVariable UUID id) {
-        return service.get(id);
+        var result=service.get(id); actor.requireOwner(result.userId()); return result;
     }
 
     /**
@@ -111,6 +113,7 @@ public class ReservationController {
      */
     @DeleteMapping("/{id}")
     ReservationResponse cancel(@PathVariable UUID id) {
+        actor.requireOwner(service.get(id).userId());
         return service.cancel(id);
     }
 }

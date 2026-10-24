@@ -1,0 +1,32 @@
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.6.2
+    command: [start-dev, --import-realm, --hostname=http://localhost:8089]
+    mem_limit: 1g
+    ports: ["127.0.0.1:8089:8080"]
+    volumes:
+      - ./common/src/test/resources/identity/roadmap-realm.json:/opt/keycloak/data/import/roadmap-realm.json:ro
+  api-gateway:
+    environment: &identity
+      APP_SECURITY_ENABLED: 'true'
+      APP_SECURITY_ISSUER: http://localhost:8089/realms/roadmap
+      APP_SECURITY_JWKS_URI: http://keycloak:8080/realms/roadmap/protocol/openid-connect/certs
+      APP_SECURITY_AUDIENCE: ticketing-api
+  catalog-service:
+    environment: *identity
+  reservation-service:
+    environment:
+      <<: *identity
+      APP_SECURITY_TOKEN_URI: http://keycloak:8080/realms/roadmap/protocol/openid-connect/token
+      APP_SECURITY_CLIENT_ID: roadmap-service
+      APP_SECURITY_CLIENT_SECRET: local-service-secret-not-for-production
+  order-service:
+    environment:
+      <<: *identity
+      APP_SECURITY_TOKEN_URI: http://keycloak:8080/realms/roadmap/protocol/openid-connect/token
+      APP_SECURITY_CLIENT_ID: roadmap-service
+      APP_SECURITY_CLIENT_SECRET: local-service-secret-not-for-production
+  payment-mock-service:
+    environment: *identity
+  notification-service:
+    environment: *identity

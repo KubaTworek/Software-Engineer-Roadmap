@@ -17,6 +17,10 @@ import pl.jakubtworek.backend.common.resilience.AdmissionController;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+    @ExceptionHandler(org.springframework.web.server.ResponseStatusException.class)
+    ResponseEntity<org.springframework.http.ProblemDetail> status(org.springframework.web.server.ResponseStatusException exception) {
+        return ResponseEntity.status(exception.getStatusCode()).body(org.springframework.http.ProblemDetail.forStatus(exception.getStatusCode()));
+    }
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
     @ExceptionHandler(MethodArgumentNotValidException.class)
     ResponseEntity<ApiError> validation(MethodArgumentNotValidException exception, HttpServletRequest request) {

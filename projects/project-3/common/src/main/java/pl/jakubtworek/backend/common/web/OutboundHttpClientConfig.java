@@ -43,7 +43,11 @@ public class OutboundHttpClientConfig {
     WebClient.Builder outboundWebClientBuilder(
             @Value("${app.http-client.connect-timeout-ms:1000}") int connectTimeoutMs,
             @Value("${app.http-client.response-timeout-ms:2500}") long responseTimeoutMs,
-            ExchangeFilterFunction correlationPropagationFilter
+            ExchangeFilterFunction correlationPropagationFilter,
+            @Value("${app.security.enabled:false}") boolean secure,
+            @Value("${app.security.token-uri:}") String tokenUri,
+            @Value("${app.security.client-id:}") String clientId,
+            @Value("${app.security.client-secret:}") String clientSecret
     ) {
         /*
          * Reactor Netty HttpClient jest niskopoziomowym klientem HTTP,
@@ -78,8 +82,18 @@ public class OutboundHttpClientConfig {
              * Od tego momentu WebClient.Builder używany w serwisach będzie dziedziczył
              * te ustawienia timeoutów.
              */
-        return WebClient.builder()
+        var builder = WebClient.builder()
                 .clientConnector(new ReactorClientHttpConnector(httpClient))
                 .filter(correlationPropagationFilter);
+        if (secure && !clientId.isBlank()) {
+            var identity = new pl.jakubtworek.backend.common.security.ServiceTokenProvider(tokenUri,clientId,clientSecret);
+            builder.filter((request,next) -> {
+                if(request.headers().getFirst("Authorization") != null) return next.exchange(request);
+                return reactor.core.publisher.Mono.fromFuture(identity.token()).flatMap(token -> next.exchange(
+                        org.springframework.web.reactive.function.client.ClientRequest.from(request)
+                                .headers(headers -> headers.setBearerAuth(token)).build()));
+            });
+        }
+        return builder;
     }
 }

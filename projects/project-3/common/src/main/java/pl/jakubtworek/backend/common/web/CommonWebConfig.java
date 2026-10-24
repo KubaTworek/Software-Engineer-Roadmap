@@ -5,6 +5,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
+@org.springframework.context.annotation.Import(pl.jakubtworek.backend.common.security.TicketingSecurityConfiguration.class)
 public class CommonWebConfig {
     @Bean
     FilterRegistrationBean<CorrelationIdFilter> correlationIdFilter() {

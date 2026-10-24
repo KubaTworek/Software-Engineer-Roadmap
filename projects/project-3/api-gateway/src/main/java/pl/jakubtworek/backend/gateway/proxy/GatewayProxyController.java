@@ -277,6 +277,9 @@ public class GatewayProxyController {
      * Te wartości są potem widoczne w logach i pomagają diagnozować awarie bez zgadywania.
      */
     private void copyForwardHeaders(HttpHeaders headers, HttpServletRequest request) {
+        // Downstream sam sprawdza podpis i claims; nie ufa X-User-Id z publicznego requestu.
+        String authorization = request.getHeader(HttpHeaders.AUTHORIZATION);
+        if (authorization != null) headers.set(HttpHeaders.AUTHORIZATION, authorization);
         String correlationId = request.getHeader(CorrelationId.CORRELATION_ID_HEADER);
         String requestId = request.getHeader(CorrelationId.REQUEST_ID_HEADER);
 
