@@ -1,0 +1,42 @@
+rule_files:
+  - ../rules/checkout-slo.yml
+evaluation_interval: 1m
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'app_checkout_requests_total{application="order-service",outcome="good"}'
+        values: '0+9990x120'
+      - series: 'app_checkout_requests_total{application="order-service",outcome="bad"}'
+        values: '0+10x120'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: CheckoutErrorBudgetBurn
+        exp_alerts: []
+    promql_expr_test:
+      - expr: checkout:error_ratio_1h
+        eval_time: 70m
+        exp_samples:
+          - labels: '{__name__="checkout:error_ratio_1h"}'
+            value: 0.001
+  - interval: 1m
+    input_series:
+      - series: 'app_checkout_requests_total{application="order-service",outcome="good"}'
+        values: '0+9800x120'
+      - series: 'app_checkout_requests_total{application="order-service",outcome="bad"}'
+        values: '0+200x120'
+    promql_expr_test:
+      - expr: 'ALERTS{alertname="CheckoutErrorBudgetBurn",alertstate="firing"}'
+        eval_time: 70m
+        exp_samples:
+          - labels: '{__name__="ALERTS",alertname="CheckoutErrorBudgetBurn",alertstate="firing",service="order-service",severity="page"}'
+            value: 1
+  - interval: 1m
+    input_series:
+      - series: 'app_checkout_requests_total{application="order-service",outcome="good"}'
+        values: '0x120'
+      - series: 'app_checkout_requests_total{application="order-service",outcome="bad"}'
+        values: '0x120'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: CheckoutErrorBudgetBurn
+        exp_alerts: []

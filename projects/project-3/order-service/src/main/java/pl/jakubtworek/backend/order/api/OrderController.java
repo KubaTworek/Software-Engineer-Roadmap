@@ -38,10 +38,13 @@ public class OrderController {
      */
     private final OrderService service;
     private final pl.jakubtworek.backend.common.security.AuthenticatedActor actor;
+    private final pl.jakubtworek.backend.order.application.CheckoutMetrics metrics;
 
-    public OrderController(OrderService service, pl.jakubtworek.backend.common.security.AuthenticatedActor actor) {
+    public OrderController(OrderService service, pl.jakubtworek.backend.common.security.AuthenticatedActor actor,
+                           pl.jakubtworek.backend.order.application.CheckoutMetrics metrics) {
         this.service = service;
         this.actor = actor;
+        this.metrics = metrics;
     }
 
     /**
@@ -69,7 +72,7 @@ public class OrderController {
     OrderResponse create(@Valid @RequestBody CreateOrderRequest request,
                          @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey) {
         String owner=actor.userId(request.userId());
-        return service.create(new CreateOrderRequest(request.reservationId(), owner), idempotencyKey);
+        return metrics.observe(() -> service.create(new CreateOrderRequest(request.reservationId(), owner), idempotencyKey));
     }
 
     /**

@@ -1,0 +1,20 @@
+groups:
+  - name: checkout-slo
+    rules:
+      - record: checkout:error_ratio_5m
+        expr: (sum(rate(app_checkout_requests_total{application="order-service",outcome="bad"}[5m])) or vector(0)) / sum(rate(app_checkout_requests_total{application="order-service"}[5m]))
+      - record: checkout:error_ratio_1h
+        expr: (sum(rate(app_checkout_requests_total{application="order-service",outcome="bad"}[1h])) or vector(0)) / sum(rate(app_checkout_requests_total{application="order-service"}[1h]))
+      - record: checkout:error_ratio_30m
+        expr: (sum(rate(app_checkout_requests_total{application="order-service",outcome="bad"}[30m])) or vector(0)) / sum(rate(app_checkout_requests_total{application="order-service"}[30m]))
+      - record: checkout:error_ratio_6h
+        expr: (sum(rate(app_checkout_requests_total{application="order-service",outcome="bad"}[6h])) or vector(0)) / sum(rate(app_checkout_requests_total{application="order-service"}[6h]))
+      - alert: CheckoutErrorBudgetBurn
+        expr: (checkout:error_ratio_1h > 14.4 * 0.001 and checkout:error_ratio_5m > 14.4 * 0.001) or (checkout:error_ratio_6h > 6 * 0.001 and checkout:error_ratio_30m > 6 * 0.001)
+        labels:
+          severity: page
+          service: order-service
+        annotations:
+          summary: "Checkout consumes its 99.9% error budget too quickly"
+          description: "Good means a valid POST /orders returns PAID within 3 seconds. Check backlog, database pool and downstream spans."
+          runbook_url: "docs/runbooks/checkout-slo.md"

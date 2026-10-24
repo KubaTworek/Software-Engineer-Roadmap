@@ -1,0 +1,5 @@
+services:
+  # Kontrolowany wariant zasobów jednej usługi; domena i workload pozostają te same.
+  order-service:
+    cpus: 0.75
+    mem_limit: 1g
