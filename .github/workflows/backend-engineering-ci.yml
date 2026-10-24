@@ -18,6 +18,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  resource-and-replication-drills:
+    name: Linux resource and PostgreSQL replication drills
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend-engineering
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bounded native memory, CPU and file descriptors
+        run: |
+          ./scripts/resource-pressure-drill.ps1 -Mode memory
+          ./scripts/resource-pressure-drill.ps1 -Mode cpu
+          ./scripts/resource-pressure-drill.ps1 -Mode fd
+      - name: Replica replay and retained WAL
+        run: ./labs/database-operations/replication-drill.ps1
+
   repository-checks:
     name: Repository checks
     if: github.event_name == 'push' || github.event_name == 'pull_request'
@@ -48,6 +66,9 @@ jobs:
           - name: Core laboratories
             java: 21
             pom: pom.xml
+          - name: Spring Batch and Temporal SDK
+            java: 21
+            pom: labs/durable-processes/pom.xml
           - name: Stage 2C reference delivery flow
             java: 21
             pom: src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_c/workshop/pom.xml
