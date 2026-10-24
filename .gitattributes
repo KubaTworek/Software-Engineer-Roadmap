@@ -16,6 +16,7 @@
 *.tfvars text eol=lf
 *.properties text eol=lf
 *.http text eol=lf
+*.golden text eol=lf
 .gitignore text eol=lf
 Dockerfile text eol=lf
 
