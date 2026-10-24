@@ -27,9 +27,13 @@ kolejność odpowiedzi. `QueryComplexityGuard` liczy depth i koszt, a
 `ProductFieldAuthorization` chroni pole niezależnie od dostępu do endpointu.
 Koszt list mnoży koszt poddrzewa przez jawny limit cardinality, więc płytkie
 zapytanie zwracające tysiące obiektów nie omija budżetu.
-`ProductGraphQlController` oraz `schema.graphqls` uruchamiają ten model przez
-prawdziwy Spring GraphQL/GraphQL Java i delegują do wspólnego
-`ProductQueryUseCase`.
+Model `QueryComplexityGuard` pozostaje małym ćwiczeniem. Granica runtime ma
+osobny `ExpandedOperationBudget` podłączony jako Instrumentation: działa po
+walidacji/koercji zmiennych i przed resolverami. Liczy aliasy i każde użycie
+fragmentu, ogranicza pracę rozwijania AST, depth=5, koszt=100 i listę ids do 20.
+To konserwatywny budżet, także dla pól pomijanych przez skip/include.
+`ProductGraphQlController` deleguje odczyt do `ProductQueryUseCase`, a pole
+internalMarginPercent niezależnie sprawdza tożsamość Spring Security i ownership.
 
 ## Najważniejszy test
 
@@ -49,7 +53,12 @@ deprecations, nullability i semantyka pól nadal tworzą kontrakt.
 
 ## Granice produkcyjne
 
-Test runtime parsuje SDL i wykonuje zapytanie przez prawdziwy endpoint HTTP.
-Produkcja nadal musi dodać persisted queries, limity list, deadline, DataLoader
-per request, bezpieczny model błędów i tracing resolverów. Use case i domena
-pozostają niezależne od GraphQL.
+Test runtime wykonuje HTTP: odrzuca aliasy/fragmenty i za dużą listę ze zmiennej
+bez odczytu danych, sprawdza ownership pola oraz propagację null z niedostępnego
+non-null pola do nullable Product. BatchLoaderRegistry daje DataLoader/cache
+per request; dwa aliasy tego samego ID odczytują port raz, kolejny request ponownie.
+To deduplikacja i batching dispatchu: obecny port wykonuje odczyt per unikalny
+ID w pamięci. Prawdziwy SQL IN wymaga adaptera batch po stronie storage.
+Produkcja nadal potrzebuje limitu rozmiaru requestu, persisted queries zależnie
+od klienta, deadline storage, bezpiecznego modelu błędów i tracingu resolverów.
+Mechanizm rejestracji opisuje [Spring GraphQL](https://docs.spring.io/spring-graphql/reference/request-execution.html).
