@@ -2,6 +2,7 @@ package pl.jakubtworek.backend_engineering.stage_1.block_c.authorization;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.security.MessageDigest;
@@ -60,10 +61,17 @@ public class RefreshTokenService {
      * If old token was stolen and already used,
      * it should be rejected because it is revoked.
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW,
+            noRollbackFor = {RefreshTokenReuseException.class, InvalidRefreshTokenException.class})
     public RotatedRefreshToken rotateRefreshToken(String rawToken) {
 
         String tokenHash = hash(rawToken);
+
+        String family = repository.findFamilyIdByTokenHash(tokenHash)
+                .orElseThrow(InvalidRefreshTokenException::new);
+        repository.findFirstByFamilyIdOrderByIdAsc(family).orElseThrow(InvalidRefreshTokenException::new);
+        // Dopiero po mutexie rodziny czytamy stan. Zapobiega to także wyścigowi
+        // reuse starego tokenu z rotacją jego aktywnego potomka.
 
         RefreshToken existingToken = repository.findByTokenHash(tokenHash)
                 .orElseThrow(InvalidRefreshTokenException::new);

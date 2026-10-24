@@ -64,6 +64,10 @@ Aspekt retry nie może automatycznie ponawiać każdego wyjątku. Potrzebuje kla
 
 Aspekt logujący nie powinien bezrefleksyjnie zapisywać argumentów i wyników. Mogą zawierać hasła, tokeny, dane osobowe albo duże payloady. W produkcji potrzebne są redakcja, stabilny schemat zdarzeń, kontrola poziomu logowania i korelacja z trace’em.
 
+LoggingAspect zapisuje sygnaturę i wynik sukces/typ wyjątku, bez wartości zwróconej
+i bez message wyjątku. Pointcut obejmuje także wydawanie tokenów: test przez
+rzeczywiste proxy wymaga, aby surowy refresh token nie pojawił się w logu.
+
 ## Jak testować
 
 Logikę pomocniczą aspektu można testować jednostkowo, ale najważniejszy test jest integracyjny: wywołuje bean pobrany z kontekstu i sprawdza obserwowalny efekt proxy. Taki test wykrywa brak rejestracji aspektu, błędny pointcut, niewłaściwą kolejność oraz self-invocation — problemy niewidoczne przy bezpośrednim `new`.

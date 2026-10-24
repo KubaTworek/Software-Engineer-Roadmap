@@ -131,3 +131,23 @@ Najbardziej wartościowe testy bezpieczeństwa dowodzą odmowy:
 - odpowiedź nie zawiera tokena, hasha, stack trace ani informacji o istnieniu konta.
 
 H2 i test jednostkowy nie udowadniają jeszcze zachowania blokad produkcyjnej bazy. Wyścig rotacji trzeba dodatkowo sprawdzić testem integracyjnym na tym samym silniku i poziomie izolacji, których używa wdrożenie.
+
+## Transakcja odmowy i rodzina tokenów
+
+RefreshTokenService rotuje w REQUIRES_NEW. Reuse i expired są wyjątkami odmowy,
+które nie cofają zmiany bezpieczeństwa (noRollbackFor); pozostałe awarie nadal
+wycofują zapis. RefreshFamilyTransactionTest uruchamia rzeczywiste proxy Spring/JPA
+na H2 i po wyjątku ponownie odczytuje rodzinę z bazy. Test z mockiem nie dowodziłby
+commitu. REQUIRES_NEW chroni także przed rollbackiem zewnętrznego wywołującego;
+nie obejmuje atomowością innych zmian tego wywołującego.
+
+Najstarszy rekord rodziny jest mutexem wspólnym dla wszystkich potomków. Nie
+wolno go usuwać, dopóki rodzina istnieje. Rotacja i reuse pobierają tę samą blokadę
+przed odczytem aktualnego stanu; sama blokada przedstawionego tokenu nie chroniłaby
+wyścigu reuse przodka z rotacją potomka. Dwie równoległe rotacje jednego tokenu
+mogą uruchomić politykę reuse i odwołać także poprawnie wydanego następcę. Klient
+powinien serializować refresh; okres tolerancji wymaga osobnego threat modelu.
+
+## Zewnętrzna tożsamość
+
+Podpis i claims są fundamentem. Discovery/JWKS, mapowanie sub, rotację i awarię prawdziwego IdP rozwijają projekty; nie budujemy drugiego Authorization Servera w laboratorium. [Zewnętrzna tożsamość](../../../../../../../../../../projects/project-2/docs/identity.md).

@@ -17,6 +17,13 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class RefreshTokenServiceTest {
+    @org.junit.jupiter.api.BeforeEach
+    void familyMutex() {
+        when(repository.findFamilyIdByTokenHash(org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(Optional.of("family-1"));
+        when(repository.findFirstByFamilyIdOrderByIdAsc("family-1"))
+                .thenReturn(Optional.of(new RefreshToken("root", "alice", "family-1", now.plusSeconds(60))));
+    }
 
     private final RefreshTokenRepository repository = mock(RefreshTokenRepository.class);
     private final Instant now = Instant.parse("2026-08-31T10:00:00Z");

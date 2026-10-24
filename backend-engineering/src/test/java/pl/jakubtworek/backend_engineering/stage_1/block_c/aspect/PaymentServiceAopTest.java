@@ -25,6 +25,13 @@ public class PaymentServiceAopTest {
 
     @Autowired
     private ExternalApiService externalApiService;
+    @Autowired private pl.jakubtworek.backend_engineering.stage_1.block_c.authorization.RefreshTokenService refresh;
+
+    @Test void globalAdviceDoesNotPrintRawRefreshToken(CapturedOutput output) {
+        String raw = refresh.createRefreshToken("logging-contract-user");
+        assertThat(AopUtils.isAopProxy(refresh)).isTrue();
+        assertThat(output).contains("[LOG AFTER RETURNING]").doesNotContain(raw);
+    }
 
     @Test
     void serviceCallMustCrossTheProxyAndExecuteOrderedAdvice(CapturedOutput output) {

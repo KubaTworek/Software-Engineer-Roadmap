@@ -29,7 +29,8 @@ public class LoggingAspect {
     }
 
     /**
-     * Executes after successful method execution.
+     * Obserwujemy zakończenie, nie treść wyniku: globalny pointcut obejmuje
+     * także serwisy wydające JWT/refresh token. toString() nie jest redakcją.
      */
     @AfterReturning(
             pointcut = "@within(org.springframework.stereotype.Service)",
@@ -42,8 +43,7 @@ public class LoggingAspect {
         System.out.println(
                 "[LOG AFTER RETURNING] Method: "
                         + joinPoint.getSignature()
-                        + " returned: "
-                        + result
+                        + " completed successfully"
         );
     }
 
@@ -62,7 +62,7 @@ public class LoggingAspect {
                 "[LOG AFTER THROWING] Method: "
                         + joinPoint.getSignature()
                         + " failed with: "
-                        + exception.getMessage()
+                        + exception.getClass().getSimpleName()
         );
     }
 
