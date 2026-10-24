@@ -38,6 +38,15 @@ public class JdbcPaymentRepository implements PaymentRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
+    @Override
+    public boolean updateIfStatus(Payment payment, PaymentStatus expected) {
+        // CAS i późniejszy outbox uczestniczą w tej samej transakcji use case'u.
+        return jdbcTemplate.update("""
+                UPDATE payment.payments SET status=?, updated_at=now()
+                WHERE id=? AND status=?
+                """, payment.status().name(), payment.id().value(), expected.name()) == 1;
+    }
+
     /**
      * Zapisuje agregat Payment do bazy danych.
      *

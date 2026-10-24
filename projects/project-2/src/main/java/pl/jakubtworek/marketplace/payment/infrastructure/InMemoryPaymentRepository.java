@@ -44,13 +44,12 @@ public class InMemoryPaymentRepository implements PaymentRepository {
      *
      * Jeśli płatność o tym samym PaymentId już istnieje, zostanie nadpisana.
      *
-     * Ta implementacja przechowuje referencję do obiektu Payment, a nie jego kopię.
-     * Oznacza to, że zmiana pobranego obiektu może być widoczna w mapie nawet bez
-     * ponownego wywołania save(...). To różni się od typowego zachowania bazy danych.
+     * Zapis i odczyt robią kopię stanu. Mutacja odczytanego agregatu nie może
+     * ominąć CAS. Fake nadal nie zapewnia rollbacku danych i outboxa jak PostgreSQL.
      */
     @Override
-    public Payment save(Payment payment) {
-        payments.put(payment.id(), payment);
+    public synchronized Payment save(Payment payment) {
+        payments.put(payment.id(), copy(payment));
         return payment;
     }
 
@@ -70,6 +69,18 @@ public class InMemoryPaymentRepository implements PaymentRepository {
     public Optional<Payment> findByOrderId(UUID orderId) {
         return payments.values().stream()
                 .filter(payment -> payment.orderId().equals(orderId))
-                .findFirst();
+                .findFirst().map(this::copy);
+    }
+
+    @Override public synchronized boolean updateIfStatus(Payment payment,
+            pl.jakubtworek.marketplace.payment.domain.PaymentStatus expected) {
+        Payment current = payments.get(payment.id());
+        if (current == null || current.status() != expected) return false;
+        payments.put(payment.id(), copy(payment));
+        return true;
+    }
+    private Payment copy(Payment payment) {
+        return Payment.restore(payment.id(), payment.orderId(), payment.amount(), payment.status(),
+                payment.providerOperationId(), payment.uncertaintyReason());
     }
 }

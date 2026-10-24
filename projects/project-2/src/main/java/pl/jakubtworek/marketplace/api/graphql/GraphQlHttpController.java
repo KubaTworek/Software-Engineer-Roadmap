@@ -25,7 +25,7 @@ public class GraphQlHttpController {
     @PostMapping(path = "/graphql", consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.APPLICATION_JSON_VALUE)
     public CompletableFuture<Map<String, Object>> execute(@RequestBody Request request) {
-        guard.verify(request.query());
+        guard.verify(request.query(), request.variables());
         ExecutionInput input = ExecutionInput.newExecutionInput(request.query())
                 .operationName(request.operationName())
                 .variables(request.variables() == null ? Map.of() : request.variables())

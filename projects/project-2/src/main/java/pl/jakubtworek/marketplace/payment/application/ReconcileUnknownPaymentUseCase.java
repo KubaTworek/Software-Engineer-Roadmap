@@ -25,7 +25,10 @@ public class ReconcileUnknownPaymentUseCase {
         var result = gateway.lookup(payment.providerOperationId());
         if (result.outcome() == PaymentGateway.Outcome.UNKNOWN) return PaymentStatus.UNKNOWN;
         payment.resolve(result.accepted(), correlationId, UUID.randomUUID(), result.reason());
-        payments.save(payment);
+        if (!payments.updateIfStatus(payment, PaymentStatus.UNKNOWN)) {
+            // Inna replika rozstrzygnęła stan podczas I/O. Nie emitujemy drugiego faktu.
+            return payments.findByOrderId(orderId).orElseThrow().status();
+        }
         payment.domainEvents().forEach(events::publish);
         payment.clearDomainEvents();
         return payment.status();
