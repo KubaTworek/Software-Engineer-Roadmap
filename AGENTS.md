@@ -2,12 +2,13 @@
 
 ## Cel repozytorium
 
-To repozytorium jest praktyczną roadmapą rozwoju Java Backend Engineera od poziomu Mid do Senior i Top Senior. Łączy cztery rodzaje materiałów:
+To repozytorium jest praktyczną roadmapą rozwoju Java Backend Engineera od poziomu Mid do Senior i Top Senior. Łączy pięć rodzajów materiałów:
 
 1. małe, skoncentrowane przykłady techniczne,
 2. większe projekty portfolio wykorzystujące poznane zagadnienia,
 3. niezależne implementacje popularnych problemów High Level System Design,
-4. ćwiczenia Low Level Design oparte na programowaniu obiektowym w Javie.
+4. ćwiczenia Low Level Design oparte na programowaniu obiektowym w Javie,
+5. dokumentacyjne pytania i odpowiedzi do powtórek oraz rozmów technicznych.
 
 Nie traktuj całego repozytorium jak jednej aplikacji. Poszczególne katalogi mogą mieć własny build, konfigurację, zależności i wymagania infrastrukturalne.
 
@@ -94,6 +95,19 @@ Ten obszar ma jawnie edukacyjny cel. Przy zmianach stosuj
 `low-level-design/EDUCATIONAL_STANDARD.md`: objaśniaj po polsku decyzje,
 niezmienniki, kontrprzykłady i dowody w testach. Czytelnik ma móc odtworzyć
 rozumowanie i przenieść wiedzę do kolejnego zadania, z zachowaniem jego reguł.
+
+### `interview-preparation/`
+
+Dokumentacyjny zbiór pytań i odpowiedzi po polsku, uporządkowany tematycznie
+i bez powtórzeń znaczeniowych. Wyjaśnia cel, mechanizm, ograniczenia i awarie;
+zadania rozwija przez konkretne przepływy, kontrprzykłady i przykłady kodu,
+SQL oraz konfiguracji, bez tworzenia kolejnych aplikacji. Zachowuj istotne
+warunki wariantów pytań oraz rozróżniaj
+gwarancje API, szczegóły implementacji i różnice wersji. Przy pytaniach
+o doświadczenie nie wymyślaj historii zawodowych. Moduł nie ma buildu aplikacji;
+sprawdzaj oznaczone przykłady skryptem scripts/check-examples.ps1 w tym module
+oraz dokumentację i odsyłacze zgodnie z jego README. Każdy blok wymaga jawnego
+kontekstu: kompilowany fragment, kontrprzykład, szkic lub materiał opisowy.
 
 ## Zasady pracy
 
