@@ -6,7 +6,7 @@
 > - **Zakres:** `temat-zaawansowany`
 > - **Uczy:** Stage 3B — observability.
 > - **Typowy błąd:** Zbieranie telemetrii bez połączenia symptomu z diagnozą i reakcją operacyjną.
-> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=AlertYamlRendererTest,CollectorConfigurationTest,IncidentTriageAndRunbookTest" test`
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=BurnRatePolicyTest,AlertYamlRendererTest,CollectorConfigurationTest" test`
 > - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** `TracingConfiguration` = `production-boundary`.
 > - **Granica:** Test eksportera lub reguły nie dowodzi dostarczenia telemetrii do wdrożonego backendu ani skuteczności reakcji operatora.

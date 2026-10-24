@@ -20,6 +20,11 @@ jednoznacznie opisanym laboratorium na jego granicy.
 
 ## Reguły zmian
 
+Stage 2E–2F dodają trwały staging feedu katalogu, opcjonalną rekoncyliację
+UNKNOWN przez Temporal i modernizację granicy odczytu. Nie uruchamiaj dwóch
+koordynatorów sagi zamówienia. Import należy do Catalog; checkpoint i efekt
+porcji wymagają jednej transakcji. Shadow nie może powtarzać komend biznesowych.
+
 - Najpierw nazwij niezmiennik lub gwarancję, dopiero potem technologię.
 - Domena nie zależy od Springa, JPA, HTTP ani adapterów.
 - Między bounded contextami preferuj opublikowany kontrakt integracyjny; nie
@@ -44,3 +49,8 @@ jednoznacznie opisanym laboratorium na jego granicy.
 
 Test jednostkowy ma dowodzić jednej gwarancji. Test integracyjny służy do kontraktu
 z PostgreSQL, Kafką, Springiem lub HTTP, którego fake nie potrafi potwierdzić.
+
+Kontakt Notification jest jedynym właścicielem emaila/nazwy w nowym flow.
+Erase ma trwały registry, projekcję i outbox. Rejestr suppression po restore
+musi pochodzić spoza odtwarzanego backupu i mieć zaufany manifest; nie utożsamiaj
+usunięcia kontaktu z usunięciem finansowych referencji całego systemu.

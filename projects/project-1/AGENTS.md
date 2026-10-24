@@ -41,6 +41,10 @@ laboratorium ma pozostać dowodem lokalnej poprawności jednej aplikacji.
 
 ## Standard kodu edukacyjnego
 
+Rozszerzenia Stage 1G–1H obejmują budżet zasobów procesu Linux, obserwacje
+cgroup i bezpieczne aktualizacje oraz powtarzalny build. Eksperyment awarii
+pamięci wykonuj w izolowanym probe, a nie w głównym flow rezerwacji.
+
 Komentarze są częścią materiału. Komentuj dokładnie:
 
 - niezmiennik i scenariusz awarii;

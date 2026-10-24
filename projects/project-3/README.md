@@ -23,6 +23,13 @@ aktualny system oraz dowody jego gwarancji.
 Pełna mapa kod → test → metryka → ograniczenie znajduje się w
 [`docs/stage-3-guarantees.md`](docs/stage-3-guarantees.md).
 
+## Rozszerzenie — operacje na bazie i świeżość danych
+
+[Przewodnik bazodanowy](docs/database-operations.md) łączy ReplicaReadPolicy,
+test nieznanego/starego pomiaru, diagnostykę lag i retencji WAL oraz runbook.
+Obecny Compose nadal używa primary per usługa; polityka nie udaje wdrożonego
+routera replik. Prawdziwy drill dwóch PostgreSQL jest oddzielnym laboratorium.
+
 ## Architektura
 
 ```text
@@ -160,3 +167,12 @@ infrastrukturalnymi i systemowym smoke testem.
 Projekt jest kompletny w zakresie Stage 3, gdy jego gwarancje można nie tylko
 opisać, lecz również odtworzyć odpowiednią komendą i wskazać granicę, poza którą
 dany mechanizm już nie wystarcza.
+
+## Tożsamość usług i klientów
+
+Opcjonalny secure wariant Compose sprawdza Bearer w każdej usłudze, wyprowadza właściciela z sub i używa client credentials dla pracy wewnętrznej. [Tożsamość usług i klientów](docs/identity.md).
+
+
+## Eksploatacja i koszt
+
+Endurance łączy stały napływ, awarię brokera, recovery, niezmienniki, próbki zasobów, biznesowy SLI oraz estymowany koszt zakończonego zamówienia. [Eksploatacja i koszt](docs/endurance-and-cost.md).

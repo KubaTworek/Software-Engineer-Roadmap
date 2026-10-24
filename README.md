@@ -12,6 +12,22 @@ Aktualną mapę laboratoriów i przekrojowy indeks pojęć zawiera [kompendium b
 - Zagadnienia warto zestawiać z artefaktami: README, testami, wynikami load testów, diagramami, decyzjami architektonicznymi i wnioskami.
 - Seniority nie oznacza znajomości większej liczby frameworków, tylko lepsze decyzje, lepszą diagnostykę i większy wpływ na system oraz zespół.
 
+## Jak wybierać źródła do nauki
+
+W sekcjach **Materiały** przy każdym bloku znajdziesz punkt startowy, pogłębienie
+oraz dokumentację do ćwiczeń. Wybierz jedno źródło przewodnie i od razu zastosuj
+je w laboratorium lub projekcie; pozostałe pozycje służą do uzupełniania luk.
+Książki zwykle wymagają zakupu lub dostępu bibliotecznego/subskrypcji; osobno
+wskazane bezpłatne materiały pozwalają rozpocząć naukę bez kupowania całej bibliografii.
+Większość źródeł jest po angielsku.
+
+Dla API, konfiguracji i gwarancji narzędzia wybieraj dokumentację wersji używanej
+w module. Linki `current`, `latest` i `stable` mogą prowadzić do nowszego wydania.
+Starsze książki wykorzystuj do nauki mechanizmów; flagi JVM, konfigurację Springa
+i zachowanie konkretnej implementacji sprawdzaj osobno. Powracająca książka,
+np. *Designing Data-Intensive Applications*, oznacza kolejne rozdziały tej samej
+lektury na różnych etapach. Lista materiałów nie jest listą obowiązkowych zakupów.
+
 ## Mapa repozytorium
 
 - [`backend-engineering/`](backend-engineering/README.md) — wykonywalne laboratoria i kompendium wiedzy dla etapów 1–3;
@@ -154,15 +170,16 @@ i jednoznaczną interpretacją momentu wykonania.
 
 ### Materiały
 
-**Książki**
+**Na początek:** Brian Goetz i współautorzy, [*Java Concurrency in Practice*](https://jcip.net/) — thread safety, publikacja, anulowanie i Java Memory Model. Książka opisuje starszą Javę; virtual threads poznawaj z dokumentacji JDK.
 
-- *Java Concurrency in Practice*
-- *Effective Java*
+**Uzupełnienie:** Joshua Bloch, [*Effective Java*, wyd. 3](https://www.informit.com/store/effective-java-9780134685991) — kontrakty obiektów, niezmienność i zasady pracy ze współbieżnością.
 
-**Kursy / materiały wideo**
+**Bezpłatne materiały:**
 
-- Pluralsight — Java Concurrency
-- Materiały Briana Goetza i José Paumarda
+- [Dev.java — Learn Java](https://dev.java/learn/) — materiały o języku, API i narzędziach Javy; wybieraj tematy odpowiadające laboratorium.
+- [JEP 444: Virtual Threads](https://openjdk.org/jeps/444) i [JEP 491](https://openjdk.org/jeps/491) — model virtual threads oraz zmiana zachowania pinningu w JDK 24; rozróżniaj wersję opisaną w materiale od używanej w module.
+- [Reactive Streams — specyfikacja](https://www.reactive-streams.org/) — demand, cancel i reguły protokołu.
+- [Java Date-Time](https://docs.oracle.com/javase/tutorial/datetime/) — `Instant`, strefy i arytmetyka czasu; zastosuj do testów DST i schedulerów.
 
 ---
 
@@ -286,15 +303,15 @@ i jednoznaczną interpretacją momentu wykonania.
 
 ### Materiały
 
-**Książki**
+**Na początek:** Scott Oaks, [*Java Performance*, wyd. 2](https://www.oreilly.com/library/view/java-performance-2nd/9781492056102/) — metodyka pomiaru, GC i diagnozowanie ograniczeń aplikacji.
 
-- *Java Performance*
-- *Optimizing Java*
+**Uzupełnienie:** Benjamin J. Evans, James Gough i Chris Newland, [*Optimizing Java*](https://www.oreilly.com/library/view/optimizing-java/9781492039259/) — JIT, działanie JVM i eksperymenty wydajnościowe. Szczegóły GC i flagi z obu książek sprawdzaj dla JDK modułu.
 
-**Kursy / talks**
+**Bezpłatne materiały:**
 
-- Oracle JFR & JVM Internals talks
-- JetBrains JVM Profiling videos
+- [JDK Mission Control](https://www.oracle.com/java/technologies/jdk-mission-control.html) — analiza nagrań JFR; zacznij od CPU, alokacji i blokad własnej aplikacji.
+- [OpenJDK JMH — przykłady](https://github.com/openjdk/jmh/tree/master/jmh-samples/src/main/java/org/openjdk/jmh/samples) — warm-up, eliminacja martwego kodu i pułapki benchmarków.
+- [async-profiler](https://github.com/async-profiler/async-profiler) — profile CPU, alokacji i blokad; sprawdź obsługę swojego systemu operacyjnego.
 
 ---
 
@@ -396,16 +413,16 @@ i jednoznaczną interpretacją momentu wykonania.
 
 ### Materiały
 
-**Książki**
+**Na początek:** [Spring Framework Reference](https://docs.spring.io/spring-framework/reference/) — IoC, lifecycle, AOP i transakcje; do każdego mechanizmu odtwórz przykład z laboratorium.
 
-- *Spring in Action*
-- *Spring Microservices in Action*
+**Książka:** Craig Walls, [*Spring in Action*, wyd. 6](https://www.manning.com/books/spring-in-action-sixth-edition) — spójne wprowadzenie do aplikacji Spring. Konfigurację dopasuj do wersji Spring Boota w module.
 
-**Kursy**
+**Bezpłatne materiały:**
 
-- Spring Academy
-- Spring Core
-- Spring Security
+- [Spring Security Reference](https://docs.spring.io/spring-security/reference/) — filter chain, resource server i method security.
+- [Spring Guides](https://spring.io/guides) — krótkie ćwiczenia integracyjne.
+- [Hibernate ORM](https://hibernate.org/orm/documentation/) — persistence context, fetching i batching; wybierz dokumentację używanej wersji.
+- [jqwik User Guide](https://jqwik.net/docs/current/user-guide.html), [PIT](https://pitest.org/) i [Pact JVM](https://docs.pact.io/implementation_guides/jvm) — odpowiednio properties/shrinking, mutation testing i kontrakty konsumenta; dobieraj do rodzaju błędu.
 
 ---
 
@@ -536,6 +553,20 @@ tombstone i paginacja wyników.
         - conflict resolution,
       - konsekwencje spójności dla UX i logiki biznesowej.
 
+### Rozszerzenie — operacje na bazie danych
+
+**Implementacja:** [testy prawdziwego PostgreSQL](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_1/block_d/sql/operations/README.md) sprawdzają lock timeout DDL i zachowanie starego snapshotu podczas VACUUM.
+
+- Długie transakcje i `idle in transaction`, snapshot MVCC oraz utrudnione
+  usuwanie martwych wersji; autovacuum, bloat i ryzyko wraparound.
+- Statystyki planera, `ANALYZE`, estymacje liczności i zmiana rozkładu danych.
+- Locki i kolejki oczekiwania, blokujące DDL, `lock_timeout`/`statement_timeout`
+  i bezpieczne tworzenie indeksu z uwzględnieniem ograniczeń wybranej bazy.
+- Ćwiczenie: przy stałym ruchu pogorsz stan bazy długą transakcją i zmianami danych;
+  zbierz aktywne transakcje, blokady, statystyki i plany. Usuń przyczynę,
+  porównaj latency przed/po i wyjaśnij, dlaczego sam restart aplikacji nie wystarcza.
+- Materiał: [PostgreSQL — routine vacuuming](https://www.postgresql.org/docs/current/routine-vacuuming.html).
+
 ### Pytania sprawdzające rozumienie
 
 - Czy potrafisz dobrać indeks do zapytania i uzasadnić koszt zapisu oraz odczytu?
@@ -548,16 +579,15 @@ tombstone i paginacja wyników.
 
 ### Materiały
 
-**Książki**
+**Na początek:** Markus Winand, [*SQL Performance Explained* / Use The Index, Luke!](https://use-the-index-luke.com/) — książka i jej bezpłatna wersja WWW; indeksy złożone, filtrowanie, sortowanie i koszt zapytań.
 
-- *Designing Data-Intensive Applications*
-- *SQL Performance Explained*
+**Pogłębienie:** [*Designing Data-Intensive Applications*](https://dataintensive.net/) — silniki przechowywania, transakcje i replikacja. Wracaj do tej samej książki także w etapach 2–3.
 
-**Kursy / strony / talks**
+**Bezpłatna dokumentacja:**
 
-- Use The Index, Luke!
-- PostgreSQL EXPLAIN talks
-- MySQL EXPLAIN talks
+- [PostgreSQL — EXPLAIN](https://www.postgresql.org/docs/current/using-explain.html) i [izolacja transakcji](https://www.postgresql.org/docs/current/transaction-iso.html) — porównaj estymacje z wykonaniem i odtwórz anomalie izolacji.
+- [MySQL — EXPLAIN](https://dev.mysql.com/doc/refman/8.4/en/using-explain.html) — alternatywa dla ćwiczeń na MySQL; semantykę blokad sprawdzaj osobno dla silnika.
+- [Redis](https://redis.io/docs/latest/) i [OpenSearch](https://docs.opensearch.org/latest/) — TTL/eviction oraz indeksowanie i wyszukiwanie; zacznij od technologii używanej w wybranym laboratorium.
 
 ---
 
@@ -593,16 +623,16 @@ tombstone i paginacja wyników.
 
 ### Materiały
 
-**Książki**
+**Na początek:** Martin Fowler, [*Refactoring*, wyd. 2](https://martinfowler.com/books/refactoring.html) — małe zmiany zachowujące zachowanie, wspierane testami. Przykłady są w JavaScript; techniki stosuj do kodu Java w laboratorium.
 
-- *Clean Code*
-- *Working Effectively with Legacy Code*
-- *Clean Architecture*
+**Pogłębienie:** Michael Feathers, [*Working Effectively with Legacy Code*](https://www.informit.com/store/working-effectively-with-legacy-code-9780131177055) — seams, characterization tests i odzyskiwanie kontroli nad kodem bez testów.
 
-**Kursy / talks**
+**Bezpłatne materiały:**
 
-- Refactoring Guru
-- Materiały Martina Fowlera o refaktoryzacji i testowalności
+- [Katalog refaktoryzacji Fowlera](https://refactoring.com/catalog/) — konkretne przekształcenia do zastosowania podczas pracy.
+- [JUnit User Guide](https://docs.junit.org/current/user-guide/) — asercje, parametryzacja i organizacja testów; wybierz wersję zgodną z modułem.
+
+*Clean Code* traktuj jako dodatkowy zbiór propozycji do dyskusji. Pierwszeństwo mają zachowanie kodu, czytelność i dowody z testów.
 
 ---
 
@@ -631,10 +661,81 @@ tombstone i paginacja wyników.
 
 ### Materiały
 
-- dokumentacja Java networking i używanego klienta HTTP,
-- RFC 9110 oraz RFC 9113,
-- *High Performance Browser Networking*,
-- dokumentacja timeoutów używanego reverse proxy, load balancera i service mesha.
+**Na początek:** Ilya Grigorik, [*High Performance Browser Networking*](https://hpbn.co/) — bezpłatna książka online; wybierz rozdziały o latency, TCP, TLS, HTTP i WebSocket. Starsze szczegóły protokołów konfrontuj ze specyfikacją.
+
+**Bezpłatne materiały:**
+
+- [RFC 9110 — HTTP Semantics](https://www.rfc-editor.org/rfc/rfc9110.html) i [RFC 9113 — HTTP/2](https://www.rfc-editor.org/rfc/rfc9113.html) — semantyka metod, idempotencja i multipleksowanie.
+- [JDK HttpClient](https://docs.oracle.com/en/java/javase/21/docs/api/java.net.http/java/net/http/HttpClient.html) — kontrakt klienta; sprawdź różnicę między connect timeout i timeoutem requestu oraz wersję JDK modułu.
+- [NGINX — proxy module](https://nginx.org/en/docs/http/ngx_http_proxy_module.html) — timeouty na kolejnych odcinkach połączenia; zestaw z budżetem czasu całego requestu.
+
+---
+
+## Blok G — [Linux i zasoby procesu Java](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_1/block_g/README.md)
+
+**Implementacja:** blok ma wykonywalny przykład i testy; ograniczenia pomiaru opisuje jego README.
+Wykorzystaj fundamenty z bloków JVM, networking i Docker, a potem zbadaj zachowanie
+rzeczywistego procesu na Linuxie, np. w maszynie wirtualnej lub kontenerze.
+
+### Zakres
+
+- Proces, wątek, PID 1, sygnały `SIGTERM`/`SIGKILL`, exit code i graceful shutdown.
+- Heap, metaspace, stosy wątków, direct buffers, pamięć natywna, RSS i page cache.
+- Limity pamięci i CPU w cgroups, CPU quota, throttling oraz interpretacja procentów CPU.
+- Deskryptory plików, sockety, limity procesu i objawy wyczerpania zasobów.
+- Diagnostyka przez `/proc`, `ps`, `top`, `pidstat`, `vmstat`, `iostat`, `ss`,
+  `lsof` oraz `jcmd`; dostępność narzędzi i uprawnienia zależą od środowiska.
+
+### Ćwiczenia i dowody rozumienia
+
+- Zestaw heap, RSS i limit kontenera; wywołaj kontrolowaną presję pamięci.
+  Rozróżnij `OutOfMemoryError` JVM od zabicia przez OOM killer na podstawie
+  logów i liczników środowiska. Sam exit code 137 nie dowodzi OOM.
+- Porównaj latency aplikacji z limitem CPU i bez limitu. Zapisz dane o throttlingu
+  i wyjaśnij, względem jakiej liczby CPU obliczono wykorzystanie.
+- Odtwórz wyczerpanie deskryptorów z małym limitem, wskaż wyciek i sprawdź poprawkę.
+  Eksperymenty wykonuj w izolowanym środowisku z limitami i kryteriami przerwania.
+
+### Materiały
+
+- [Linux — cgroup v2](https://docs.kernel.org/admin-guide/cgroup-v2.html) — kontrola CPU i pamięci.
+- Brendan Gregg, [Linux Performance](https://www.brendangregg.com/linuxperf.html) — narzędzia, metodyka i analiza ograniczeń systemowych.
+- [Native Memory Tracking](https://docs.oracle.com/en/java/javase/21/vm/native-memory-tracking.html) — pamięć śledzona przez HotSpot; nie traktuj NMT jako pełnego bilansu RSS.
+
+---
+
+## Blok H — [Build, zależności i bezpieczne aktualizacje](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_1/block_h/README.md)
+
+**Implementacja:** blok ma wykonywalny przykład i testy; ograniczenia pomiaru opisuje jego README.
+Repozytorium używa Mavena i Gradle; celem jest rozumienie istniejących buildów.
+
+### Zakres
+
+- Lifecycle Mavena i graf zadań Gradle; faza konfiguracji kontra wykonanie.
+- Zależności bezpośrednie i przechodnie, scopes/configurations, BOM,
+  dependency management, constraints i zasady rozstrzygania konfliktów wersji.
+- Compile classpath kontra runtime classpath, class loading, zgodność źródłowa
+  i binarna, `NoSuchMethodError`, `ClassNotFoundException` i `NoClassDefFoundError`.
+- Wrapper, toolchain, wersje pluginów, repozytoria, weryfikacja zależności
+  oraz powtarzalność artefaktu; cache buildu nie dowodzi powtarzalności.
+- Aktualizacje JDK, bibliotek i frameworka: changelog, analiza zgodności,
+  małe kroki, testy kontraktów i plan wycofania.
+
+### Ćwiczenia i dowody rozumienia
+
+- Skompiluj klienta przeciwko jednej wersji biblioteki, uruchom z niezgodną
+  wersją i wyjaśnij `NoSuchMethodError` na podstawie rzeczywistego classpath.
+- Ustal pochodzenie konfliktu przez `dependency:tree` albo `dependencyInsight`;
+  usuń przyczynę i sprawdź zachowanie aplikacji, zamiast losowo dodawać exclusions.
+- Zbuduj artefakt w dwóch czystych środowiskach. Porównaj sumy i wyjaśnij
+  różnice, np. timestampy i metadane. Zaplanuj aktualizację na osobnym przykładzie,
+  bez nieuzasadnionego podnoszenia wersji wszystkich modułów repozytorium.
+
+### Materiały
+
+- [Maven — dependency mechanism](https://maven.apache.org/guides/introduction/introduction-to-dependency-mechanism.html).
+- [Gradle — dependency management](https://docs.gradle.org/current/userguide/dependency_management.html).
+- [Reproducible Builds](https://reproducible-builds.org/docs/) — źródła niedeterministyczności artefaktów.
 
 ---
 
@@ -714,6 +815,14 @@ zapytań, kompatybilności, kosztu wywołania i propagacji deadline.
   - eventual consistency,
   - odporność na błędy integracji.
 
+- [GraphQL](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_a/graphql/README.md) — istniejące laboratorium:
+  - schema/SDL, resolvery, nullability i kompatybilna ewolucja pól,
+  - N+1 i batching oraz budżet głębokości/kosztu z uwzględnieniem rozmiaru list,
+  - autoryzacja pola dla konkretnego zasobu i test rzeczywistego endpointu HTTP,
+  - granice wdrożenia: DataLoader per request, persisted queries, deadline,
+    bezpieczne błędy i tracing resolverów wymagają dalszego uzupełnienia,
+  - porównanie z REST i gRPC na podstawie potrzeb klienta i kosztu operacyjnego.
+
 ### Pytania sprawdzające rozumienie
 
 - Czy potrafisz wskazać konkretne punkty bólu, przy których modular monolith przestaje wystarczać?
@@ -726,16 +835,18 @@ zapytań, kompatybilności, kosztu wywołania i propagacji deadline.
 
 ### Materiały
 
-**Książki obowiązkowe**
+**Na początek:** Eric Evans, [*Domain-Driven Design* i DDD Reference](https://www.domainlanguage.com/ddd/) — język domeny, bounded context i model; bezpłatny DDD Reference służy jako skrót pojęć.
 
-- *Implementing Domain-Driven Design*
-- *Domain-Driven Design*
-- *Clean Architecture*
+**Pogłębienie:** Vaughn Vernon, [*Implementing Domain-Driven Design*](https://www.informit.com/store/implementing-domain-driven-design-9780321834577) — agregaty, granice transakcji i integracja kontekstów. Czytaj wybrane rozdziały podczas rozwijania projektu 2.
 
-**Talks / artykuły**
+**Bezpłatne materiały:**
 
-- Martin Fowler — *Monolith First*
-- InfoQ — bounded context & modular monolith
+- Martin Fowler, [*Monolith First*](https://martinfowler.com/bliki/MonolithFirst.html) — przesłanki startu od monolitu i ograniczenia tej strategii.
+- Alistair Cockburn, [*Hexagonal Architecture*](https://alistair.cockburn.us/hexagonal-architecture/) — porty, adaptery i izolacja logiki aplikacji.
+- [Spring Modulith](https://docs.spring.io/spring-modulith/reference/) — weryfikacja granic modułów i zdarzenia w modularnym monolicie.
+- [Google AIP](https://google.aip.dev/) — decyzje dotyczące publicznego API, paginacji i kompatybilności; traktuj jako katalog reguł do świadomego wyboru.
+
+**Opcjonalnie:** Robert C. Martin, [*Clean Architecture*](https://www.informit.com/store/clean-architecture-a-craftsmans-guide-to-software-structure-9780134494166) — kierunek zależności i granice; nie kopiuj układu warstw bez potrzeby domenowej.
 
 ---
 
@@ -804,16 +915,15 @@ czyli odbudowę projekcji i naprawę danych bez powtarzania efektów biznesowych
 
 ### Materiały
 
-**Książki**
+**Na początek:** [Confluent Developer — kursy](https://developer.confluent.io/courses/) — wybierz podstawy Kafka, potem consumer groups, delivery semantics i transakcje. Wariant RabbitMQ: [tutoriale](https://www.rabbitmq.com/tutorials) oraz [Reliability Guide](https://www.rabbitmq.com/docs/reliability).
 
-- *Designing Data-Intensive Applications*
-- *Building Event-Driven Microservices*
+**Książki:**
 
-**Kursy / materiały**
+- Adam Bellemare, [*Building Event-Driven Microservices*](https://www.oreilly.com/library/view/building-event-driven-microservices/9781492057888/) — ownership danych, kontrakty zdarzeń i przetwarzanie strumieniowe; wzorce dopasuj także do modularnego monolitu.
+- Gregor Hohpe i Bobby Woolf, [*Enterprise Integration Patterns*](https://www.enterpriseintegrationpatterns.com/) — książka i bezpłatny katalog wzorców routingu, korelacji i obsługi duplikatów.
+- [*Designing Data-Intensive Applications*](https://dataintensive.net/) — rozdziały o replikacji i przetwarzaniu strumieniowym jako pogłębienie.
 
-- Confluent — Kafka Fundamentals
-- RabbitMQ — Core Concepts & Reliability
-- Talks o idempotent consumers, retry storms i backpressure
+**Do laboratoriów:** [Debezium Outbox Event Router](https://debezium.io/documentation/reference/stable/transformations/outbox-event-router.html) — CDC i outbox; [Idempotent Consumer](https://microservices.io/patterns/communication-style/idempotent-consumer.html) — deduplikacja i granica transakcji. Każdą gwarancję exactly-once opisuj wraz z jej zakresem i efektami poza brokerem.
 
 ---
 
@@ -847,15 +957,14 @@ Całość łączy lokalny przepływ kind/minikube z decyzją po wdrożeniu: buil
 
 ### Materiały
 
-**Książki obowiązkowe**
+**Na początek — bezpłatne ćwiczenia i dokumentacja:**
 
-- *Kubernetes Up & Running*
+- [Docker — multi-stage builds](https://docs.docker.com/build/building/multi-stage/) — zbuduj mały obraz i sprawdź cache warstw.
+- [Kubernetes Basics](https://kubernetes.io/docs/tutorials/kubernetes-basics/) — deploy, skalowanie i aktualizacja aplikacji.
+- [Kubernetes — probes](https://kubernetes.io/docs/concepts/configuration/liveness-readiness-startup-probes/) — rozróżnij startup, readiness i liveness w scenariuszu awarii.
+- [Argo Rollouts](https://argo-rollouts.readthedocs.io/en/stable/) — canary, analiza i rollback; materiał do porównania z laboratorium progressive delivery.
 
-**Kursy / dokumentacja**
-
-- KodeKloud
-- Docker docs — multi-stage build
-- Kubernetes docs
+**Książka:** Brendan Burns, Joe Beda, Kelsey Hightower i Lachlan Evenson, [*Kubernetes: Up and Running*, wyd. 3](https://www.oreilly.com/library/view/kubernetes-up-and/9781098110192/) — pogłębienie modelu klastra i wdrożeń. Manifesty porównuj z API wersji używanego klastra.
 
 ---
 
@@ -886,10 +995,116 @@ Całość łączy lokalny przepływ kind/minikube z decyzją po wdrożeniu: buil
 
 ### Materiały
 
-- OWASP ASVS i OWASP Cheat Sheet Series,
-- OWASP SAMM,
-- NIST Secure Software Development Framework,
-- dokumentacja używanego secret managera, KMS i narzędzi supply-chain.
+**Na początek — bezpłatne źródła:**
+
+- [OWASP ASVS](https://owasp.org/www-project-application-security-verification-standard/) — wymagania do zamiany w negatywne testy i kryteria review.
+- [OWASP Cheat Sheet Series](https://cheatsheetseries.owasp.org/) — wybierz SSRF, upload plików, deserializację, sekrety i logowanie zgodnie z laboratorium.
+- [OWASP SAMM](https://owaspsamm.org/) i [NIST SSDF](https://csrc.nist.gov/projects/ssdf) — praktyki bezpiecznego wytwarzania; przekładaj je na konkretne kontrole pipeline'u.
+- [PortSwigger Web Security Academy](https://portswigger.net/web-security) — bezpłatne, interaktywne laboratoria podatności WWW; ćwicz w przygotowanym środowisku.
+- [Sigstore Cosign](https://docs.sigstore.dev/cosign/) i [SLSA](https://slsa.dev/) — podpisy, provenance i weryfikacja artefaktu przed wdrożeniem.
+
+**Pogłębienie:** [*Building Secure and Reliable Systems*](https://sre.google/books/) — książka Google dostępna online; połączenie bezpieczeństwa z niezawodnością i operacjami.
+
+---
+
+## Blok E — [Batch i trwałe procesy biznesowe, w tym Temporal](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_e/README.md)
+
+**Implementacja:** osobny build Spring Batch/Temporal zawiera test restartu importu,
+Signal, timer, retry, kompensację i replay. Projekt 2 dodaje staging PostgreSQL
+oraz opcjonalny worker rekoncyliacji płatności. Test SDK nie dowodzi HA klastra.
+
+### Zakres — przetwarzanie wsadowe
+
+- Import i eksport dużych danych, streaming wejścia, porcjowanie i ograniczona pamięć.
+- Tożsamość uruchomienia, checkpoint, restart oraz granica transakcji porcji.
+- Walidacja, skip/quarantine, retry, częściowy sukces i raport odrzuconych rekordów.
+- Stabilny zbiór wejściowy, podział pracy, duplikaty i anulowanie bez utraty postępu.
+- Spring Batch: Job, Step, JobRepository, reader/processor/writer i ExecutionContext.
+
+### Zakres — durable execution i Temporal
+
+- Workflow opisuje koordynację procesu; Activities wykonują operacje zewnętrzne,
+  np. zapis lub wywołanie płatności. Worker wykonuje zadania z Task Queue,
+  a Temporal Service przechowuje historię potrzebną do odtworzenia wykonania.
+- Deterministyczny replay Workflow: czas, losowość i I/O wymagają mechanizmów SDK
+  lub Activities; zwykłe wywołanie HTTP w kodzie Workflow łamie ten model.
+- Trwałe timery, oczekiwanie na decyzję człowieka, Signals, Queries i Updates;
+  odczyt stanu odróżniaj od komendy oraz walidacji zmiany.
+- Retry i timeouty Activities, heartbeat długiej pracy oraz kooperacyjne anulowanie.
+  Retry może ponowić efekt zewnętrzny: potrzebne są idempotency keys i deduplikacja.
+- Saga i kompensacje: osobne, zawodne operacje biznesowe, bez atomowego rollbacku
+  obejmującego bazę danych, Temporal i zewnętrzne API.
+- Zgodność nowego kodu z historią uruchomionych Workflow, replay tests,
+  wersjonowanie/patching i bezpieczne wdrażanie workerów.
+- Wzrost historii, Continue-As-New, monitoring zaległości i czasu oczekiwania;
+  payloady i retencja historii muszą uwzględniać sekrety oraz dane osobowe.
+
+### Kiedy wybrać które podejście
+
+| Potrzeba | Punkt startowy | Główny koszt lub ograniczenie |
+| --- | --- | --- |
+| Krótkie zadanie okresowe | scheduler + trwały stan w DB | własna obsługa restartu i równoległych uruchomień |
+| Duży import/eksport rekordów | Spring Batch | checkpoint i transakcja nie obejmują automatycznie zewnętrznych efektów |
+| Proces czekający na kilka usług lub człowieka | Temporal | infrastruktura, deterministyczny kod Workflow i zgodność historii |
+| Rozgłaszanie faktów do niezależnych odbiorców | broker + konsumenci | kontrakty, duplikaty i eventual consistency |
+
+Temporal nie zastępuje automatycznie brokera ani Spring Batch. Wybór uzasadnij
+czasem życia procesu, ownershipem stanu, sposobem wznowienia i kosztem operacyjnym.
+
+### Ćwiczenia i dowody rozumienia
+
+- Zaprojektuj import miliona rekordów: przerwij go po kilku porcjach, wznów
+  i porównaj identyfikatory oraz sumy kontrolne. Pokaż duplikat wejścia,
+  błędny rekord i anulowanie; mierz zużycie pamięci.
+- W procesie rezerwacji i płatności zatrzymaj worker po wykonaniu efektu,
+  ale przed potwierdzeniem Activity. Po wznowieniu wykaż brak drugiego obciążenia
+  dzięki deduplikacji w adapterze płatności, a nie samemu użyciu Temporal.
+- Odtwórz oczekiwanie na akceptację, wygaśnięcie timera i awarię kompensacji.
+  Przetestuj czas przez `TestWorkflowEnvironment` oraz zgodność na zapisanej historii.
+- Oddziel test SDK od testu rzeczywistej usługi Temporal i restartu procesu;
+  test in-memory nie dowodzi odporności docelowej infrastruktury.
+
+### Materiały
+
+- [Spring Batch Reference](https://docs.spring.io/spring-batch/reference/) — checkpointy, restart i transakcje porcji.
+- [Temporal Workflows](https://docs.temporal.io/workflows) i [Activities](https://docs.temporal.io/activities) — model wykonania i granice efektów.
+- [Temporal Java — message passing](https://docs.temporal.io/develop/java/workflows/message-passing) — Signals, Queries i Updates.
+- [Temporal Java — versioning](https://docs.temporal.io/develop/java/workflows/versioning) oraz [testing](https://docs.temporal.io/develop/java/best-practices/testing-suite) — zgodność historii i weryfikacja procesu.
+
+---
+
+## Blok F — [Modernizacja istniejącego systemu](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_f/README.md)
+
+**Implementacja:** blok ma wykonywalny przykład i testy; ograniczenia pomiaru opisuje jego README.
+Rozwija refaktoryzacje z etapu 1E, granice domenowe z 2A, CDC z 2B oraz
+progressive delivery z 2C o przeniesienie odpowiedzialności między systemami.
+
+### Zakres
+
+- Rozpoznanie obecnego zachowania, konsumentów, niezmienników i zależności.
+- Strangler Fig, anti-corruption layer, branch by abstraction oraz routing
+  starej i nowej ścieżki; dobór granicy możliwej do niezależnego przeniesienia.
+- Ownership zapisu i odczytu podczas migracji; ryzyko dual write bez transakcji.
+- Backfill, doganianie zmian, porównanie wyników, shadow bez efektów biznesowych
+  oraz przełączenie ruchu z mierzalnymi kryteriami akceptacji.
+- Rollback przed i po przejęciu zapisów, rekoncyliacja danych oraz usunięcie
+  starej ścieżki dopiero po sprawdzeniu zależnych klientów i okresu obserwacji.
+
+### Ćwiczenia i dowody rozumienia
+
+- Wybierz jeden przypadek użycia projektu 2 i opracuj migrację do nowego adaptera
+  lub wydzielonej usługi. Nie zakładaj z góry, że mikroserwis jest celem.
+- Zestaw stare i nowe wyniki na reprezentatywnych danych; odtwórz opóźniony event,
+  częściowy backfill oraz różnicę semantyki biznesowej.
+- Przygotuj sekwencję cutoveru i rollbacku z jawnym właścicielem zapisu;
+  wykaż brak utraconych zmian i podwójnych efektów. Po przejęciu nowych zapisów
+  samo skierowanie ruchu do starej aplikacji nie dowodzi bezpiecznego rollbacku.
+
+### Materiały
+
+- Martin Fowler, [Strangler Fig](https://martinfowler.com/bliki/StranglerFigApplication.html).
+- [Istniejące laboratorium CDC i rekoncyliacji](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_b/cdc_reconciliation/README.md).
+- [Istniejące laboratorium progressive delivery](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_c/progressive_delivery/README.md).
 
 ---
 
@@ -965,15 +1180,15 @@ Po tym etapie powinieneś:
 
 ### Materiały
 
-**Książki**
+**Na początek:** [*Designing Data-Intensive Applications*](https://dataintensive.net/) — replikacja, partycjonowanie, transakcje i ograniczenia systemów rozproszonych; łącz rozdziały z konkretnym studium w `system-design/`.
 
-- *Designing Data-Intensive Applications*
-- *System Design Interview — An Insider’s Guide*
+**Bezpłatne pogłębienie:**
 
-**Talks / artykuły**
+- [Amazon Builders' Library](https://aws.amazon.com/builders-library/) — timeouty, retry/backoff/jitter, idempotencja i load shedding; dla każdego wzorca zapisz warunki skuteczności.
+- [Jepsen — analizy](https://jepsen.io/analyses) — historie operacji i błędy ujawniane podczas awarii; inspiracja do testów niezmienników i liniowalności.
+- [Grafana k6 — dokumentacja](https://grafana.com/docs/k6/latest/) — modele obciążenia i thresholds; użyj do weryfikacji hipotezy capacity.
 
-- High Scalability
-- Martin Fowler — caching and resilience patterns
+**Opcjonalnie do rozmów:** Alex Xu, [*System Design Interview — An Insider's Guide*](https://blog.bytebytego.com/p/system-design-interview-books-volume) — ćwiczenie struktury odpowiedzi i szacowania skali. Diagramy traktuj jako punkt wyjścia do własnych założeń i testów awarii.
 
 ---
 
@@ -1026,16 +1241,14 @@ Po tym etapie powinieneś:
 
 ### Materiały
 
-**Książki**
+**Na początek:** [OpenTelemetry — dokumentacja](https://opentelemetry.io/docs/) — instrumentacja, propagacja kontekstu i sampling; prześledź request od API do bazy.
 
-- *Observability Engineering*
-- *Site Reliability Engineering*
+**Książki:**
 
-**Dokumentacja / kursy**
+- Charity Majors, Liz Fong-Jones i George Miranda, [*Observability Engineering*](https://www.oreilly.com/library/view/observability-engineering/9781492076438/) — diagnoza na podstawie zdarzeń i kontekstu oraz ograniczenia samych dashboardów.
+- Google, [*Site Reliability Engineering* i *The Site Reliability Workbook*](https://sre.google/books/) — dostępne online; SLI/SLO, error budget, alerty i praktyczne ćwiczenia.
 
-- OpenTelemetry docs
-- Prometheus best practices
-- Grafana dashboards & alerts
+**Do laboratoriów:** [Prometheus — dobre praktyki](https://prometheus.io/docs/practices/naming/) — nazwy i etykiety metryk; [histogramy](https://prometheus.io/docs/practices/histograms/) — interpretacja percentyli; [Grafana Alerting](https://grafana.com/docs/grafana/latest/alerting/) — alert i powiązany runbook.
 
 ---
 
@@ -1074,6 +1287,18 @@ Wybierz jeden cloud provider, najlepiej AWS albo GCP, i poznaj go praktycznie.
   - autoscaling vs overprovisioning,
   - cache jako narzędzie wydajności i oszczędności.
 
+### Rozszerzenie — baza jako zależność operacyjna
+
+**Implementacja:** [drill dwóch PostgreSQL](backend-engineering/labs/database-operations/README.md) sprawdza stale reads i retencję slotu; projekt 3 dodaje politykę świeżości i skrypt diagnostyczny. Nie jest to wdrożenie HA ani pomiar RPO.
+
+- Lag repliki, routing odczytów i read-your-writes; opóźnienie odczytu
+  nie jest automatycznie dowodem utraty danych.
+- Konflikty zapytań na standby z odtwarzaniem WAL; koszt ochrony długich odczytów.
+- Retencja WAL, replication slots i zajętość dysku przy zatrzymanym konsumencie CDC.
+- Ćwiczenie: opóźnij replikę lub konsumenta, obserwuj świeżość danych i retencję,
+  ustal alert oraz procedurę odzyskania. Failover powiąż z fencingiem i zmierzonym RPO.
+- Materiał: [PostgreSQL — hot standby](https://www.postgresql.org/docs/current/hot-standby.html).
+
 ### Pytania sprawdzające rozumienie
 
 - Czy potrafisz wdrożyć prostą aplikację u wybranego cloud providera?
@@ -1090,15 +1315,14 @@ Wybierz jeden cloud provider, najlepiej AWS albo GCP, i poznaj go praktycznie.
 
 ### Materiały
 
-**Książki / przewodniki**
+**Na początek — wybierz jednego providera:**
 
-- AWS Well-Architected Framework
-- *Cloud Native Patterns*
+- [AWS Well-Architected Framework](https://docs.aws.amazon.com/wellarchitected/latest/framework/welcome.html) — niezawodność, bezpieczeństwo, wydajność i koszty; przeprowadź review projektu 3.
+- Alternatywnie [Google Cloud Well-Architected Framework](https://cloud.google.com/architecture/framework) — analogiczny zestaw decyzji dla GCP.
 
-**Kursy**
+**Praktyka:** [AWS Workshops](https://workshops.aws/) lub [Google Cloud Skills Boost](https://www.cloudskillsboost.google/) — wybierz warsztat o compute, sieci i managed DB. Dostęp do laboratoriów i zasobów chmurowych może być płatny; sprawdź warunki przed uruchomieniem.
 
-- AWS Architecture Essentials
-- GCP Architecture, jeśli wybierzesz Google Cloud
+**Pogłębienie:** Cornelia Davis, [*Cloud Native Patterns*](https://www.manning.com/books/cloud-native-patterns) — konfiguracja, odporność i lifecycle aplikacji. Po lekturze wykonaj restore drill, zmierz RPO/RTO i porównaj koszt wariantów wdrożenia.
 
 ---
 
@@ -1257,6 +1481,47 @@ Bez widoczności możesz być bardzo dobry, ale niewidoczny.
 
 ---
 
+## Praktyczne prowadzenie pracy technicznej
+
+[Warsztat etapu 4](docs/engineering-practice/README.md) zawiera konkretny RFC,
+zadania na trzech projektach i szablon raportu. Review z człowiekiem i pomiary
+pozostają czynnościami do rzeczywistego wykonania, nie fikcyjnym doświadczeniem.
+
+| Zadanie | Oczekiwany artefakt | Jak ocenić jakość |
+| --- | --- | --- |
+| Doprecyzuj niejasny problem | opis potrzeb, ograniczeń, niewiadomych i pytań do interesariuszy | oddzielono fakty od założeń; sukces da się zmierzyć |
+| Przygotuj RFC | problem, opcje z wariantem pozostawienia obecnego rozwiązania, koszty, ryzyka i plan weryfikacji | rekomendacja wynika z ograniczeń i pokazuje warunki zmiany decyzji |
+| Poprowadź review architektury | diagram przepływu, granice gwarancji, uwagi i odpowiedzi | zebrano kontrargumenty i zapisano zmiany po review |
+| Podziel dużą zmianę | małe kroki wdrożenia, zależności, ownership i punkty kontroli | każdy krok ma sposób sprawdzenia i bezpiecznego zatrzymania |
+| Zaplanuj migrację | backfill, cutover, rollback, komunikacja i usunięcie starej ścieżki | plan obejmuje dane oraz zgodność działających klientów |
+| Przeprowadź game day i postmortem | timeline, wpływ, decyzje, recovery oraz działania z właścicielem | działania wynikają z przyczyn i mają termin oraz dowód skuteczności |
+| Oceń efekt techniczny i biznesowy | porównanie bazowej metryki z wynikiem i kosztem zmiany | np. koszt rezerwacji, liczba błędów lub czas odzyskania; jawne ograniczenia pomiaru |
+
+RFC służy zebraniu uwag przed decyzją, a ADR zapisuje podjętą decyzję i jej
+konsekwencje. Zapisz odrzucone alternatywy, pozostałe ryzyka i termin ponownej oceny.
+Review z drugą osobą jest ćwiczeniem współpracy; samodzielną analizę oznacz jako
+symulację, bez wymyślania opinii zespołu ani doświadczeń produkcyjnych.
+
+Przykładowy temat łączący zadania: „Czy proces rezerwacji powinien pozostać sagą
+opartą o eventy, czy przejść na Temporal?”. Porównaj koszt utrzymania,
+restart i diagnostykę procesu, idempotencję płatności oraz migrację aktywnych instancji.
+
+---
+
+## Materiały do etapu 4
+
+- Will Larson, [*Staff Engineer: Leadership beyond the management track*](https://staffeng.com/book/) — wpływ bez roli managera, dobór problemów i praca ponad granicami zespołu; bezpłatne [guides](https://staffeng.com/guides/) uzupełniają książkę.
+- Michael Nygard, [*Documenting Architecture Decisions*](https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions) — krótki artykuł o ADR; zastosuj do decyzji z jawnym kontekstem i konsekwencjami.
+- [The Site Reliability Workbook](https://sre.google/workbook/table-of-contents/) — bezpłatna lektura do SLO, incident response, postmortemów i bezpiecznych zmian.
+- [FinOps Framework](https://www.finops.org/framework/) — bezpłatny model rozmowy o kosztach i wartości; powiąż koszt infrastruktury z jednostką biznesową, np. zamówieniem lub rezerwacją.
+
+Po lekturze przygotuj ADR z alternatywami, przeprowadź review z drugą osobą
+albo game day z postmortemem i wskaż, co zmieniło się w decyzji lub sposobie
+pracy zespołu. Materiały o roli Staff są inspiracją do wpływu technicznego;
+nazwy stanowisk i zakres odpowiedzialności zależą od organizacji.
+
+---
+
 # Kolejność nauki system design
 
 Rekomendowana kolejność projektów i ćwiczeń:
@@ -1370,3 +1635,11 @@ Z katalogu głównego repozytorium uruchom `pwsh -File scripts/check-documentati
 Kontrola sprawdza lokalne odsyłacze, karty laboratoriów, wskazane moduły i testy
 oraz zgodność profili infrastrukturalnych z CI. Nie zastępuje uruchomienia
 wskazanych testów ani merytorycznego przeglądu komentarzy.
+
+## Przekrojowe uzupełnienia istniejących bloków
+
+- Stage 1D: [tekst i Unicode](backend-engineering/src/main/java/pl/jakubtworek/backend_engineering/stage_1/block_d/text_contracts/README.md) — jednostki limitu, NFC, ścisłe UTF-8, locale i kolacja/cursor SQL; zastosowanie w nazwie klienta projektu 1.
+- Stage 1C/2D: [zewnętrzna tożsamość](projects/project-2/docs/identity.md) i [tożsamość usług](projects/project-3/docs/identity.md) — discovery, JWKS, rotacja, IdP outage i zweryfikowany ownership na HTTP.
+- Stage 3A: [lifecycle kontaktu](projects/project-2/docs/contact-lifecycle.md) — source, cache, projekcja, event bez PII i suppression po odtworzeniu starszego backupu.
+- Stage 3B/3C: [eksploatacja i ekonomia jednostkowa](projects/project-3/docs/endurance-and-cost.md) — otwarty workload, broker outage, recovery, SLO i koszt unikalnej zakończonej operacji.
+- Stage 4: [samodzielne zadania przekrojowe](docs/engineering-practice/capstones.md) — kontrakt, eksperyment, decyzja i review na każdym z trzech projektów.

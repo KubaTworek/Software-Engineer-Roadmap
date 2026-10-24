@@ -101,3 +101,7 @@ Dobrym praktycznym podejściem jest zaczynanie od wymagań, a nie od technologii
 W wielu realnych systemach najlepszą decyzją nie jest wybór wyłącznie SQL albo wyłącznie NoSQL, ale użycie obu podejść tam, gdzie mają sens. Relacyjna baza może być głównym źródłem prawdy dla zamówień i płatności, Redis może obsługiwać cache i sesje, Elasticsearch może wspierać wyszukiwanie, Cassandra może przechowywać eventy, a Neo4j może obsługiwać rekomendacje grafowe. Taka architektura jest jednak bardziej złożona. Każda dodatkowa baza oznacza więcej operacyjnego kosztu, więcej synchronizacji, więcej monitoringu i więcej możliwych niespójności. Polyglot persistence ma sens dopiero wtedy, gdy zysk jest większy niż złożoność.
 
 Najprostsza reguła jest taka: SQL wybierasz wtedy, gdy potrzebujesz elastyczności zapytań, relacji, integralności i transakcji. NoSQL wybierasz wtedy, gdy masz dobrze znane access patterny i konkretna baza daje wyraźną przewagę dla danego modelu danych. Nie wybierasz NoSQL, żeby uniknąć nauki SQL. Nie wybierasz SQL, ignorując wymagania skali. Wybierasz narzędzie, którego ograniczenia rozumiesz i którego kompromisy pasują do problemu.
+
+## Tekst i Unicode
+
+NFC, ścisłe UTF-8, jednostki limitów, locale i zgodność keyset cursoru z kolacją SQL rozwija osobne laboratorium. [Tekst i Unicode](text_contracts/README.md).

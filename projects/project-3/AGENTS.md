@@ -35,5 +35,15 @@ jaką gwarancję chroni kod, przed jakim kontrprzykładem i czego nadal nie gwar
 
 ## Dokumentacja
 
+Przy tematach bazodanowych odróżniaj politykę wyboru odczytu od wdrożonego
+routera replik. Brak pomiaru lag nie jest zerem; read-your-writes i retencja
+WAL wymagają jawnego runbooka. Test modelu nie potwierdza failoveru ani RPO.
+
 Laboratorium opisuj jako: problem → niezmiennik → naiwny wariant → rozwiązanie → test awarii
 → sygnał produkcyjny → ograniczenie. Nie przedstawiaj planowanej funkcji jako zaimplementowanej.
+
+Tryb app.security.enabled wymaga walidacji JWT w każdej usłudze i ownership
+z sub. Nagłówek/body klienta nie jest tożsamością. Worker ma service credential,
+nie utrwalony token klienta. Endurance i FinOps odróżniają fizyczny request,
+logiczny checkout i unikalne PAID; brak mianownika to UNKNOWN, a ceny estymacji
+muszą być jawne. Nie zapisuj surowych raportów ani tokenów w Git.

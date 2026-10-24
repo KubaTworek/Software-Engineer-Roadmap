@@ -70,6 +70,17 @@ PostgreSQL 16, Kafka oraz Gradle 9.0**.
 - sekrety poza Git, least privilege i fail-closed;
 - SBOM/dependency scanning, kontrola obrazu i negatywne testy granic.
 
+## Stage 2E–2F — import, Temporal i modernizacja
+
+- [Trwałe procesy](docs/durable-processes.md): SupplierCatalogImport zapisuje staging
+  i checkpoint atomowo w PostgreSQL; nowa instancja wznawia zatwierdzony postęp.
+- Opcjonalny worker Temporal odpytuje istniejący use case rekoncyliacji UNKNOWN.
+  Nie przejmuje sagi zamówienia ani nie ponawia reserve płatności.
+- [Modernizacja](docs/modernization.md): ShadowCatalogReader porównuje nowy odczyt
+  ze starym, odrzuca promocję bez dowodu i pozwala cofnąć routing odczytów.
+- [ADR 0012](docs/adr/0012-durable-import-and-temporal-reconciliation.md) opisuje granice
+  tych rozwiązań i alternatywę scheduler + DB.
+
 ## Architektura
 
 ```text
@@ -207,8 +218,16 @@ przed IDOR). Lokalny profil jest jawnie otwarty. Uruchomienie zabezpieczone:
 ```powershell
 $env:SPRING_PROFILES_ACTIVE='secure'
 $env:JWT_SECRET='co-najmniej-32-znakowy-sekret-z-secret-managera'
+$env:JWT_ISSUER='https://identity.marketplace.local'
+$env:JWT_AUDIENCE='marketplace-api'
 .\gradlew.bat bootRun
 ```
+
+Decoder wymaga podpisu HMAC, poprawnego czasu, zaufanego `iss` oraz własnego
+`aud`. Brak sekretu lub sekret krótszy niż 32 znaki przerywa start profilu
+`secure`; jawny przykładowy sekret nie jest domyślnym credentialem. Negatywne
+testy HTTP używają poprawnie podpisanych tokenów z obcym/brakującym issuer lub
+audience. Samo odrzucenie błędnego podpisu nie sprawdziłoby tej granicy.
 
 Manifest Kubernetes celowo nie zawiera Secret. Przed wdrożeniem trzeba dostarczyć
 `marketplace-secret` przez zewnętrzny secret manager/operator. Nie zapisuj tokenów,
@@ -292,3 +311,12 @@ strategii spójności albo protokołu wymaga nowego ADR zamiast cichej korekty h
 - local Docker/Kubernetes manifests są laboratorium, nie kompletną platformą HA.
 
 Te ograniczenia są częścią materiału: przykład nie udaje gwarancji, której nie daje.
+
+## Kontakt i usuwanie danych
+
+Notification ma source, ograniczony cache, projekcję, trwałe erase/outbox i bramę suppression po restore. Test wykonuje pełny przepływ PostgreSQL/Kafka. [Kontakt i usuwanie danych](docs/contact-lifecycle.md).
+
+
+## OIDC i własność kontaktu
+
+Tryb oidc używa discovery i JWKS rzeczywistego providera; test sprawdza uprawnienia do kontaktu przez HTTP. [OIDC i własność kontaktu](docs/identity.md).

@@ -39,6 +39,13 @@ Następnie porównaj `NaiveReservationService` z
 `AtomicSqlReservationService` w testach współbieżności. Naiwna klasa jest celowym
 kontrprzykładem i nie należy do głównego flow.
 
+## Rozszerzenia: Linux, build i operacje SQL
+
+[Przewodnik operacyjny i build](docs/operations-and-build.md) łączy budżet repliki
+BookingMemoryBudget, pomiar cgroup/RSS, obserwacje transakcji Booking i diagnostykę
+classpath. Test BookingMemoryBudgetTest chroni rachunek limitu także przed overflow.
+Skrypty są jawnie oddzielone od głównego flow rezerwacji; nie zmieniają jego gwarancji.
+
 ## Mapa Stage 1
 
 Cały projekt odpowiada Stage 1. Nazwy testów i dokumentów opisują teraz
@@ -344,3 +351,7 @@ Projekt dowodzi lokalnej poprawności monolitu i mechanizmów Stage 1. Nie dekla
 Te granice nie są ukrytym TODO. Wyznaczają przejście do projektów Stage 2 i 3.
 W obrębie Stage 1 każda deklarowana gwarancja powinna mieć test, constraint,
 pomiar albo wykonywalny scenariusz oraz komentarz wyjaśniający, gdzie się kończy.
+
+## Kontrakt tekstu klienta
+
+Nowe nazwy przechodzą jawne NFC i walidację Unicode w obu ścieżkach zapisu JPA/JDBC. Nie zmieniamy przy tym klucza emaila. [Kontrakt tekstu klienta](docs/text-contracts.md).

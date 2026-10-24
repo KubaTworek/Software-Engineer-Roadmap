@@ -76,6 +76,12 @@ function Get-RelativeTopicPath([System.IO.FileInfo]$readme) {
 function Get-TestCommand([System.IO.FileInfo]$readme) {
     $topicPath = (Get-RelativeTopicPath $readme).Replace('\', '/')
     $prefix = '.\mvnw.cmd --batch-mode --no-transfer-progress'
+    if ($topicPath -eq 'stage_2/block_e') {
+        return $prefix + ' -f labs/durable-processes/pom.xml verify'
+    }
+    if ($topicPath -eq 'stage_1/block_d/sql/operations') {
+        return $prefix + ' -Pinfrastructure-tests "-Dtest=PostgreSqlOperationsTest" test'
+    }
     if ($topicPath -match '^stage_2/block_c/(configuration|docker|kubernetes|workshop)$' -or $topicPath -eq 'stage_2/block_c') {
         return $prefix + ' -f src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_c/workshop/pom.xml verify'
     }

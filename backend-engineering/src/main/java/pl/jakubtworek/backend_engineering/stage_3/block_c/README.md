@@ -296,3 +296,7 @@ W praktyce dobrą architekturę można rozpoznać po tym, że jej komponenty są
 Nowoczesny backend na Google Cloud Platform powinien być budowany jako system rozproszony oparty na usługach zarządzanych, automatycznym skalowaniu i świadomym zarządzaniu stanem. Cloud Run pozwala uprościć uruchamianie usług kontenerowych, ale wymaga poprawnego projektowania aplikacji stateless. Cloud SQL zapewnia wygodną bazę relacyjną, ale wymaga kontroli połączeń, indeksów i świadomego użycia replik. Memorystore może znacząco poprawić wydajność, ale tylko wtedy, gdy cache jest poprawnie inwalidowany. Pub/Sub ułatwia przetwarzanie asynchroniczne, lecz wymaga idempotencji i kontroli ponowień.
 
 Najważniejszy wniosek jest praktyczny: dobra architektura cloud nie polega na użyciu jak największej liczby usług chmurowych, ale na właściwym dobraniu odpowiedzialności między aplikacją a platformą. Usługi zarządzane zmniejszają ciężar operacyjny, autoskalowanie pozwala dopasować zasoby do ruchu, a obserwowalność i FinOps pozwalają utrzymać system pod kontrolą. Projektując backend w GCP, należy stale równoważyć niezawodność, wydajność, bezpieczeństwo i koszt, ponieważ dopiero ich połączenie tworzy architekturę gotową do realnego użycia produkcyjnego.
+
+## Koszt operacji i pomiar
+
+FinOps rozwija wykonywalny model kosztu unikalnego zakończonego zamówienia oraz generator z próbkami zasobów. Wariant bez danych lub niespełniający zadanych SLO nie może wygrać porównania. [Koszt operacji i pomiar](../../../../../../../../../projects/project-3/docs/endurance-and-cost.md).

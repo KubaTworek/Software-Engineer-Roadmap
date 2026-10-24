@@ -1,4 +1,10 @@
 @{
+    'stage_1/block_d/text_contracts' = 'Mylenie UTF-16, code points i bajtów oraz inny porządek cursoru niż kolacja SQL.'
+    'stage_1/block_g' = 'Uznanie wolnego heapu lub samego exit code 137 za diagnozę pamięci kontenera.'
+    'stage_1/block_h' = 'Podmiana runtime biblioteki bez sprawdzenia sygnatur już skompilowanego klienta.'
+    'stage_1/block_d/sql/operations' = 'Uruchomienie DDL bez limitu lock wait przy długiej transakcji czytającej.'
+    'stage_2/block_e' = 'Zapis checkpointu poza transakcją efektu lub uznanie retry Activity za exactly-once.'
+    'stage_2/block_f' = 'Promocja starej kopii albo cofnięcie routingu po nowych zapisach bez reverse sync.'
     # Reviewed teaching points. Keys are paths relative to the stage source root.
     'stage_1/block_a' = 'Współdzielenie stanu bez ustalenia właściciela i relacji happens-before.'
     'stage_1/block_a/cancel' = 'Uznanie timeoutu Future za zatrzymanie pracy, która ignoruje przerwanie.'

@@ -34,10 +34,14 @@ pojedynczy proces, inne baza danych, a jeszcze inne system rozproszony.
 | Dane i persystencja | [Stage 1 / Block D](src/main/java/pl/jakubtworek/backend_engineering/stage_1/block_d/README.md) | SQL, indeksy, plany wykonania, transakcje, NoSQL oraz silniki wyszukiwania |
 | Jakość projektu | [Stage 1 / Block E](src/main/java/pl/jakubtworek/backend_engineering/stage_1/block_e/README.md) | characterization tests, golden master, branch by abstraction, ewolucja kontraktu i refaktoryzacja semantyczna |
 | Networking aplikacyjny | [Stage 1 / Block F](src/main/java/pl/jakubtworek/backend_engineering/stage_1/block_f/README.md) | DNS, TCP/TLS, timeouty, keep-alive, pooling, HTTP/2, sockety i retry amplification |
+| Linux i zasoby procesu | [Stage 1 / Block G](src/main/java/pl/jakubtworek/backend_engineering/stage_1/block_g/README.md) | cgroups, pamięć poza heapem, OOM, throttling i deskryptory |
+| Build i aktualizacje | [Stage 1 / Block H](src/main/java/pl/jakubtworek/backend_engineering/stage_1/block_h/README.md) | classpath, zgodność binarna, zależności i powtarzalność artefaktu |
 | Modelowanie i architektura | [Stage 2 / Block A](src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_a/README.md) | DDD, Clean Architecture, REST, GraphQL, gRPC, modularny monolit, mikroserwisy i sagi |
 | Systemy zdarzeniowe | [Stage 2 / Block B](src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_b/README.md) | Kafka, WebSocket, idempotencja, retry, DLQ, CDC, rekoncyliacja, replay i online backfill |
 | Delivery i operacje | [Stage 2 / Block C](src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_c/README.md) | konfiguracja, Docker, Kubernetes, canary, rollback, game day i incident response |
 | Application Security | [Stage 2 / Block D](src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_d/README.md) | threat modeling, SSRF, uploady, sekrety, szyfrowanie, bezpieczne logi i supply chain |
+| Batch i trwałe procesy | [Stage 2 / Block E](src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_e/README.md) | Spring Batch, checkpoint, Temporal, retry, kompensacja i replay |
+| Modernizacja | [Stage 2 / Block F](src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_f/README.md) | Strangler, ownership, shadow, watermark, cutover i rollback |
 | System design | [Stage 3 / Block A](src/main/java/pl/jakubtworek/backend_engineering/stage_3/block_a/README.md) | estymacja, skalowanie, overload control, koordynacja oraz architektura wielodostępnego SaaS |
 | Observability | [Stage 3 / Block B](src/main/java/pl/jakubtworek/backend_engineering/stage_3/block_b/README.md) | logi strukturalne, metryki, tracing, alerty i SLO |
 | Cloud architecture | [Stage 3 / Block C](src/main/java/pl/jakubtworek/backend_engineering/stage_3/block_c/README.md) | stateless compute, managed data, RPO/RTO, DR, IaC, IAM, odporność i koszty |
@@ -54,6 +58,25 @@ Roadmapa ma trzy poziomy rozumowania:
 Reactive Streams, silniki wyszukiwania, GraphQL, gRPC i WebSocket są
 wykonywalnymi laboratoriami swoich bloków. Nie tworzą czwartego etapu ani osobnej
 ścieżki poza kompendium.
+
+## Rozszerzenia zakresu nauki
+
+[Główna roadmapa](../README.md) rozwija poniższe tematy wraz z ćwiczeniami,
+dowodami rozumienia i źródłami. To **wykonywalne rozszerzenia i warsztat dokumentacyjny**;
+rodzaj dowodu i granice infrastruktury są opisane w podlinkowanych README.
+
+| Obszar | Miejsce w roadmapie | Nowa granica lub problem |
+| --- | --- | --- |
+| [Linux i zasoby procesu Java](src/main/java/pl/jakubtworek/backend_engineering/stage_1/block_g/README.md) | Etap 1 / Blok G | RSS kontra heap, cgroups, OOM killer, CPU throttling i limity deskryptorów |
+| [Build i zależności](src/main/java/pl/jakubtworek/backend_engineering/stage_1/block_h/README.md) | Etap 1 / Blok H | rozwiązywanie wersji, runtime classpath, zgodność binarna i powtarzalny artefakt |
+| [Batch i trwałe procesy, w tym Temporal](src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_e/README.md) | Etap 2 / Blok E | checkpoint/restart importu, historia Workflow, deterministyczny replay i ponawiane Activities |
+| [Modernizacja systemu](src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_f/README.md) | Etap 2 / Blok F | stopniowy cutover, ownership zapisu, walidacja danych i rollback po migracji |
+| [Operacje na bazie](labs/database-operations/README.md) | Rozwinięcie 1D i 3C | vacuum, bloat, statystyki, blokujące DDL, lag repliki i retencja WAL |
+| [Prowadzenie pracy technicznej](../docs/engineering-practice/README.md) | Etap 4 głównej roadmapy | RFC, review, podział zmiany, migracja, postmortem i ocena efektów |
+
+GraphQL pozostaje **istniejącym laboratorium w 2A**, opisanym w tabeli etapów
+i indeksie poniżej. Temporal ma osobny wykonywalny build w 2E; nie należy mylić go
+z istniejącym `temporal_correctness` w 1A, które dotyczy czasu, stref i schedulerów.
 
 ## Globalny indeks pojęć
 
@@ -186,6 +209,7 @@ uruchamiania wszystkich laboratoriów. Z katalogu `backend-engineering` użyj
 | Wykonywalny JAR benchmarków JMH | 21 | — | `.\mvnw.cmd -Pjmh-runner -DskipTests package` |
 | Stage 2C — jedna aplikacja i warstwy dostarczania | 21 | 4.0.3 | `.\mvnw.cmd -f src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_c/workshop/pom.xml verify` |
 | Stage 3C — cloud architecture | 21 | 4.0.3 | `.\mvnw.cmd -f src/main/java/pl/jakubtworek/backend_engineering/stage_3/block_c/pom.xml verify` |
+| Stage 2E — Spring Batch i Temporal | 21 | — | `.\mvnw.cmd -f labs/durable-processes/pom.xml verify` |
 
 Zwykłe `verify` uruchamia szybkie testy bez kontenerów. Kontrakty zależne od
 PostgreSQL, Redis, Kafki i OpenSearch należą do profilu `infrastructure-tests`.
@@ -194,7 +218,7 @@ konkretnego silnika.
 
 ## Testy z prawdziwą infrastrukturą
 
-Pięć suite'ów oznaczonych tagiem JUnit `infrastructure` uzupełnia szybkie testy
+Sześć suite'ów oznaczonych tagiem JUnit `infrastructure` uzupełnia szybkie testy
 o kontrakty zależne od implementacji konkretnego silnika:
 
 | Test | Co potwierdza |
@@ -204,6 +228,7 @@ o kontrakty zależne od implementacji konkretnego silnika:
 | `PostgreSqlExecutableLabTest` | migracje Flyway, plany zapytań, paginację, poziomy izolacji, optimistic locking i constrainty |
 | `KafkaPostgresSemanticsTest` | kolejność w partycji, redelivery, granicę offset–SQL, idempotencję, retry/DLQ i awarię relaya outbox |
 | `OpenSearchContainerTest` | mapping, analizę tekstu, external versioning i stabilne sortowanie pod `search_after` |
+| `PostgreSqlOperationsTest` | blokujące DDL, lock timeout oraz wpływ długiej transakcji na VACUUM |
 
 Pełny zestaw infrastrukturalny uruchamia wyłącznie te suite'y:
 
@@ -237,3 +262,11 @@ Workflow uruchamia ten profil co tydzień oraz na żądanie przez
 jest wymagany do ręcznego uruchomienia profilu.
 Szczegóły modelu zagrożeń oraz polityki release opisuje
 [Stage 2D](src/main/java/pl/jakubtworek/backend_engineering/stage_2/block_d/README.md).
+
+## Domknięcie przekrojowych przepływów
+
+[Kontrakty tekstu](src/main/java/pl/jakubtworek/backend_engineering/stage_1/block_d/text_contracts/README.md)
+uzupełniają Stage 1D. Istniejący model lifecycle SaaS ma teraz bramę restore,
+a alerty mają dwuwindową politykę burn rate. Rzeczywiste Keycloak/JWKS,
+pg_dump/Kafka/suppression, obciążenie i koszt są osadzone w projektach:
+[mapa samodzielnych ćwiczeń](../docs/engineering-practice/capstones.md).
