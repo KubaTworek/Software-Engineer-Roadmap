@@ -43,8 +43,10 @@ class OrderServiceReconciliationTest {
         payments = mock(PaymentClient.class);
         reservations = mock(ReservationClient.class);
         outbox = mock(OutboxRepository.class);
+        var tx = mock(org.springframework.transaction.PlatformTransactionManager.class);
+        when(tx.getTransaction(any())).thenAnswer(call -> new org.springframework.transaction.support.SimpleTransactionStatus());
         service = new OrderService(orders, payments, reservations, outbox, new ObjectMapper(),
-                Clock.fixed(NOW, ZoneOffset.UTC));
+                Clock.fixed(NOW, ZoneOffset.UTC), tx);
     }
 
     @Test
@@ -56,6 +58,7 @@ class OrderServiceReconciliationTest {
         when(payments.findByOrder(order.getId()))
                 .thenReturn(new PaymentClient.PaymentResponse(UUID.randomUUID(), order.getId(), "PAID"));
         when(reservations.confirm(order.getReservationId())).thenReturn(reservation(order));
+        when(reservations.get(order.getReservationId())).thenReturn(reservation(order));
 
         service.reconcile(order.getId());
 

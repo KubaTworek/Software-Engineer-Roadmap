@@ -17,6 +17,7 @@ import io.micrometer.core.instrument.MeterRegistry;
  * W wielu replikach produkcyjnych rekordy pobiera się przez SKIP LOCKED albo lease.
  */
 @Component
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "app.outbox.enabled", matchIfMissing = true)
 public class OutboxRelay {
     private final OutboxRepository repository;
     private final RabbitTemplate rabbitTemplate;

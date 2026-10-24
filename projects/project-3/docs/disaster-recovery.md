@@ -23,3 +23,25 @@ Multi-AZ bez testu restore nie spełnia wymagań DR.
 
 Rollback migracji preferuje forward-fix oraz expand/contract. Destrukcyjna migracja nie może
 wejść, dopóki poprzednia wersja aplikacji może zostać przywrócona podczas rollout.
+
+## Co sprawdza lokalny drill
+
+Uruchom apps i smoke-test w prywatnym COMPOSE_PROJECT_NAME=roadmap-..., następnie
+scripts/local-restore-drill.ps1. Skrypt zatrzymuje Order Service na czas snapshotu,
+porównuje count i hash kanonicznej zawartości orders/outbox z odtworzeniem,
+uruchamia osobny Order Service na losowym porcie loopback z przywróconą bazą
+i wyłączonym workerem/relayem, odczytuje PAID i ponawia zamówienie przez HTTP.
+Sprawdza te same ID/status/kwotę, rezerwację, płatność i marker inboxa dla
+potwierdzonego outboxa; retry nie może zmienić snapshotu. W finally usuwa wyłącznie
+własny kontener, bazę o losowej nazwie i dump oraz uruchamia oryginalną usługę.
+
+To quiesced snapshot jednej bazy i odczyt/idempotentny retry terminalnej sagi.
+Nie dowodzi wspólnego PITR kilku baz, replay zaległych efektów po utracie regionu,
+nowej płatności na przywróconym środowisku ani produkcyjnego RPO/RTO.
+Manifest używa string_agg i MD5 jako kontroli przypadkowej zmiany małego labu,
+nie jako zabezpieczenia autentyczności backupu ani narzędzia dla TB danych.
+
+operational-drill.ps1 utrzymuje ruch podczas ograniczonej awarii Redis,
+RabbitMQ i order-db, a po recovery wymaga PAID, stabilnego retry, zgodności
+payment/reservation i zbieżności outbox/inbox. Wynik obejmuje krótki lokalny
+scenariusz; nie jest pomiarem SLO, testem failoveru klastra ani długim soak testem.

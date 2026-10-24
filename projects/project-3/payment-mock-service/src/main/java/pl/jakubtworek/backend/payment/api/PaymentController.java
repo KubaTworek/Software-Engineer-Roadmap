@@ -34,9 +34,9 @@ public class PaymentController {
                         @Valid @RequestBody PaymentRequest request) throws InterruptedException {
         /*
          * Retry po timeoutcie nie mówi klientowi, czy pierwsza próba dotarła do providera.
-         * Provider musi więc zapamiętać rezultat pod stabilnym kluczem operacji. Mapa jest
-         * edukacyjną granicą procesu; produkcyjnie rekord musi być trwały i współdzielony
-         * przez wszystkie repliki payment-service.
+         * Provider zapamiętuje rezultat pod stabilnym kluczem w PostgreSQL, wspólnym
+         * dla replik. Symulacja nie kontaktuje się z prawdziwą siecią finansową;
+         * realny provider musi osobno zapewnić idempotencję swojego efektu.
          */
         repository.lockOperationKey("payment:" + idempotencyKey);
         repository.lockOperationKey("order:" + request.orderId());

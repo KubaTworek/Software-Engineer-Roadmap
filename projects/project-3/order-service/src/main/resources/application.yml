@@ -21,6 +21,9 @@ spring:
     # Hasło do bazy danych.
     # Nie powinno być trzymane jawnie w repozytorium dla środowisk produkcyjnych.
     password: ${SPRING_DATASOURCE_PASSWORD:app}
+    hikari:
+      connection-timeout: ${DB_CONNECTION_TIMEOUT_MS:2000}
+      validation-timeout: 1000
 
   jpa:
     hibernate:

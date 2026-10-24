@@ -47,6 +47,8 @@ public class OrderEntity {
 
     public void markPaymentInProgress() { this.status = OrderStatus.PAYMENT_IN_PROGRESS; }
 
+    public void queueForProcessing(Instant now) { this.nextAttemptAt = now; }
+
     public void markPaid() {
         this.status = OrderStatus.PAID;
         this.degradationReason = null;

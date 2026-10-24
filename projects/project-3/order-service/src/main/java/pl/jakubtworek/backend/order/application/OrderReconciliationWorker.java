@@ -14,6 +14,7 @@ import java.util.List;
  * backoff zapobiegają retry storm podczas długiej awarii downstreamu.
  */
 @Component
+@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "app.reconciliation.enabled", matchIfMissing = true)
 public class OrderReconciliationWorker {
     private final OrderRepository repository;
     private final OrderService service;
@@ -28,8 +29,16 @@ public class OrderReconciliationWorker {
     @Scheduled(fixedDelayString = "${app.reconciliation.poll-delay:2s}")
     public void run() {
         repository.findTop100ByStatusInAndNextAttemptAtBeforeOrderByNextAttemptAtAsc(
-                List.of(OrderStatus.PAYMENT_UNKNOWN, OrderStatus.RESERVATION_CONFIRMATION_PENDING,
+                List.of(OrderStatus.PENDING, OrderStatus.PAYMENT_IN_PROGRESS,
+                        OrderStatus.PAYMENT_UNKNOWN, OrderStatus.RESERVATION_CONFIRMATION_PENDING,
                         OrderStatus.COMPENSATION_PENDING), clock.instant())
-                .forEach(order -> service.reconcile(order.getId()));
+                .forEach(order -> {
+                    try { service.reconcile(order.getId()); }
+                    catch (RuntimeException failed) {
+                        // Błąd commitu jednej sagi nie blokuje postępu pozostałych.
+                        System.getLogger(getClass().getName()).log(System.Logger.Level.WARNING,
+                                "Reconciliation failed for order " + order.getId(), failed);
+                    }
+                });
     }
 }

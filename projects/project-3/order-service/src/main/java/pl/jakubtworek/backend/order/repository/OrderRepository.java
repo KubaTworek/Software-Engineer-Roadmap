@@ -14,6 +14,7 @@ import java.util.List;
 
 public interface OrderRepository extends JpaRepository<OrderEntity, UUID> {
     Optional<OrderEntity> findByIdempotencyKey(String idempotencyKey);
+    Optional<OrderEntity> findByReservationId(UUID reservationId);
 
     /** PostgreSQL advisory lock serializuje ten sam klucz pomiędzy wszystkimi replikami. */
     @Query(value = "SELECT pg_advisory_xact_lock(hashtext(:key))", nativeQuery = true)

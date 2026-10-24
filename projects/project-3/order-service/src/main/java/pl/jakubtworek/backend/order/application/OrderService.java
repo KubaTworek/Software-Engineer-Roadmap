@@ -1,11 +1,12 @@
 package pl.jakubtworek.backend.order.application;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import tools.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 import pl.jakubtworek.backend.common.events.OrderPaidEvent;
 import pl.jakubtworek.backend.common.web.CorrelationId;
 import pl.jakubtworek.backend.order.api.CreateOrderRequest;
@@ -47,8 +48,6 @@ import pl.jakubtworek.backend.order.domain.OrderStatus;
 @Service
 public class OrderService {
 
-    private static final Logger log = LoggerFactory.getLogger(OrderService.class);
-
     /**
      * Repozytorium zamówień.
      *
@@ -84,207 +83,65 @@ public class OrderService {
     private final OutboxRepository outboxRepository;
     private final ObjectMapper objectMapper;
     private final Clock clock;
+    private final TransactionTemplate transaction;
 
     public OrderService(OrderRepository repository,
                         PaymentClient paymentClient,
                         ReservationClient reservationClient, OutboxRepository outboxRepository,
-                        ObjectMapper objectMapper, Clock clock) {
+                        ObjectMapper objectMapper, Clock clock, PlatformTransactionManager transactions) {
         this.repository = repository;
         this.paymentClient = paymentClient;
         this.reservationClient = reservationClient;
         this.outboxRepository = outboxRepository;
         this.objectMapper = objectMapper;
         this.clock = clock;
+        this.transaction = new TransactionTemplate(transactions);
+        this.transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
-    /**
-     * Tworzy zamówienie dla istniejącej rezerwacji.
-     *
-     * Metoda jest transakcyjna, bo zapisuje i aktualizuje stan OrderEntity.
-     *
-     * Stan zamówienia oraz wiadomość outbox są zapisywane w jednej transakcji lokalnej.
-     * Relay publikuje później co najmniej raz, więc konsument nadal musi obsłużyć duplikaty.
-     */
-    @Transactional
+    /** Intencja musi zostać COMMITnięta PRZED pierwszym efektem u providera.
+     * save()/flush() w transakcji obejmującej HTTP nie zapewnia takiej trwałości. */
     public OrderResponse create(CreateOrderRequest request, String idempotencyKey) {
-        /*
-         * Idempotency key chroni przed utworzeniem duplikatu zamówienia.
-         *
-         * Typowy scenariusz:
-         *
-         * 1. Klient wysyła POST /orders.
-         * 2. Order Service przetwarza płatność.
-         * 3. Klient dostaje timeout albo traci połączenie.
-         * 4. Klient ponawia ten sam request z tym samym Idempotency-Key.
-         * 5. Serwis zwraca istniejące zamówienie zamiast tworzyć nowe.
-         */
-        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
-            repository.lockIdempotencyKey(idempotencyKey);
-            var existing = repository.findByIdempotencyKey(idempotencyKey);
-
-            if (existing.isPresent()) {
-                String fingerprint = fingerprint(request);
-                /* Rekord utworzony przed migracją V2 nie ma fingerprintu; okres expand
-                 * zachowuje odczyt starego formatu do czasu bezpiecznego backfillu. */
-                if (existing.get().getRequestFingerprint() != null
-                        && !fingerprint.equals(existing.get().getRequestFingerprint())) {
-                    throw new IllegalArgumentException("Idempotency-Key was already used with a different request");
-                }
-                log.info("idempotent_order_replayed orderId={} idempotencyKey={}",
-                        existing.get().getId(), idempotencyKey);
-
-                return toResponse(existing.get());
-            }
-        }
-
-        /*
-         * Pobieramy rezerwację z Reservation Service.
-         *
-         * Order Service nie powinien ufać tylko danym z requestu klienta.
-         * Musi sprawdzić, czy rezerwacja istnieje i czy należy do użytkownika,
-         * który próbuje utworzyć zamówienie.
-         */
-        ReservationClient.ReservationResponse reservation = reservationClient.get(request.reservationId());
-
-        /*
-         * Defensive check.
-         *
-         * W normalnym przypadku klient HTTP powinien albo zwrócić poprawny obiekt,
-         * albo rzucić wyjątek. Jeśli jednak dostaniemy null, traktujemy to jako błąd zależności.
-         */
-        if (reservation == null) {
-            throw new IllegalStateException("Reservation service returned empty response");
-        }
-
-        /*
-         * Sprawdzamy ownership rezerwacji.
-         *
-         * Użytkownik nie powinien móc opłacić cudzej rezerwacji.
-         */
-        if (!request.userId().equals(reservation.userId())) {
-            throw new IllegalArgumentException("Reservation belongs to a different user");
-        }
-
-        /*
-         * Zamówienie można utworzyć tylko dla rezerwacji w stanie PENDING.
-         *
-         * Jeśli rezerwacja jest już CONFIRMED, EXPIRED albo CANCELLED, ponowna płatność
-         * byłaby błędem biznesowym.
-         */
-        if (!"PENDING".equals(reservation.status())) {
-            throw new IllegalArgumentException(
-                    "Reservation must be PENDING before payment. Current status: " + reservation.status()
-            );
-        }
-
-        /*
-         * Tworzymy zamówienie w stanie PENDING przed wywołaniem płatności.
-         *
-         * Dzięki temu mamy trwały zapis próby zamówienia nawet wtedy, gdy payment-service
-         * odpowie wolno, zwróci błąd albo będzie niedostępny.
-         */
-        OrderEntity order = repository.save(
-                OrderEntity.pending(request.reservationId(), request.userId(), idempotencyKey,
-                        fingerprint(request), clock.instant())
-        );
-
-        log.info("order_created orderId={} reservationId={} userId={}",
-                order.getId(), order.getReservationId(), order.getUserId());
-
-        order.markPaymentInProgress();
-        try {
-            /*
-             * Wywołanie payment-mock-service.
-             *
-             * W tym miejscu mogą zadziałać:
-             *
-             * - timeout,
-             * - retry/backoff,
-             * - circuit breaker,
-             * - fallback.
-             *
-             * Jeśli paymentClient rzuci wyjątek, przejdziemy do graceful degradation poniżej.
-             */
-            paymentClient.pay(order.getId(), order.getUserId(), order.getAmount());
-
-            /*
-             * Po udanej płatności potwierdzamy rezerwację.
-             *
-             * To jest ważne, bo samo opłacenie zamówienia nie powinno zostawić rezerwacji
-             * w stanie PENDING.
-             */
-        } catch (Exception exception) {
-            /*
-             * Timeout jest wynikiem niejednoznacznym: provider mógł obciążyć kartę, a jego
-             * odpowiedź zginęła. FAILED byłoby kłamstwem; PAYMENT_UNKNOWN wymusza lookup
-             * po idempotency key przez proces rekoncyliacji.
-             */
-            order.markPaymentUnknown(exception.getMessage());
-            order.scheduleReconciliation(exception.getMessage(), clock.instant());
-            return toResponse(order);
-        }
-
-        ReservationClient.ReservationResponse confirmedReservation;
-        try {
-            confirmedReservation = reservationClient.confirm(order.getReservationId());
-
-            /*
-             * Oznaczamy zamówienie jako opłacone.
-             */
-            order.markPaid();
-
-            /*
-             * Zapisujemy intencję publikacji eventu order.paid.
-             *
-             * Notification Service konsumuje ten event i może wysłać mail/SMS/powiadomienie.
-             *
-             * Do eventu dokładamy correlationId/requestId/traceId z MDC, żeby asynchroniczny
-             * przepływ przez brokera nadal dało się powiązać z requestem HTTP.
-             */
-            OrderPaidEvent event = OrderPaidEvent.at(
-                            confirmedReservation.eventId(),
-                            order.getId(),
-                            order.getReservationId(),
-                            order.getUserId(),
-                            order.getAmount(),
-                            clock.instant(),
-                            MDC.get(CorrelationId.MDC_CORRELATION_ID),
-                            MDC.get(CorrelationId.MDC_REQUEST_ID),
-                            MDC.get(CorrelationId.MDC_TRACE_ID));
-            outboxRepository.save(new OutboxMessage(UUID.randomUUID(), order.getId().toString(),
-                    "order.paid.v1", serialize(event), clock.instant()));
-
-            log.info("order_paid orderId={} reservationId={}",
-                    order.getId(), order.getReservationId());
-        } catch (Exception exception) {
-            /*
-             * Graceful degradation.
-             *
-             * Płatność jest już znana jako udana. Awaria tego kroku oznacza więc oczekiwanie
-             * na potwierdzenie rezerwacji, a nie nieznany wynik płatności.
-             *
-             * To daje możliwość późniejszego retry/reconciliation bez utraty zamówienia.
-             *
-             * Trade-off:
-             * Użytkownik nie dostaje natychmiastowej finalnej odpowiedzi "PAID",
-             * ale system nie gubi intencji zakupu.
-             */
-            log.warn("order_reservation_confirmation_pending orderId={} reservationId={} reason={}",
-                    order.getId(), order.getReservationId(), exception.getMessage());
-
-            order.markReservationConfirmationPending(exception.getMessage());
-            order.scheduleReconciliation(exception.getMessage(), clock.instant());
-        }
-
-        /*
-         * Zwracamy aktualny stan zamówienia:
-         *
-         * - PAID, jeśli płatność i potwierdzenie rezerwacji się udały,
-         * - PAYMENT_UNKNOWN albo RESERVATION_CONFIRMATION_PENDING przy częściowym sukcesie.
-         */
-        return toResponse(order);
+        String key = idempotencyKey == null || idempotencyKey.isBlank()
+                ? "reservation:" + request.reservationId() : idempotencyKey;
+        UUID id = transaction.execute(tx -> prepare(request, key).getId());
+        reconcile(id);
+        return get(id);
     }
 
+    private OrderEntity prepare(CreateOrderRequest request, String key) {
+        // Stała kolejność blokad: zasób, potem klucz. Różne klucze nie mogą opłacić
+        // tej samej rezerwacji dwa razy; constraint jest drugą linią obrony.
+        repository.lockIdempotencyKey("reservation:" + request.reservationId());
+        repository.lockIdempotencyKey("request:" + key);
+        var existing = repository.findByIdempotencyKey(key);
+        if (existing.isEmpty()) existing = repository.findByReservationId(request.reservationId());
+        if (existing.isPresent()) {
+            OrderEntity order = existing.get();
+            // Nie przyjmujemy kolejnego klucza bez trwałego związania go z requestem.
+            // Inaczej taki "alias" mógłby później utworzyć zamówienie dla innego zasobu.
+            if (order.getIdempotencyKey() != null && !key.equals(order.getIdempotencyKey()))
+                throw new IllegalArgumentException("Reservation already has an order; repeat its original Idempotency-Key");
+            if (!request.userId().equals(order.getUserId())
+                    || !request.reservationId().equals(order.getReservationId())
+                    || (order.getRequestFingerprint() != null
+                        && !fingerprint(request).equals(order.getRequestFingerprint()))) {
+                throw new IllegalArgumentException("Idempotency-Key was already used with a different request");
+            }
+            // Najpierw trwała intencja: po utracie commitu rezerwacja może być już CONFIRMED.
+            return order;
+        }
+        var reservation = reservationClient.get(request.reservationId());
+        if (reservation == null) throw new IllegalStateException("Reservation service returned empty response");
+        if (!request.userId().equals(reservation.userId()))
+            throw new IllegalArgumentException("Reservation belongs to a different user");
+        if (!"PENDING".equals(reservation.status()))
+            throw new IllegalArgumentException("Reservation must be PENDING before payment");
+        OrderEntity order = OrderEntity.pending(request.reservationId(), request.userId(), key,
+                fingerprint(request), clock.instant());
+        order.queueForProcessing(clock.instant());
+        return repository.save(order);
+    }
     /**
      * Pobiera zamówienie po ID.
      *
@@ -302,14 +159,31 @@ public class OrderService {
      * Domyka częściowy sukces bez ponownego POST płatności w ciemno. Blokada wiersza
      * serializuje repliki workera; lookup providera rozstrzyga niepewny timeout.
      */
-    @Transactional
     public void reconcile(UUID id) {
+        transaction.executeWithoutResult(tx -> reconcileLocked(id));
+    }
+
+    private void reconcileLocked(UUID id) {
         OrderEntity order = repository.findByIdForUpdate(id)
                 .orElseThrow(() -> new IllegalArgumentException("Order not found: " + id));
         if (order.getStatus() == OrderStatus.PAID || order.getStatus() == OrderStatus.FAILED
                 || order.getStatus() == OrderStatus.MANUAL_REVIEW) {
             return;
         }
+        // Blokada wiersza serializuje workerów. Transakcja wykonawcza może się wycofać,
+        // lecz intencja pozostaje PENDING; powtórka użyje tego samego orderId u providera.
+        if (order.getStatus() == OrderStatus.PENDING || order.getStatus() == OrderStatus.PAYMENT_IN_PROGRESS) {
+            order.markPaymentInProgress();
+            try {
+                paymentClient.pay(order.getId(), order.getUserId(), order.getAmount());
+                order.markReservationConfirmationPending("Payment accepted");
+            } catch (Exception uncertain) {
+                order.markPaymentUnknown(uncertain.getMessage());
+                order.scheduleReconciliation(uncertain.getMessage(), clock.instant());
+                return;
+            }
+        }
+        ReservationClient.ReservationResponse reservation;
         try {
             if (order.getStatus() == OrderStatus.PAYMENT_UNKNOWN) {
                 if (order.getReconciliationAttempts() >= 10) {
@@ -338,15 +212,18 @@ public class OrderService {
                 order.markFailed("Reservation failed and payment was refunded");
                 return;
             }
-            ReservationClient.ReservationResponse reservation = reservationClient.confirm(order.getReservationId());
+            reservation = reservationClient.confirm(order.getReservationId());
             order.markPaid();
-            OrderPaidEvent event = OrderPaidEvent.at(reservation.eventId(), order.getId(), order.getReservationId(),
-                    order.getUserId(), order.getAmount(), clock.instant(), null, null, null);
-            outboxRepository.save(new OutboxMessage(UUID.randomUUID(), order.getId().toString(),
-                    "order.paid.v1", serialize(event), clock.instant()));
         } catch (Exception exception) {
             order.scheduleReconciliation(exception.getMessage(), clock.instant());
+            return;
         }
+        OrderPaidEvent event = OrderPaidEvent.at(reservation.eventId(), order.getId(), order.getReservationId(),
+                    order.getUserId(), order.getAmount(), clock.instant(),
+                    MDC.get(CorrelationId.MDC_CORRELATION_ID), MDC.get(CorrelationId.MDC_REQUEST_ID),
+                    MDC.get(CorrelationId.MDC_TRACE_ID));
+            outboxRepository.save(new OutboxMessage(UUID.randomUUID(), order.getId().toString(),
+                    "order.paid.v1", serialize(event), clock.instant()));
     }
 
     /**
