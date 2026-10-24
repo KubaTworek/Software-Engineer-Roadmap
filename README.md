@@ -17,7 +17,8 @@ Aktualną mapę laboratoriów i przekrojowy indeks pojęć zawiera [kompendium b
 - [`backend-engineering/`](backend-engineering/README.md) — wykonywalne laboratoria i kompendium wiedzy dla etapów 1–3;
 - [`projects/`](projects/README.md) — trzy projekty portfolio stosujące wiedzę z odpowiadających im etapów;
 - [`system-design/`](system-design/README.md) — High Level Design: architektura, skalowanie i systemy rozproszone;
-- [`low-level-design/`](low-level-design/README.md) — Low Level Design w Javie: klasy, odpowiedzialności, reguły domenowe i współpraca obiektów.
+- [`low-level-design/`](low-level-design/README.md) — Low Level Design w Javie: klasy, odpowiedzialności, reguły domenowe i współpraca obiektów;
+- [`interview-preparation/`](interview-preparation/README.md) — rozwinięte pytania i odpowiedzi po polsku: mechanizmy, przykłady kodu, decyzje, awarie, algorytmy i projekty systemów; moduł dokumentacyjny do powtórek i rozmów technicznych.
 
 ### Low Level Design — projektowanie w czystej Javie
 
