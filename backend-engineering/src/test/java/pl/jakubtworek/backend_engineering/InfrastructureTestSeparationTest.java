@@ -32,7 +32,7 @@ class InfrastructureTestSeparationTest {
 
         assertThat(containerSuites)
                 .as("all known Docker-backed suites")
-                .hasSize(5);
+                .hasSize(6);
 
         for (Path suite : containerSuites) {
             String source = read(suite);

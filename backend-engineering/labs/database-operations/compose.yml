@@ -1,0 +1,31 @@
+services:
+  primary:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: local-lab-only
+    command: [postgres, -c, wal_level=logical, -c, max_replication_slots=5, -c, max_wal_senders=5]
+    volumes:
+      - ./init.sh:/docker-entrypoint-initdb.d/10-replication.sh:ro
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U postgres]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  replica:
+    image: postgres:16-alpine
+    user: postgres
+    environment:
+      PGPASSWORD: local-lab-only
+    depends_on:
+      primary:
+        condition: service_healthy
+    tmpfs:
+      - /var/lib/postgresql/data:uid=70,gid=70,mode=0700
+    entrypoint: [/bin/sh, -ec]
+    command:
+      - pg_basebackup -h primary -U postgres -D /var/lib/postgresql/data -R -X stream && exec postgres
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U postgres]
+      interval: 2s
+      timeout: 2s
+      retries: 30
