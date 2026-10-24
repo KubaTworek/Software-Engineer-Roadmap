@@ -90,7 +90,7 @@ public class Customer {
 
     public Customer(String fullName, String email, Instant createdAt) {
         this.id = UUID.randomUUID();
-        this.fullName = fullName;
+        this.fullName = CustomerTextPolicy.name(fullName);
         this.email = email;
         this.createdAt = createdAt;
     }

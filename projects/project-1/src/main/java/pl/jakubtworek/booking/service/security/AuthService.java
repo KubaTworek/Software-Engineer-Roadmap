@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.time.Instant;
+import java.time.Clock;
 import java.util.Base64;
 import java.util.HexFormat;
 
@@ -76,6 +77,7 @@ public class AuthService {
      * Konfiguracja czasów życia tokenów i innych parametrów JWT.
      */
     private final JwtProperties jwtProperties;
+    private final Clock clock;
 
     /**
      * Bezpieczny generator losowości używany do refresh tokenów.
@@ -93,12 +95,13 @@ public class AuthService {
                        RefreshTokenRepository refreshTokenRepository,
                        PasswordHasher passwordEncoder,
                        JwtTokenService jwtTokenService,
-                       JwtProperties jwtProperties) {
+                       JwtProperties jwtProperties, Clock clock) {
         this.appUserRepository = appUserRepository;
         this.refreshTokenRepository = refreshTokenRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenService = jwtTokenService;
         this.jwtProperties = jwtProperties;
+        this.clock = clock;
     }
 
     /**
@@ -169,7 +172,7 @@ public class AuthService {
          * - nie może być wygasły,
          * - nie może być wcześniej unieważniony.
          */
-        if (!current.isActive(Instant.now())) {
+        if (!current.isActive(clock.instant())) {
             throw new BusinessRuleException("Refresh token is expired or revoked");
         }
 
@@ -178,7 +181,8 @@ public class AuthService {
          *
          * Po tej operacji ten sam token nie powinien przejść ponownie.
          */
-        current.revoke();
+        // Lock repozytorium utrzymujemy do commitu również podczas wydawania następcy.
+        current.revoke(clock.instant());
 
         return issueTokens(current.getUser());
     }
@@ -193,7 +197,7 @@ public class AuthService {
      * Refresh token jest zwracany klientowi, ale w bazie zapisujemy tylko jego hash.
      */
     private AuthResponse issueTokens(AppUser user) {
-        Instant now = Instant.now();
+        Instant now = clock.instant();
 
         /*
          * Tworzymy JWT access token z informacjami o użytkowniku.
@@ -227,7 +231,7 @@ public class AuthService {
         refreshTokenRepository.save(new RefreshToken(
                 user,
                 sha256(refreshTokenValue),
-                refreshTokenExpiresAt
+                refreshTokenExpiresAt, now
         ));
 
         return new AuthResponse(

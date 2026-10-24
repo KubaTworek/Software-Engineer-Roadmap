@@ -2,8 +2,8 @@ package pl.jakubtworek.booking.service;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
+
+
 import pl.jakubtworek.booking.cache.AvailabilitySnapshotCache;
 import pl.jakubtworek.booking.cache.EventDetailsCache;
 import pl.jakubtworek.booking.config.ReservationPolicyProperties;
@@ -68,19 +68,7 @@ public class ReservationExpirationService {
     }
 
     private void evictAfterCommit(java.util.UUID eventId) {
-        Runnable eviction = () -> {
-            eventDetailsCache.evict(eventId);
-            availabilitySnapshotCache.evict(eventId);
-        };
-        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            eviction.run();
-            return;
-        }
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                eviction.run();
-            }
-        });
+        CacheInvalidation.afterCommit(() -> eventDetailsCache.evict(eventId),
+                () -> availabilitySnapshotCache.evict(eventId));
     }
 }

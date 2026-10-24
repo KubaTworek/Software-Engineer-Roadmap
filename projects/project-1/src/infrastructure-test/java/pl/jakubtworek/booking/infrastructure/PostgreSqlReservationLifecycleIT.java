@@ -62,6 +62,38 @@ class PostgreSqlReservationLifecycleIT {
     @Autowired EntityManagerFactory entityManagerFactory;
     @Autowired CustomerRepository customers;
     @Autowired CustomerRegistrationService customerRegistrationService;
+    @Autowired pl.jakubtworek.booking.service.security.AuthService auth;
+    @Autowired pl.jakubtworek.booking.repository.AppUserRepository users;
+    @Autowired pl.jakubtworek.booking.security.PasswordHasher passwords;
+
+    @Test void jdbcRegistrationPersistsCanonicalUnicodeNameWithoutChangingEmail() {
+        String email="Case-"+UUID.randomUUID()+"@example.test";
+        var customer=customerRegistrationService.resolve(" Jose\u0301 ",email);
+        assertThat(customer.getFullName()).isEqualTo("José");
+        assertThat(jdbc.queryForObject("select full_name from customers where id=?",String.class,customer.getId())).isEqualTo("José");
+        assertThat(customer.getEmail()).isEqualTo(email);
+    }
+
+    @Test @org.junit.jupiter.api.Timeout(30)
+    void concurrentRefreshCommitsExactlyOneSuccessor() throws Exception {
+        String email = "refresh-" + UUID.randomUUID() + "@test.local";
+        var user = users.save(new pl.jakubtworek.booking.entity.AppUser(null, email,
+                passwords.encode("secret"), pl.jakubtworek.booking.entity.UserRole.CUSTOMER));
+        String token = auth.login(email, "secret").refreshToken();
+        var ready = new java.util.concurrent.CountDownLatch(2);
+        try (var pool = Executors.newFixedThreadPool(2)) {
+            java.util.concurrent.Callable<Boolean> rotate = () -> {
+                ready.countDown();
+                if (!ready.await(10, java.util.concurrent.TimeUnit.SECONDS)) throw new AssertionError("Missing contender");
+                try { auth.refresh(token); return true; }
+                catch (pl.jakubtworek.booking.exception.BusinessRuleException rejected) { return false; }
+            };
+            var a = pool.submit(rotate); var b = pool.submit(rotate);
+            assertThat(java.util.List.of(a.get(), b.get())).containsExactlyInAnyOrder(true, false);
+        }
+        assertThat(jdbc.queryForObject("select count(*) from refresh_tokens where user_id=? and revoked_at is null",
+                Integer.class, user.getId())).isEqualTo(1);
+    }
 
     @BeforeEach
     void cleanDomainTables() {

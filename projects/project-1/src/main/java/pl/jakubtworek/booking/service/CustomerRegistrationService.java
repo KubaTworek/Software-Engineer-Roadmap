@@ -40,7 +40,8 @@ public class CustomerRegistrationService {
     }
 
     public Customer resolve(String fullName, String email) {
-        return customerRepository.findByEmail(email).orElseGet(() -> insertOrReadWinner(fullName, email));
+        String canonicalName = pl.jakubtworek.booking.entity.CustomerTextPolicy.name(fullName);
+        return customerRepository.findByEmail(email).orElseGet(() -> insertOrReadWinner(canonicalName, email));
     }
 
     private Customer insertOrReadWinner(String fullName, String email) {

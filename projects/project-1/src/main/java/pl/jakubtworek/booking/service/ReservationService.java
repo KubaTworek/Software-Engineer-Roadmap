@@ -2,8 +2,8 @@ package pl.jakubtworek.booking.service;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
+
+
 import pl.jakubtworek.booking.cache.AvailabilitySnapshotCache;
 import pl.jakubtworek.booking.cache.EventDetailsCache;
 import pl.jakubtworek.booking.config.ReservationPolicyProperties;
@@ -214,12 +214,9 @@ public class ReservationService {
         /*
          * Po zmianie dostępności unieważniamy cache eventu.
          *
-         * Ważna uwaga: cache invalidation dzieje się wewnątrz transakcji.
-         * To jest proste, ale nieidealne. Jeżeli transakcja później się wycofa,
-         * cache może zostać niepotrzebnie wyczyszczony.
-         *
-         * To zwykle jest bezpieczniejsze niż zostawienie starego cache,
-         * ale produkcyjnie można rozważyć invalidację po commicie transakcji.
+         * Invalidacja wykonuje się po COMMIT; rollback nie wywołuje callbacku.
+         * Błąd Redis jest izolowany od wyniku komendy. TTL ogranicza stary odczyt,
+         * a decyzja o rezerwacji zawsze sprawdza pojemność w PostgreSQL.
          */
         evictEventCaches(eventId);
 
@@ -347,22 +344,8 @@ public class ReservationService {
      * - po zmianie danych usuwamy stary wpis z cache.
      */
     private void evictEventCaches(UUID eventId) {
-        Runnable eviction = () -> {
-            eventDetailsCache.evict(eventId);
-            availabilitySnapshotCache.evict(eventId);
-        };
-        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            eviction.run();
-            return;
-        }
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                // Cache zostaje usunięty dopiero po zatwierdzeniu źródła prawdy.
-                // Rollback nie publikuje stanu, który nigdy nie istniał w bazie.
-                eviction.run();
-            }
-        });
+        CacheInvalidation.afterCommit(() -> eventDetailsCache.evict(eventId),
+                () -> availabilitySnapshotCache.evict(eventId));
     }
 
     /**

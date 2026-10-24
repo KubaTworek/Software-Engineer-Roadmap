@@ -129,10 +129,14 @@ public class RefreshToken {
      * - expiresAt.
      */
     public RefreshToken(AppUser user, String tokenHash, Instant expiresAt) {
+        this(user, tokenHash, expiresAt, Instant.now());
+    }
+
+    public RefreshToken(AppUser user, String tokenHash, Instant expiresAt, Instant now) {
         this.id = UUID.randomUUID();
         this.user = user;
         this.tokenHash = tokenHash;
-        this.createdAt = Instant.now();
+        this.createdAt = now;
         this.expiresAt = expiresAt;
     }
 
@@ -145,8 +149,10 @@ public class RefreshToken {
      * refresh tokenu.
      */
     public void revoke() {
-        this.revokedAt = Instant.now();
+        revoke(Instant.now());
     }
+
+    public void revoke(Instant now) { this.revokedAt = now; }
 
     /**
      * Sprawdza, czy refresh token jest aktywny.
