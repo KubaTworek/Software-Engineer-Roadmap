@@ -2,6 +2,8 @@
 
 Projekt edukacyjny w czystej Javie: wyliczenie ceny koszyka przy wielu warunkach, priorytetach i wykluczeniach promocji. Implementacja pokazuje graf konfliktów w BitSet oraz dokładne rozdzielanie rabatów na pozycje. Wycena działa jednowątkowo, w pamięci.
 
+Materiały do nauki: [lektury i źródła tego ćwiczenia](../MATERIALY.md#promocje).
+
 ## Rdzeń techniczny
 
 [PromotionEngine](src/main/java/pl/jakubtworek/lld/promotion/domain/PromotionEngine.java) kompiluje uporządkowany katalog i symetryczny graf konfliktów do tablicy BitSet. Podczas wyceny przecięcie z maską zastosowanych promocji zastępuje szukanie konfliktów przez porównywanie wszystkich par.

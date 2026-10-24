@@ -2,6 +2,8 @@
 
 Projekt edukacyjny w czystej Javie: filtrowanie poziomów, formatowanie TEXT/JSON, maskowanie kontekstu i zapis do wielu odbiorców. Implementacja obejmuje bufor pierścieniowy i raport wyniku dla każdego odbiorcy. Wywołania są synchroniczne i jednowątkowe.
 
+Materiały do nauki: [lektury i źródła tego ćwiczenia](../MATERIALY.md#logger).
+
 ## Rdzeń techniczny
 
 [Logger](src/main/java/pl/jakubtworek/lld/logging/domain/Logger.java) kompiluje tablicę tras poziom → BitSet odbiorców. Dla całkowitego odfiltrowania ma gotowy niemutowalny wynik.

@@ -2,6 +2,8 @@
 
 Projekt edukacyjny w czystej Javie: reprezentacja pozycji, generowanie legalnych ruchów i cykl partii. Implementacja zawiera ruchy specjalne, reguły remisów, zapis FEN, cofanie poleceń i zliczanie drzewa ruchów. Stan jest w pamięci, obsługa jednowątkowa.
 
+Materiały do nauki: [lektury i źródła tego ćwiczenia](../MATERIALY.md#szachy).
+
 ## Rdzeń techniczny
 
 [Board](src/main/java/pl/jakubtworek/lld/chess/domain/Board.java) łączy Piece[64] z maskami long dla kolorów i rodzajów figur. Tablica służy odczytowi pól, maski szybkiemu odnajdywaniu figur i króla. Zmieniona plansza kopiuje 64 pola; mapowy widok pól powstaje leniwie.

@@ -1,6 +1,6 @@
 # Kolekcje i Stream API
 
-[Spis rozdziałów](README.md)
+[Spis rozdziałów](README.md) · [Książki i źródła](MATERIALY.md#02-kolekcje-i-stream-api)
 
 <!-- question-toc:start -->
 ## Spis pytań

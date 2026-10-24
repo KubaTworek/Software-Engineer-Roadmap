@@ -1,5 +1,7 @@
 # Distributed Rate Limiter
 
+Materiały do nauki: [książki, źródła i zastosowanie](../MATERIALY.md#rate-limiter).
+
 <!-- reading-guide:start -->
 ## Ścieżki czytania
 

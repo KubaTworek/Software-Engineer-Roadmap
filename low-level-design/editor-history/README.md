@@ -2,6 +2,8 @@
 
 Projekt edukacyjny w czystej Javie: edycja tekstu przez niemutowalny rope oraz undo/redo z zachowaniem rozgałęzień. Stan jest w pamięci i obsługiwany przez jeden wątek.
 
+Materiały do nauki: [lektury i źródła tego ćwiczenia](../MATERIALY.md#historia-edytora).
+
 ## Rdzeń techniczny
 
 Rope jest drzewem AVL. Liście mieszczą do 256 jednostek UTF-16, węzły przechowują długość, wysokość i liczbę liści. Dzielenie i łączenie kopiuje zmieniane ścieżki, współdzieląc pozostały tekst. Walidacja zakresu i kontrola nowej długości poprzedzają zmianę historii.

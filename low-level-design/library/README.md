@@ -2,6 +2,8 @@
 
 Projekt edukacyjny w czystej Javie: wypożyczanie egzemplarzy, rezerwacje FIFO i przedłużanie terminów. Najważniejsze elementy implementacji to indeks wolnych egzemplarzy oraz kolejka pozwalająca szybko ustalić pozycję czytelnika. Stan jest w pamięci, operacje są jednowątkowe.
 
+Materiały do nauki: [lektury i źródła tego ćwiczenia](../MATERIALY.md#biblioteka).
+
 ## Rdzeń techniczny
 
 [Library](src/main/java/pl/jakubtworek/lld/library/Library.java) utrzymuje mapę pożyczek po egzemplarzu, zbiory wypożyczonych tytułów czytelnika i TreeSet wolnych egzemplarzy każdego tytułu.

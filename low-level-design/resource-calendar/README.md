@@ -2,6 +2,8 @@
 
 Projekt edukacyjny w czystej Javie: rezerwowanie zasobów przez indeksowanie niepokrywających się przedziałów. Zawiera rezerwacje sal na osi Instant i wynajem samochodów na osi LocalDate. Stan jest w pamięci; operacje wykonuje jeden wątek.
 
+Materiały do nauki: [lektury i źródła tego ćwiczenia](../MATERIALY.md#kalendarz-zasobów).
+
 ## Rdzeń techniczny
 
 [IntervalCalendar](src/main/java/pl/jakubtworek/lld/calendar/IntervalCalendar.java) łączy TreeMap po początku przedziału z HashMap po ID. Czas i klucze muszą mieć stabilne porównywanie oraz równość.

@@ -2,6 +2,12 @@
 
 Edukacyjna ścieżka projektowania struktur danych i algorytmów w czystej Javie. Każdy moduł zawiera samodzielną implementację, polskie komentarze, testy i opis działania. Priorytetem są poprawność, koszt operacji, pamięć i utrzymanie indeksów.
 
+## Materiały do nauki
+
+[Książki i źródła do LLD](MATERIALY.md) obejmują kontrakty Javy, struktury danych,
+algorytmy, pamięć, snapshoty i testowanie. Każdy z 12 tematów oraz rozgrzewka ma
+wskazaną lekturę, dokumentację i pytanie sprawdzające; dostępna jest też ścieżka bezpłatna.
+
 ## Projekty
 
 Rozgrzewka: [kółko i krzyżyk](tic-tac-toe/README.md) — plansza N×N/K, maski bitowe i sprawdzanie wyniku.

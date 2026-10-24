@@ -1,6 +1,6 @@
 # SQL i bazy danych
 
-[Spis rozdziałów](README.md)
+[Spis rozdziałów](README.md) · [Książki i źródła](MATERIALY.md#08-sql-i-bazy-danych)
 
 <!-- question-toc:start -->
 ## Spis pytań

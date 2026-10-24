@@ -1,6 +1,6 @@
 # Wykonanie asynchroniczne i virtual threads
 
-[Spis rozdziałów](README.md)
+[Spis rozdziałów](README.md) · [Książki i źródła](MATERIALY.md#04-async-i-virtual-threads)
 
 <!-- question-toc:start -->
 ## Spis pytań

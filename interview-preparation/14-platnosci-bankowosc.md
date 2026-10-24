@@ -1,6 +1,6 @@
 # Płatności i bankowość
 
-[Spis rozdziałów](README.md)
+[Spis rozdziałów](README.md) · [Książki i źródła](MATERIALY.md#14-płatności-i-bankowość)
 
 To odpowiedzi o architekturze i poprawności danych. Wymagania regulacyjne, retencja, lokalizacja danych i reguły ryzyka są wejściem do projektu, ustalanym dla konkretnego rynku i organizacji; sam wybór komponentów nie dowodzi zgodności.
 

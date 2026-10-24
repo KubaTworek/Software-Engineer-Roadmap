@@ -1,5 +1,7 @@
 # Metrics / Logging System — System Design
 
+Materiały do nauki: [książki, źródła i zastosowanie](../MATERIALY.md#metrics-i-logging).
+
 <!-- reading-guide:start -->
 ## Ścieżki czytania
 

@@ -1,6 +1,6 @@
 # Transakcje i JPA
 
-[Spis rozdziałów](README.md)
+[Spis rozdziałów](README.md) · [Książki i źródła](MATERIALY.md#07-transakcje-i-jpa)
 
 <!-- question-toc:start -->
 ## Spis pytań

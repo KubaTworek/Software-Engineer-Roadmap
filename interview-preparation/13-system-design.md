@@ -1,6 +1,6 @@
 # System design — przepływy, dane i awarie
 
-[Spis rozdziałów](README.md)
+[Spis rozdziałów](README.md) · [Książki i źródła](MATERIALY.md#13-system-design)
 
 Każda odpowiedź proponuje architekturę dla zadanych potrzeb. Nazwy produktów oznaczają typ problemu, nie znajomość ich prywatnej implementacji. Projekty płatnicze i kredytowe są w [osobnym rozdziale](14-platnosci-bankowosc.md).
 

@@ -1,6 +1,6 @@
 # JVM i diagnostyka
 
-[Spis rozdziałów](README.md)
+[Spis rozdziałów](README.md) · [Książki i źródła](MATERIALY.md#05-jvm-i-diagnostyka)
 
 <!-- question-toc:start -->
 ## Spis pytań

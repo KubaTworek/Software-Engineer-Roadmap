@@ -2,6 +2,8 @@
 
 Projekt edukacyjny w czystej Javie: gra na planszy N×N z wygraną przez K kolejnych znaków. Implementacja obejmuje walidację ruchów, wykrywanie wyniku, niemutowalne widoki i konsolę. Stan pozostaje w pamięci, obsługa jest jednowątkowa.
 
+Materiały do nauki: [lektury i źródła tego ćwiczenia](../MATERIALY.md#kółko-i-krzyżyk).
+
 ## Rdzeń techniczny
 
 [Board](src/main/java/pl/jakubtworek/lld/tictactoe/Board.java) przechowuje rzadkie, niemutowalne drzewo słów po 64 pola. Liść zawiera dwie maski long, osobno dla X i O. Indeks pola to row × N + column; przesunięcie o 6 bitów wybiera słowo, a sześć najmłodszych bitów pozycję w masce.

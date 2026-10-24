@@ -1,5 +1,7 @@
 # Payment System — System Design
 
+Materiały do nauki: [książki, źródła i zastosowanie](../MATERIALY.md#payment-system).
+
 <!-- reading-guide:start -->
 ## Ścieżki czytania
 

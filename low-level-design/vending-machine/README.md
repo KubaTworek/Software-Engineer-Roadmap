@@ -2,6 +2,8 @@
 
 Projekt edukacyjny w czystej Javie: wydawanie dokładnej kwoty z ograniczonego zapasu nominałów. Implementacja zawiera automat sprzedażowy i bankomat, własne reguły obu urządzeń oraz jeden planer obliczeniowy. Stan znajduje się w pamięci; obsługa jest jednowątkowa.
 
+Materiały do nauki: [lektury i źródła tego ćwiczenia](../MATERIALY.md#automat-i-bankomat).
+
 ## Rdzeń techniczny
 
 [BoundedChangePlanner](src/main/java/pl/jakubtworek/lld/change/BoundedChangePlanner.java) przyjmuje tablice wartości nominałów i dostępnych ilości oraz kwotę docelową. Wartości muszą być dodatnie, ilości i kwota nieujemne, tablice równych długości. Nominały nie muszą być uporządkowane i mogą się powtarzać. Wejściowe tablice pozostają bez zmian.

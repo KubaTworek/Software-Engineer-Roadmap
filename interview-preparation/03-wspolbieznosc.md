@@ -1,6 +1,6 @@
 # Współbieżność i model pamięci
 
-[Spis rozdziałów](README.md)
+[Spis rozdziałów](README.md) · [Książki i źródła](MATERIALY.md#03-współbieżność-i-model-pamięci)
 
 <!-- question-toc:start -->
 ## Spis pytań

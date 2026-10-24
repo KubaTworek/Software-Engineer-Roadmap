@@ -1,5 +1,7 @@
 # System Design — E-commerce Platform
 
+Materiały do nauki: [książki, źródła i zastosowanie](../MATERIALY.md#e-commerce).
+
 <!-- reading-guide:start -->
 ## Ścieżki czytania
 

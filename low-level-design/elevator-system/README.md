@@ -2,6 +2,8 @@
 
 Projekt edukacyjny w czystej Javie: deterministyczna symulacja grupy wind, przydzielanie wezwań i obsługa kolejek przystanków. Czas jest wyrażony przez jawne kroki tick, bez zegara i opóźnień. Stan znajduje się w pamięci; sterowanie jest jednowątkowe.
 
+Materiały do nauki: [lektury i źródła tego ćwiczenia](../MATERIALY.md#windy).
+
 ## Rdzeń techniczny
 
 [StopQueue](src/main/java/pl/jakubtworek/lld/elevators/StopQueue.java) jest niemutowalnym FIFO z dwiema listami wiązanymi i 32-poziomowym trie przynależności liczb int. Dopisanie współdzieli istniejące węzły, a indeks zapobiega duplikatom bez liniowego szukania.

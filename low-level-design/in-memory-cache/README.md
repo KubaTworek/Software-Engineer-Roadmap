@@ -2,6 +2,8 @@
 
 Projekt edukacyjny w czystej Javie: cache o ograniczonej liczbie wpisów, z LRU, LFU i wygasaniem TTL. Implementacja wykorzystuje indeksowany kopiec terminów i kubełki częstotliwości. Stan jest w pamięci, dostęp jednowątkowy.
 
+Materiały do nauki: [lektury i źródła tego ćwiczenia](../MATERIALY.md#cache-w-pamięci).
+
 ## Rdzeń techniczny
 
 [InMemoryCache](src/main/java/pl/jakubtworek/lld/cache/domain/InMemoryCache.java) utrzymuje LinkedHashMap w kolejności LRU → MRU, jawnie przenosząc użyty wpis na koniec.

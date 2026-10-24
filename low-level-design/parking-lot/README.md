@@ -2,6 +2,8 @@
 
 Projekt edukacyjny w czystej Javie: przydzielanie miejsc, ewidencja aktywnych biletów i naliczanie opłat. Stan znajduje się w pamięci; operacje wykonuje jeden wątek.
 
+Materiały do nauki: [lektury i źródła tego ćwiczenia](../MATERIALY.md#parking).
+
 ## Rdzeń techniczny
 
 [ParkingLot](src/main/java/pl/jakubtworek/lld/parkinglot/ParkingLot.java) utrzymuje mapę historii i indeks aktywnych tablic. Wolne miejsca są w [FreeSpotIndex](src/main/java/pl/jakubtworek/lld/parkinglot/FreeSpotIndex.java): osobnym TreeSet dla każdego rozmiaru, uporządkowanym po piętrze i ID.

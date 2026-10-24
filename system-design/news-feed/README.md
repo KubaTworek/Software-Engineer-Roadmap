@@ -1,5 +1,7 @@
 # News Feed — System Design
 
+Materiały do nauki: [książki, źródła i zastosowanie](../MATERIALY.md#news-feed).
+
 <!-- reading-guide:start -->
 ## Ścieżki czytania
 

@@ -1,5 +1,7 @@
 # URL Shortener — wykonywalne studium System Design
 
+Materiały do nauki: [książki, źródła i zastosowanie](../MATERIALY.md#url-shortener).
+
 ## Zacznij tutaj
 
 | Element | Odpowiedź |

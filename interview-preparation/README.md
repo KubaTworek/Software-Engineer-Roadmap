@@ -4,6 +4,12 @@ Uporządkowany zbiór **323 pytań i odpowiedzi w 17 rozdziałach**, opracowany 
 
 Powtórzenia znaczeniowe mają jedną odpowiedź. Warianty zawierające dodatkowy warunek, np. `REQUIRES_NEW`, timeout po obciążeniu karty albo ograniczenie liczby przesiadek, zachowują ten warunek. Luźne notatki techniczne zostały przekształcone w pytania. Pominięto reklamy, wyniki rozmów i podpisy serwisów.
 
+## Materiały do nauki
+
+[Książki i źródła do powtórek](MATERIALY.md) dobierają lekturę, bezpłatne materiały
+i zadanie sprawdzające do każdego z 17 rozdziałów. Rozróżniają starsze książki,
+wersjonowane gwarancje API oraz dokumentację zmieniającą się wraz z narzędziem.
+
 ## Rozdziały
 
 | Rozdział | Zakres |

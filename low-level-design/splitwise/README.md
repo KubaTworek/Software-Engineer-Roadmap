@@ -2,6 +2,8 @@
 
 Projekt edukacyjny w czystej Javie: dzielenie wydatków, obliczanie sald, spłaty i korekty. Implementacja aktualizuje salda przyrostowo, zachowując dziennik operacji i obsługę ponowień. Stan pozostaje w pamięci, operacje są jednowątkowe.
 
+Materiały do nauki: [lektury i źródła tego ćwiczenia](../MATERIALY.md#rozliczenia-grupowe).
+
 ## Rdzeń techniczny
 
 [ExpenseGroup](src/main/java/pl/jakubtworek/lld/splitwise/ExpenseGroup.java) łączy long[] sald z mapą członek → indeks, dopisywaną listą historii, indeksem wpisów, kluczy i cofniętych wydatków. Przed zapisem oblicza wszystkie zmieniane salda z kontrolą przepełnienia.

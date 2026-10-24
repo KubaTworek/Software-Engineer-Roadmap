@@ -1,6 +1,6 @@
 # Low Level Design
 
-[Spis rozdziałów](README.md)
+[Spis rozdziałów](README.md) · [Książki i źródła](MATERIALY.md#16-low-level-design)
 
 Opisujemy model, odpowiedzialności i rdzeń rozwiązania z przykładami struktur, przejść i kodu. Fragmenty nie są kompletnymi aplikacjami; wyjaśniają konkretny niezmiennik i ograniczenia. SOLID oraz dobór Strategy/Factory/Observer opisano w [podstawach Javy](01-java.md), LRU/LFU i scheduler priorytetowy w [algorytmach](15-algorytmy.md), a rozproszoną odmianę limitera w [system design](13-system-design.md).
 

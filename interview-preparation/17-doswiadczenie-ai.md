@@ -1,6 +1,6 @@
 # Doświadczenie, decyzje i AI
 
-[Spis rozdziałów](README.md)
+[Spis rozdziałów](README.md) · [Książki i źródła](MATERIALY.md#17-doświadczenie-decyzje-i-ai)
 
 To schematy odpowiedzi do uzupełnienia własnymi faktami. Nie przypisują czytelnikowi projektów, wyników ani doświadczenia, którego nie ma. Brak kontaktu z technologią warto powiedzieć wprost i oddzielić praktykę produkcyjną od laboratorium.
 

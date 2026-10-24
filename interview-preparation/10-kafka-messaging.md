@@ -1,6 +1,6 @@
 # Kafka i messaging
 
-[Spis rozdziałów](README.md)
+[Spis rozdziałów](README.md) · [Książki i źródła](MATERIALY.md#10-kafka-i-messaging)
 
 <!-- question-toc:start -->
 ## Spis pytań

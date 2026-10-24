@@ -1,6 +1,6 @@
 # Podstawy Javy
 
-[Spis rozdziałów](README.md)
+[Spis rozdziałów](README.md) · [Książki i źródła](MATERIALY.md#01-podstawy-javy)
 
 <!-- question-toc:start -->
 ## Spis pytań

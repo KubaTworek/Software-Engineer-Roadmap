@@ -1,6 +1,6 @@
 # Algorytmy i struktury danych
 
-[Spis rozdziałów](README.md)
+[Spis rozdziałów](README.md) · [Książki i źródła](MATERIALY.md#15-algorytmy-i-struktury-danych)
 
 Odpowiedzi łączą algorytm, niezmiennik, przejście na danych i wybrane implementacje rdzenia w Javie. n oznacza rozmiar wejścia, V/E liczbę wierzchołków/krawędzi. Koszt pamięci wyniku zaznaczono tam, gdzie ma znaczenie. Kod z pełną metodą można osadzić w klasie; fragmenty wykorzystujące pola istniejącej struktury są oznaczone jako szkice. Ogólne hasła „drzewa”, „grafy” czy „LeetCode Medium” z notatek nie definiują osobnego zadania; ich techniki występują poniżej.
 

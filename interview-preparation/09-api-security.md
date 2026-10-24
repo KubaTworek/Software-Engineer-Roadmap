@@ -1,6 +1,6 @@
 # API i bezpieczeństwo
 
-[Spis rozdziałów](README.md)
+[Spis rozdziałów](README.md) · [Książki i źródła](MATERIALY.md#09-api-i-bezpieczeństwo)
 
 <!-- question-toc:start -->
 ## Spis pytań

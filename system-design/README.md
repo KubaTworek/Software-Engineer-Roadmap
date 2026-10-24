@@ -17,6 +17,12 @@ Diagramy docelowe i warianty rozwoju czytaj razem z mapą implementacji; sam opi
 > Cel dokumentu: zbudować praktyczną bazę do rozmów System Design na poziomie Software Engineer / Senior Software Engineer.  
 > Najważniejsza zasada: **nie projektujesz systemu przez dobieranie technologii, tylko przez rozwiązywanie konkretnych wymagań i świadome zarządzanie trade-offami.**
 
+## Materiały do nauki
+
+[Książki i źródła do System Design](MATERIALY.md) łączą lektury przewodnie,
+bezpłatne kursy, publikacje i dokumentację z każdym z 12 studiów przypadku.
+Przy każdym systemie znajdziesz temat lektury oraz pytanie do sprawdzenia w kodzie.
+
 ## Wykonywalne studia przypadku
 
 Poniższe katalogi są niezależnymi systemami edukacyjnymi. Nie tworzą jednego

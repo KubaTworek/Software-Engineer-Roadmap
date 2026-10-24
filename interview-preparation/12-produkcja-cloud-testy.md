@@ -1,6 +1,6 @@
 # Produkcja, cloud i testowanie
 
-[Spis rozdziałów](README.md)
+[Spis rozdziałów](README.md) · [Książki i źródła](MATERIALY.md#12-produkcja-cloud-i-testowanie)
 
 <!-- question-toc:start -->
 ## Spis pytań

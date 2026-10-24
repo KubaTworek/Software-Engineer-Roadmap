@@ -1,6 +1,6 @@
 # Systemy rozproszone i odporność
 
-[Spis rozdziałów](README.md)
+[Spis rozdziałów](README.md) · [Książki i źródła](MATERIALY.md#11-systemy-rozproszone-i-odporność)
 
 <!-- question-toc:start -->
 ## Spis pytań

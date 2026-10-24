@@ -2,6 +2,8 @@
 
 Projekt edukacyjny w czystej Javie: hierarchia katalogów i plików tekstowych z niemutowalnymi widokami. Obsługuje tworzenie, zapis, usuwanie, przenoszenie, kopiowanie i wyszukiwanie. Stan znajduje się w pamięci, operacje wykonuje jeden wątek.
 
+Materiały do nauki: [lektury i źródła tego ćwiczenia](../MATERIALY.md#system-plików-w-pamięci).
+
 ## Rdzeń techniczny
 
 [DirectoryNode](src/main/java/pl/jakubtworek/lld/filesystem/domain/DirectoryNode.java) przechowuje dzieci w trwałym AVL po nazwie. [InMemoryFileSystem](src/main/java/pl/jakubtworek/lld/filesystem/domain/InMemoryFileSystem.java) kopiuje przy zmianie tylko drogę od korzenia i zmieniane ścieżki lokalnych indeksów. Pozostałe poddrzewa są współdzielone.

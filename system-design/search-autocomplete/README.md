@@ -1,5 +1,7 @@
 # Search Autocomplete — System Design
 
+Materiały do nauki: [książki, źródła i zastosowanie](../MATERIALY.md#search-autocomplete).
+
 <!-- reading-guide:start -->
 ## Ścieżki czytania
 
