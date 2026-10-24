@@ -56,6 +56,28 @@ class PostgreSqlExecutableLabTest {
     }
 
     @Test
+    void utf8NormalizationUniquenessAndKeysetOrderAreExplicitDatabaseContracts() throws Exception {
+        try (var connection = openConnection(); var statement = connection.createStatement()) {
+            statement.execute("create temporary table text_keys(id int primary key, name text collate \"C\" not null)");
+            try (var insert = connection.prepareStatement("insert into text_keys values (?,normalize(?,NFC))")) {
+                String[] values = {"José", "Jose\u0301", "\uE000", "😀"};
+                for (int i=0;i<values.length;i++) { insert.setInt(1,i); insert.setString(2,values[i]); insert.executeUpdate(); }
+            }
+            try (var rows = statement.executeQuery("select count(distinct name) from text_keys")) { rows.next(); assertThat(rows.getInt(1)).isEqualTo(3); }
+            // Tiebreaker id jest konieczny dla równych nazw; kolacja cursoru musi być taka sama jak ORDER BY.
+            var all = new ArrayList<String>();
+            try (var rows = statement.executeQuery("select name from text_keys order by name collate \"C\",id")) {
+                while(rows.next()) all.add(rows.getString(1));
+            }
+            assertThat(all).containsExactly("José","José","\uE000","😀");
+            try (var page = connection.prepareStatement("select id from text_keys where (name collate \"C\",id) > (?,?) order by name collate \"C\",id")) {
+                page.setString(1,"José"); page.setInt(2,0);
+                try (var rows = page.executeQuery()) { var ids = new ArrayList<Integer>(); while(rows.next()) ids.add(rows.getInt(1)); assertThat(ids).containsExactly(1,2,3); }
+            }
+        }
+    }
+
+    @Test
     void runsExpandBackfillAndContractAsSeparateDeploymentSteps() throws Exception {
         String schema = "migration_" + UUID.randomUUID().toString().replace("-", "");
 
