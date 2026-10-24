@@ -104,3 +104,12 @@ tasks.register('cdcIntegrationTest', Test) {
     shouldRunAfter integrationTest
     useJUnitPlatform { includeTags 'cdc' }
 }
+
+tasks.register('contactMaintenance', JavaExec) {
+    description = 'Exports erasure registry or suppresses restored contacts without starting HTTP or Kafka.'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'pl.jakubtworek.marketplace.notification.infrastructure.ContactMaintenance'
+    doFirst {
+        args providers.gradleProperty('operation').get(), providers.gradleProperty('registryFile').get(), providers.gradleProperty('manifestFile').get()
+    }
+}

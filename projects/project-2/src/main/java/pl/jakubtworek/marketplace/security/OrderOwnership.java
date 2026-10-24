@@ -26,7 +26,7 @@ public class OrderOwnership {
     }
     private java.util.Optional<UUID> customer(Authentication auth) {
         if (auth == null || !(auth.getPrincipal() instanceof Jwt jwt)) return java.util.Optional.empty();
-        try { return java.util.Optional.of(UUID.fromString(jwt.getClaimAsString("customer_id"))); }
+        try { return java.util.Optional.of(UUID.fromString(jwt.hasClaim("customer_id") ? jwt.getClaimAsString("customer_id") : jwt.getSubject())); }
         catch (RuntimeException missingOrInvalid) { return java.util.Optional.empty(); }
     }
 }

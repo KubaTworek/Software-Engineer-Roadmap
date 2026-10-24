@@ -39,8 +39,19 @@ public class SecurityConfiguration {
     }
 
     @Bean
-    JwtDecoder jwtDecoder(@Value("${marketplace.security.jwt-secret}") String secret) {
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name="marketplace.security.jwt-mode",havingValue="hmac",matchIfMissing=true)
+    JwtDecoder jwtDecoder(@Value("${marketplace.security.jwt-secret}") String secret,
+            @Value("${marketplace.security.jwt-issuer}") String issuer,
+            @Value("${marketplace.security.jwt-audience}") String audience) {
         if (secret.length() < 32) throw new IllegalStateException("JWT secret must contain at least 32 characters");
-        return NimbusJwtDecoder.withSecretKey(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256")).build();
+        var decoder = NimbusJwtDecoder.withSecretKey(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256")).build();
+        // Poprawny podpis nie dowodzi, że token wydano dla tej usługi i tego zaufanego issuera.
+        decoder.setJwtValidator(new org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator<>(
+                org.springframework.security.oauth2.jwt.JwtValidators.createDefaultWithIssuer(issuer),
+                new org.springframework.security.oauth2.jwt.JwtClaimValidator<java.util.List<String>>("aud",
+                        values -> values != null && values.contains(audience)),
+                new org.springframework.security.oauth2.jwt.JwtClaimValidator<java.time.Instant>("exp", value -> value != null),
+                new org.springframework.security.oauth2.jwt.JwtClaimValidator<String>("sub", value -> value != null && !value.isBlank())));
+        return decoder;
     }
 }

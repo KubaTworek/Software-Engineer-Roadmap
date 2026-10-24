@@ -57,7 +57,9 @@ marketplace:
     port: 9090
   security:
     # W produkcji wyłącznie z secret managera; profil secure odrzuca zbyt krótki sekret.
-    jwt-secret: ${JWT_SECRET:change-me-in-secure-profile-at-least-32-chars}
+    jwt-secret: ${JWT_SECRET:}
+    jwt-issuer: ${JWT_ISSUER:https://identity.marketplace.local}
+    jwt-audience: ${JWT_AUDIENCE:marketplace-api}
   events:
     mode: ${EVENTS_MODE:in-memory}
   payment-gateway:
