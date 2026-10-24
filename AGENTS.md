@@ -2,11 +2,12 @@
 
 ## Cel repozytorium
 
-To repozytorium jest praktyczną roadmapą rozwoju Java Backend Engineera od poziomu Mid do Senior i Top Senior. Łączy trzy rodzaje materiałów:
+To repozytorium jest praktyczną roadmapą rozwoju Java Backend Engineera od poziomu Mid do Senior i Top Senior. Łączy cztery rodzaje materiałów:
 
 1. małe, skoncentrowane przykłady techniczne,
 2. większe projekty portfolio wykorzystujące poznane zagadnienia,
-3. niezależne implementacje popularnych problemów System Design.
+3. niezależne implementacje popularnych problemów High Level System Design,
+4. ćwiczenia Low Level Design oparte na programowaniu obiektowym w Javie.
 
 Nie traktuj całego repozytorium jak jednej aplikacji. Poszczególne katalogi mogą mieć własny build, konfigurację, zależności i wymagania infrastrukturalne.
 
@@ -73,6 +74,26 @@ Zawiera niezależne implementacje popularnych zadań System Design. Obecnie są 
 - `video-streaming/`.
 
 Każdy system jest osobnym studium przypadku. Może mieć własną bazę danych, komunikację, kontenery, migracje, testy i model skalowania. Nie twórz zależności pomiędzy tymi systemami i nie zakładaj, że wspólnie tworzą jeden produkt.
+
+### `low-level-design/`
+
+Niezależne ćwiczenia projektowania klas, ich odpowiedzialności i współpracy
+w czystej Javie. Punktem wyjścia są reguły domenowe, niezmienniki, stan w pamięci
+i testy jednostkowe. Plan zadań opisuje `low-level-design/README.md`, procedurę
+pracy `low-level-design/PROCEDURE.md`, a szczegółowe zasady `low-level-design/AGENTS.md`.
+Ścieżka obejmuje 12 głównych tematów i rozgrzewkę. Bankomat jest wariantem
+wydawania reszty, auta i sale korzystają ze wspólnego kalendarza zasobów,
+a historia edytora zastępuje workflow w ścieżce głównej. Materiały archive/
+są opcjonalne i nie są zależnością aktywnych tematów.
+Nie przenoś tutaj wymagań infrastrukturalnych studiów High Level Design.
+Priorytetem LLD są struktury danych, algorytmy, złożoność, pamięć i efektywne
+użycie czystej Javy. Reguły biznesowe są kontekstem poprawności; nie rozbudowuj
+ich kosztem rdzenia technicznego. Dobieraj tablice, bitsety, kopce, kolejki,
+listy wiązane i indeksy do operacji, z jawnym kosztem ich utrzymania.
+Ten obszar ma jawnie edukacyjny cel. Przy zmianach stosuj
+`low-level-design/EDUCATIONAL_STANDARD.md`: objaśniaj po polsku decyzje,
+niezmienniki, kontrprzykłady i dowody w testach. Czytelnik ma móc odtworzyć
+rozumowanie i przenieść wiedzę do kolejnego zadania, z zachowaniem jego reguł.
 
 ## Zasady pracy
 
