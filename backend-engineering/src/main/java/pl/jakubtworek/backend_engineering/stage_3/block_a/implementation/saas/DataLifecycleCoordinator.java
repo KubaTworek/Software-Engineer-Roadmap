@@ -46,6 +46,10 @@ public final class DataLifecycleCoordinator {
 
     public DeletionResult erase(DeletionCommand command) {
         Instant now = Instant.now(clock);
+        // Najpierw trwała intencja suppression. Awaria kolejnego kroku może pozostawić
+        // nieukończone erase, ale restore nie może znów udostępnić starego rekordu.
+        backupRegistry.register(new BackupErasureTombstone(
+                command.deletionId(), command.tenantId(), command.subjectId(), now.plus(backupRetention)));
         repository.anonymize(command.tenantId(), command.subjectId());
         cache.evict(new TenantCacheKey("subject", command.tenantId(), command.subjectId()));
         eventSink.publish(new PersonalDataErased(
@@ -53,8 +57,6 @@ public final class DataLifecycleCoordinator {
 
         // Immutable backups normally expire instead of being edited in place. The tombstone
         // prevents erased data from becoming live again after a restore.
-        backupRegistry.register(new BackupErasureTombstone(
-                command.deletionId(), command.tenantId(), command.subjectId(), now.plus(backupRetention)));
         auditSink.append(new LifecycleAuditEvent(
                 command.deletionId(), command.tenantId(), command.requestedBy(), "personal-data.erased", now));
         return new DeletionResult(command.deletionId(), now, now.plus(backupRetention));
@@ -126,6 +128,12 @@ public final class DataLifecycleCoordinator {
 
         @Override
         public synchronized void register(BackupErasureTombstone tombstone) {
+            if (registeredTombstones.contains(tombstone.deletionId())) {
+                var old=tombstones.stream().filter(t -> t.deletionId().equals(tombstone.deletionId())).findFirst().orElseThrow();
+                if(!old.tenantId().equals(tombstone.tenantId()) || !old.subjectReference().equals(tombstone.subjectReference()))
+                    throw new IllegalArgumentException("Deletion id reused for another subject");
+                return;
+            }
             if (registeredTombstones.add(tombstone.deletionId())) {
                 tombstones.add(tombstone);
             }

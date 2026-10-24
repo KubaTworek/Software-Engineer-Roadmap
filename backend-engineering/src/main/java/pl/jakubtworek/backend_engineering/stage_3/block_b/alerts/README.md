@@ -6,7 +6,7 @@
 > - **Zakres:** `temat-zaawansowany`
 > - **Uczy:** alerts.
 > - **Typowy błąd:** Alert na pojedynczy skok CPU bez powiązania z wpływem na SLO.
-> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress test`
+> - **Najkrótsza weryfikacja:** `.\mvnw.cmd --batch-mode --no-transfer-progress "-Dtest=BurnRatePolicyTest" test`
 > - **Katalog uruchomienia:** `backend-engineering` (katalog głównego modułu).
 > - **Role klas:** brak jawnej roli w nazwach klas; intencję przykładu określają opis i test, nie sam brak prefiksu.
 > - **Granica:** Test eksportera lub reguły nie dowodzi dostarczenia telemetrii do wdrożonego backendu ani skuteczności reakcji operatora.
@@ -129,3 +129,7 @@ Alerting i runbooki są operacyjną warstwą observability. Metryki, trace’y i
 Najważniejsze zasady są proste, ale wymagają konsekwencji. Alertuj na symptomy użytkownika, nie na każdą możliwą przyczynę techniczną. Używaj labels do routingu i annotations do kontekstu. Każdy page powinien mieć runbook. Runbook powinien zaczynać od mitigacji i kończyć się weryfikacją na tych samych metrykach, które uruchomiły alert. Nie zamykaj incydentu dlatego, że komponent wygląda zdrowo; zamknij go dopiero wtedy, gdy wróciły metryki użytkownika.
 
 Właśnie to odróżnia dojrzały alerting od monitoringu, który tylko świeci na czerwono.
+
+## Burn rate i recovery
+
+BurnRatePolicy porównuje długie i krótkie okno; przy zerowym ruchu daje UNKNOWN. Test wymaga zakończenia page po ustaniu incydentu mimo błędów w długim oknie. Reguły PromQL są wykonywane rzeczywistym promtool w projekcie 3. [Burn rate i recovery](../../../../../../../../../../projects/project-3/docs/runbooks/checkout-slo.md).

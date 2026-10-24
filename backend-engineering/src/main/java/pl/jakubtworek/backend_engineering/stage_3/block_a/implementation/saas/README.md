@@ -214,3 +214,7 @@ Powiązane laboratoria: [kontrola przeciążenia](../overload/README.md),
 [outbox i semantyka zdarzeń](../../../../stage_2/block_b/README.md),
 [observability](../../../block_b/README.md) oraz
 [disaster recovery](../../../block_c/README.md).
+
+## Trwały lifecycle i restore
+
+RestoreSuppressionGate filtruje model snapshotu z nowszym registry, a coordinator rejestruje intencję przed efektami. Test obejmuje błąd cache i izolację tenanta. Rzeczywiste transakcje, Kafka, pg_dump i zaufany manifest są pokazane w projekcie 2. [Trwały lifecycle i restore](../../../../../../../../../../../projects/project-2/docs/contact-lifecycle.md).

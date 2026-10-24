@@ -10,6 +10,21 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class DataLifecycleCoordinatorTest {
+    @Test void olderSnapshotIsSuppressedEvenAfterCacheFailureAndOtherTenantIsUnaffected() {
+        var tenant=new TenantId("alpha");var other=new TenantId("beta");
+        var repository=new TenantDataRepository();
+        var stale=new TenantDataRecord(tenant,"customer","private@example.test","Private");
+        var unrelated=new TenantDataRecord(other,"customer","other@example.test","Other");
+        repository.save(stale);
+        var sinks=new DataLifecycleCoordinator.InMemoryLifecycleSinks();
+        var coordinator=new DataLifecycleCoordinator(repository,key->{throw new IllegalStateException("cache down");},sinks,sinks,sinks,
+                Clock.fixed(Instant.parse("2026-01-15T10:00:00Z"),ZoneOffset.UTC),Duration.ofDays(30));
+        var command=new DataLifecycleCoordinator.DeletionCommand(UUID.randomUUID(),tenant,"customer","operator");
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,()->coordinator.erase(command));
+        assertThat(RestoreSuppressionGate.allowed(java.util.List.of(stale,unrelated),sinks.tombstones())).containsExactly(unrelated);
+        var reused=new DataLifecycleCoordinator.DeletionCommand(command.deletionId(),other,"customer","operator");
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,()->coordinator.erase(reused));
+    }
 
     @Test
     void erasureMustPropagateToPrimaryDataCacheEventsBackupRestoreAndAudit() {
