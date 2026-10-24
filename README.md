@@ -16,7 +16,23 @@ Aktualną mapę laboratoriów i przekrojowy indeks pojęć zawiera [kompendium b
 
 - [`backend-engineering/`](backend-engineering/README.md) — wykonywalne laboratoria i kompendium wiedzy dla etapów 1–3;
 - [`projects/`](projects/README.md) — trzy projekty portfolio stosujące wiedzę z odpowiadających im etapów;
-- [`system-design/`](system-design/README.md) — niezależne studia popularnych problemów projektowania systemów.
+- [`system-design/`](system-design/README.md) — High Level Design: architektura, skalowanie i systemy rozproszone;
+- [`low-level-design/`](low-level-design/README.md) — Low Level Design w Javie: klasy, odpowiedzialności, reguły domenowe i współpraca obiektów.
+
+### Low Level Design — projektowanie w czystej Javie
+
+[Ścieżka LLD](low-level-design/README.md) obejmuje 12 tematów technicznych
+i osobną rozgrzewkę. To projekty edukacyjne skupione na strukturach danych,
+algorytmach, niezmiennikach oraz kosztach czasu, pamięci i aktualizacji indeksów.
+
+Każdy moduł ma własny build, testy, polskie komentarze i samodzielny README
+z opisem działania, rdzenia technicznego, uruchomienia oraz ograniczeń.
+README wyjaśnia wybór struktur i przebieg algorytmów na konkretnych przykładach;
+komentarze uzupełniają to rozumowanie szczegółami kodu.
+Główny nacisk pada na kolekcje JDK, referencje i kopie, pamięć, alokacje
+oraz kontrakt wątkowy; reguły domeny służą sprawdzaniu poprawności tych mechanizmów.
+Obowiązują [standard edukacyjny](low-level-design/EDUCATIONAL_STANDARD.md),
+[procedura](low-level-design/PROCEDURE.md) i [zasady pracy](low-level-design/AGENTS.md).
 
 ---
 
