@@ -36,6 +36,7 @@ lektury na różnych etapach. Lista materiałów nie jest listą obowiązkowych 
 - [`low-level-design/`](low-level-design/README.md) — Low Level Design w Javie: klasy, odpowiedzialności, reguły domenowe i współpraca obiektów;
 - [`interview-preparation/`](interview-preparation/README.md) — rozwinięte pytania i odpowiedzi po polsku: mechanizmy, przykłady kodu, decyzje, awarie, algorytmy i projekty systemów; moduł dokumentacyjny do powtórek i rozmów technicznych.
 - [`design-patterns/`](design-patterns/README.md) — 252 karty wzorców w 18 kategoriach: komplet 23 GoF, kod w Markdown i konkretne przypadki użycia, idiomy Javy, DDD, architektura, persystencja, messaging, spójność, odporność, skalowanie, API, wdrożenia, bezpieczeństwo i testy; indeks, materiały oraz scenariusze zastosowania.
+- [`coding-interview/`](coding-interview/README.md) — zadania algorytmiczne w stylu LeetCode: poradnik, 25 kart, 72 nierozwiązane ćwiczenia w 24 kategoriach, 8 ćwiczeń diagnostycznych, trening mieszany z filtrami i kontrolą zgodności, kod Javy w Markdown oraz walidacja testów i CI.
 
 ### Low Level Design — projektowanie w czystej Javie
 

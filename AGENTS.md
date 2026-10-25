@@ -2,14 +2,15 @@
 
 ## Cel repozytorium
 
-To repozytorium jest praktyczną roadmapą rozwoju Java Backend Engineera od poziomu Mid do Senior i Top Senior. Łączy sześć rodzajów materiałów:
+To repozytorium jest praktyczną roadmapą rozwoju Java Backend Engineera od poziomu Mid do Senior i Top Senior. Łączy siedem rodzajów materiałów:
 
 1. małe, skoncentrowane przykłady techniczne,
 2. większe projekty portfolio wykorzystujące poznane zagadnienia,
 3. niezależne implementacje popularnych problemów High Level System Design,
 4. ćwiczenia Low Level Design oparte na programowaniu obiektowym w Javie,
-5. dokumentacyjne pytania i odpowiedzi do powtórek oraz rozmów technicznych.
-6. przekrojowy katalog wzorców kodu i systemów z przykładami oraz materiałami do nauki.
+5. dokumentacyjne pytania i odpowiedzi do powtórek oraz rozmów technicznych,
+6. przekrojowy katalog wzorców kodu i systemów z przykładami oraz materiałami do nauki,
+7. zadania coding interview: schematy algorytmiczne, metodyka i kod w Markdown.
 
 Nie traktuj całego repozytorium jak jednej aplikacji. Poszczególne katalogi mogą mieć własny build, konfigurację, zależności i wymagania infrastrukturalne.
 
@@ -119,6 +120,15 @@ Nie dodawaj osobnych źródeł Java ani buildu aplikacji. Pełniejsze modele i s
 poprawności również należą do dokumentów. Czytaj `design-patterns/README.md`,
 `LABORATORIA.md` i lokalne `AGENTS.md`. Sprawdzaj strukturę oraz odsyłacze przez
 `design-patterns/scripts/check-catalog.ps1` i główny checker dokumentacji.
+
+### `coding-interview/`
+
+Dokumentacyjny moduł ćwiczeń algorytmicznych w stylu LeetCode. Czytaj jego README,
+METODYKA.md i lokalne AGENTS.md. Karty opisują warunki użycia techniki, niezmiennik,
+przebieg na danych, złożoność i kontrprzykład. Przykłady oraz scenariusze Javy
+pozostają w Markdown; nie dodawaj osobnych klas ani buildu aplikacji.
+Sprawdzaj fragmenty przez lokalny scripts/check-examples.ps1, a odsyłacze głównym
+checkerem dokumentacji. Oddzielaj opracowane karty od tematów planowanych.
 
 ## Zasady pracy
 

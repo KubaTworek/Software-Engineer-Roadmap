@@ -1,0 +1,56 @@
+name: Coding Interview
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ['coding-interview/**', '.github/workflows/coding-interview-ci.yml', 'scripts/check-documentation.ps1']
+  push:
+    paths: ['coding-interview/**', '.github/workflows/coding-interview-ci.yml', 'scripts/check-documentation.ps1']
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: coding-interview
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Run documented examples
+        shell: pwsh
+        run: ./scripts/check-examples.ps1
+      - name: Compile exercises and run completed methods
+        shell: pwsh
+        run: ./scripts/check-exercises.ps1 -RunSolved
+      - name: Verify runner and mixed-practice generator
+        shell: pwsh
+        run: ./scripts/test-runner.ps1
+      - name: Verify filters, source drift and overwrite protection
+        shell: pwsh
+        run: ./scripts/test-practice.ps1
+      - name: Verify references and test-detectable mutations
+        shell: pwsh
+        run: ./scripts/check-test-quality.ps1
+      - name: Verify test-quality checker detects surviving and invalid mutations
+        shell: pwsh
+        run: ./scripts/test-quality.ps1
+      - name: Verify mixed-session provenance without rewriting files
+        shell: pwsh
+        run: ./scripts/check-practice.ps1
+      - name: Compile debugging exercises without requiring initial bugs to pass
+        shell: pwsh
+        run: ./scripts/check-exercises.ps1 -PracticeFile debugging/01-exercises.md
+      - name: Compile mixed sessions
+        shell: pwsh
+        run: |
+          foreach ($file in Get-ChildItem practice -Filter '*-session.md') {
+            ./scripts/check-exercises.ps1 -PracticeFile $file.FullName -RunSolved
+          }
+      - name: Check documentation links
+        shell: pwsh
+        working-directory: .
+        run: ./scripts/check-documentation.ps1
