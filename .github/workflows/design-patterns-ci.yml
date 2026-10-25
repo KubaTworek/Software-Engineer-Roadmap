@@ -1,0 +1,25 @@
+name: Design Patterns Documentation
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ['design-patterns/**', '.github/workflows/design-patterns-ci.yml']
+  push:
+    paths: ['design-patterns/**', '.github/workflows/design-patterns-ci.yml']
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: design-patterns
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify catalog, use cases and documentation-only structure
+        shell: pwsh
+        run: ./scripts/check-catalog.ps1
+      - name: Verify local documentation links
+        shell: pwsh
+        working-directory: .
+        run: ./scripts/check-documentation.ps1

@@ -2,13 +2,14 @@
 
 ## Cel repozytorium
 
-To repozytorium jest praktyczną roadmapą rozwoju Java Backend Engineera od poziomu Mid do Senior i Top Senior. Łączy pięć rodzajów materiałów:
+To repozytorium jest praktyczną roadmapą rozwoju Java Backend Engineera od poziomu Mid do Senior i Top Senior. Łączy sześć rodzajów materiałów:
 
 1. małe, skoncentrowane przykłady techniczne,
 2. większe projekty portfolio wykorzystujące poznane zagadnienia,
 3. niezależne implementacje popularnych problemów High Level System Design,
 4. ćwiczenia Low Level Design oparte na programowaniu obiektowym w Javie,
 5. dokumentacyjne pytania i odpowiedzi do powtórek oraz rozmów technicznych.
+6. przekrojowy katalog wzorców kodu i systemów z przykładami oraz materiałami do nauki.
 
 Nie traktuj całego repozytorium jak jednej aplikacji. Poszczególne katalogi mogą mieć własny build, konfigurację, zależności i wymagania infrastrukturalne.
 
@@ -108,6 +109,16 @@ o doświadczenie nie wymyślaj historii zawodowych. Moduł nie ma buildu aplikac
 sprawdzaj oznaczone przykłady skryptem scripts/check-examples.ps1 w tym module
 oraz dokumentację i odsyłacze zgodnie z jego README. Każdy blok wymaga jawnego
 kontekstu: kompilowany fragment, kontrprzykład, szkic lub materiał opisowy.
+
+### `design-patterns/`
+
+Moduł dokumentacyjny: karty wzorców, kod i konkretne przypadki użycia w Markdown.
+Obejmuje GoF, idiomy Javy, DDD, architekturę, dane, integracje, spójność,
+odporność, skalowanie, API, wdrożenia, bezpieczeństwo i testowanie.
+Nie dodawaj osobnych źródeł Java ani buildu aplikacji. Pełniejsze modele i scenariusze
+poprawności również należą do dokumentów. Czytaj `design-patterns/README.md`,
+`LABORATORIA.md` i lokalne `AGENTS.md`. Sprawdzaj strukturę oraz odsyłacze przez
+`design-patterns/scripts/check-catalog.ps1` i główny checker dokumentacji.
 
 ## Zasady pracy
 

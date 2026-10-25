@@ -35,6 +35,7 @@ lektury na różnych etapach. Lista materiałów nie jest listą obowiązkowych 
 - [`system-design/`](system-design/README.md) — High Level Design: architektura, skalowanie i systemy rozproszone;
 - [`low-level-design/`](low-level-design/README.md) — Low Level Design w Javie: klasy, odpowiedzialności, reguły domenowe i współpraca obiektów;
 - [`interview-preparation/`](interview-preparation/README.md) — rozwinięte pytania i odpowiedzi po polsku: mechanizmy, przykłady kodu, decyzje, awarie, algorytmy i projekty systemów; moduł dokumentacyjny do powtórek i rozmów technicznych.
+- [`design-patterns/`](design-patterns/README.md) — 252 karty wzorców w 18 kategoriach: komplet 23 GoF, kod w Markdown i konkretne przypadki użycia, idiomy Javy, DDD, architektura, persystencja, messaging, spójność, odporność, skalowanie, API, wdrożenia, bezpieczeństwo i testy; indeks, materiały oraz scenariusze zastosowania.
 
 ### Low Level Design — projektowanie w czystej Javie
 
